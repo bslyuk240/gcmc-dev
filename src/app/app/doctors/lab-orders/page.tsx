@@ -76,7 +76,7 @@ export default function DoctorLabOrdersPage() {
   const testOptions: SelectOption[] = catalog.map((t) => ({
     value: t.code,
     label: t.name,
-    sublabel: `${t.category} · ₦${t.price} · ${t.turnaroundTime}`,
+    sublabel: `${t.category} · ₦${t.price} · ${t.turnaroundHours}h`,
     group: t.category,
   }));
 

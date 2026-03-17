@@ -11,6 +11,8 @@ import { usePharmacyStore } from "@/lib/hooks/use-pharmacy-store";
 import {
   addRestockRequest,
   getRestockRequests,
+  updateNurseRequestStatus,
+  type NurseMedRequest,
 } from "@/lib/data/pharmacy-store";
 
 type StockStatus = "ok" | "low" | "critical" | "out";

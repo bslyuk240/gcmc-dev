@@ -280,8 +280,8 @@ function loadState(): NotifState {
       const parsed = JSON.parse(raw) as NotifState;
       // Migration: back-fill targetDepartments for any stored notifs missing it
       parsed.notifications = parsed.notifications.map((n) => ({
-        targetDepartments: "all" as const,
         ...n,
+        targetDepartments: n.targetDepartments ?? ("all" as const),
       }));
       return parsed;
     }

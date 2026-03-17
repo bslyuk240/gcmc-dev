@@ -134,7 +134,7 @@ export default function PharmacyStockMovementsPage() {
       lines: [
         { label: "Patient/Customer", value: wiPatient },
         { label: "Medication",       value: drug.name },
-        { label: "Form",             value: drug.form },
+        { label: "Form",             value: drug.unit },
         { label: "Quantity",         value: `${qty}` },
         { label: "Unit Price",       value: `₦${drug.unitPrice.toFixed(2)}` },
         { label: "Notes",            value: wiNotes || "—" },

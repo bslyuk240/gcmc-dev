@@ -65,10 +65,10 @@ export default function AdminPharmacyMonitorPage() {
                   {prescriptions.slice(0, 8).map((rx) => (
                     <tr key={rx.id} className="hover:bg-slate-50">
                       <td className="px-4 py-3 font-medium text-slate-900">{rx.patientName}</td>
-                      <td className="px-4 py-3 text-xs text-slate-500">{rx.prescribedBy}</td>
+                      <td className="px-4 py-3 text-xs text-slate-500">{rx.doctorName}</td>
                       <td className="px-4 py-3 text-xs text-slate-600">{rx.drugs.map((d) => d.name).join(", ")}</td>
                       <td className="px-4 py-3">
-                        <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${rx.urgency === "Urgent" ? "bg-red-50 text-red-700" : rx.urgency === "High" ? "bg-amber-50 text-amber-700" : "bg-slate-100 text-slate-600"}`}>{rx.urgency}</span>
+                        <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${rx.urgency === "Urgent" ? "bg-red-50 text-red-700" : "bg-slate-100 text-slate-600"}`}>{rx.urgency}</span>
                       </td>
                       <td className="px-4 py-3">
                         <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${rx.status === "Dispensed" ? "bg-emerald-50 text-emerald-700" : rx.status === "Pending" ? "bg-amber-50 text-amber-700" : "bg-violet-50 text-violet-700"}`}>{rx.status}</span>

@@ -102,7 +102,7 @@ export default function AdminLabMonitorPage() {
           <Card className="p-5">
             <h3 className="font-bold text-slate-900 mb-3">Lab Revenue</h3>
             <div className="space-y-2 text-sm">
-              <div className="flex justify-between"><span className="text-slate-500">Avg Turnaround</span><span className="font-bold text-slate-800">{metrics.avgTurnaroundHours}h</span></div>
+              <div className="flex justify-between"><span className="text-slate-500">Avg Turnaround</span><span className="font-bold text-slate-800">{metrics.avgTurnaround}</span></div>
               <div className="flex justify-between"><span className="text-slate-500">Completed Tests</span><span className="font-bold text-emerald-700">{metrics.completedTests}</span></div>
               <div className="flex justify-between"><span className="text-slate-500">Sample Collected</span><span className="font-bold text-sky-700">{metrics.sampleCollectedTests}</span></div>
               <div className="flex justify-between"><span className="text-slate-500">Cancelled</span><span className="font-bold text-slate-500">{tests.filter((t) => t.status === "Cancelled").length}</span></div>

@@ -61,8 +61,9 @@ export default function DataExportPage() {
   const { consultationFees, labCharges, nursingCharges } = useAccountsStore();
   const { tests: labTests } = useLabStore();
   const { prescriptions, bills: pharmBills } = usePharmacyStore();
-  const { allPatients: wardPatients } = useNursesStore();
-  const triageQueue = wardPatients.filter((p) => p.unit === "Triage");
+  const { allPatients } = useNursesStore();
+  const wardPatients = allPatients.filter((p) => p.unit !== "Emergency");
+  const triageQueue = allPatients.filter((p) => p.unit === "Emergency");
   const { consultations } = useDoctorsStore();
 
   const [toast, setToast] = useState<ToastData | null>(null);
@@ -82,9 +83,16 @@ export default function DataExportPage() {
     setToast({ message: "Lab test requests exported.", type: "success" });
   }
   function exportPharmacyCSV() {
-    const rows = prescriptions.map((r) => [r.id, r.patientName, r.patientId, r.drug, r.dose, r.frequency, r.prescribedBy, r.status]);
+    const rows = prescriptions.map((r) => [
+      r.id, r.patientName, r.patientId,
+      r.drugs.map((d) => d.name).join("; "),
+      r.drugs[0]?.dosage ?? "",
+      r.drugs[0]?.frequency ?? "",
+      r.doctorName,
+      r.status,
+    ]);
     downloadCSV(`pharmacy_prescriptions_${timestamp()}.csv`,
-      toCSV(["ID","Patient","Patient ID","Drug","Dose","Frequency","Prescribed By","Status"], rows));
+      toCSV(["ID","Patient","Patient ID","Drugs","Dose","Frequency","Prescribed By","Status"], rows));
     setToast({ message: "Pharmacy prescriptions exported.", type: "success" });
   }
   function exportNursingCSV() {
@@ -138,7 +146,7 @@ export default function DataExportPage() {
     labCharges.forEach((c) => addVisit(c.patientName, c.patientId, { date: c.completedAt, department: "Lab", description: c.testName, amount: c.amount }));
     nursingCharges.forEach((c) => addVisit(c.patientName, c.patientId ?? "", { date: c.performedAt, department: "Nursing", description: c.description, amount: c.amount }));
     labTests.forEach((r) => addVisit(r.patientName, r.patientId, { date: r.orderedAt, department: "Lab – Test Request", description: r.testName, status: r.status }));
-    prescriptions.forEach((p) => addVisit(p.patientName, p.patientId, { date: p.date ?? p.createdAt ?? "—", department: "Pharmacy", description: `${p.drug} ${p.dose}`, status: p.status }));
+    prescriptions.forEach((p) => addVisit(p.patientName, p.patientId, { date: p.createdAt ?? "—", department: "Pharmacy", description: p.drugs.map((d) => d.name).join(", "), status: p.status }));
     pharmBills.forEach((b) => addVisit(b.patientName, b.patientId, { date: b.dispensedAt, department: "Pharmacy – Bill", description: b.drugs, amount: b.totalCost }));
     wardPatients.forEach((p) => addVisit(p.patientName, p.patientId, { date: p.admittedAt, department: "Nursing Ward", description: `Admitted · ${p.diagnosis}`, status: p.status }));
     consultations.forEach((c) => addVisit(c.patientName, c.patientId, { date: c.date, department: "Doctors", description: c.diagnosis ?? c.chiefComplaint, status: c.status }));
@@ -198,7 +206,7 @@ export default function DataExportPage() {
       onCSV: exportPharmacyCSV,
       onPrint: () => printDepartmentReport("Pharmacy – Prescriptions",
         ["ID","Patient","Drug","Dose","Frequency","Prescribed By","Status"],
-        prescriptions.map((r) => [r.id, r.patientName, r.drug, r.dose, r.frequency, r.prescribedBy, r.status])),
+        prescriptions.map((r) => [r.id, r.patientName, r.drugs.map((d) => d.name).join("; "), r.drugs[0]?.dosage ?? "", r.drugs[0]?.frequency ?? "", r.doctorName, r.status])),
     },
     {
       dept: "Nursing — Patients",

@@ -102,7 +102,7 @@ export default function OnboardingPage() {
       updateStaffSystemAccess(rec.staffId, true);
       updates.status = "IT Done";
     }
-    if (allDone || step === "orientationCompleted") updates.status = "Completed";
+    if (allDone) updates.status = "Completed";
     updateOnboardingStep(rec.id, updates);
     setToast({ message: `${step === "itAccountCreated" ? "IT account created" : step === "credentialsVerified" ? "Credentials verified" : "Orientation completed"} for ${rec.staffName}.`, type: "success" });
     setShowStepModal(null);
