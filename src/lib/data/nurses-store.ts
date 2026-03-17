@@ -288,6 +288,25 @@ export function subscribeNursesStore(fn: () => void) {
   return () => { listeners.delete(fn); };
 }
 
+// ─── Supabase sync ────────────────────────────────────────────────────────────
+
+let _synced = false;
+export async function syncNursesFromSupabase() {
+  if (typeof window === "undefined" || _synced) return;
+  try {
+    const { fetchWardPatients, fetchNursingProcedures, fetchNurseSampleRequests, fetchICUVitals } = await import("@/lib/supabase/db");
+    const [wardPatients, procedures, sampleRequests, icuVitals] = await Promise.all([
+      fetchWardPatients(), fetchNursingProcedures(), fetchNurseSampleRequests(), fetchICUVitals(),
+    ]);
+    if (wardPatients.length || procedures.length || sampleRequests.length || icuVitals.length) {
+      _state = { wardPatients, procedures, sampleRequests, icuVitals };
+      saveState(_state);
+      listeners.forEach((l) => l());
+      _synced = true;
+    }
+  } catch { /* keep localStorage/seed */ }
+}
+
 // ─── Ward Patients ────────────────────────────────────────────────────────────
 
 export function getWardPatients(): WardPatient[] { return [...getState().wardPatients]; }
@@ -296,6 +315,7 @@ export function getPatientsByUnit(unit: NursingUnit): WardPatient[] {
 }
 export function addWardPatient(p: WardPatient) {
   mutate((s) => { s.wardPatients = [p, ...s.wardPatients]; });
+  import("@/lib/supabase/db").then(({ insertWardPatient }) => insertWardPatient(p)).catch(() => {});
 }
 export function updateWardPatient(id: string, updates: Partial<WardPatient>) {
   mutate((s) => { s.wardPatients = s.wardPatients.map((p) => p.id === id ? { ...p, ...updates } : p); });
@@ -306,6 +326,7 @@ export function updateWardPatient(id: string, updates: Partial<WardPatient>) {
 export function getNursingProcedures(): NursingProcedure[] { return [...getState().procedures]; }
 export function addNursingProcedure(p: NursingProcedure) {
   mutate((s) => { s.procedures = [p, ...s.procedures]; });
+  import("@/lib/supabase/db").then(({ insertNursingProcedure }) => insertNursingProcedure(p)).catch(() => {});
 }
 export function updateProcedureBillStatus(id: string, billStatus: NursingProcedure["billStatus"]) {
   mutate((s) => { s.procedures = s.procedures.map((p) => p.id === id ? { ...p, billStatus } : p); });
@@ -326,6 +347,7 @@ export function updateNurseSampleRequest(id: string, updates: Partial<NurseSampl
 export function getICUVitals(): ICUVitalsEntry[] { return [...getState().icuVitals]; }
 export function addICUVitals(entry: ICUVitalsEntry) {
   mutate((s) => { s.icuVitals = [entry, ...s.icuVitals]; });
+  import("@/lib/supabase/db").then(({ insertICUVitals }) => insertICUVitals(entry)).catch(() => {});
 }
 
 // ─── Metrics ─────────────────────────────────────────────────────────────────

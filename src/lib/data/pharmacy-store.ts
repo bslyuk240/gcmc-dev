@@ -259,6 +259,28 @@ export function subscribePharmacyStore(fn: () => void) {
   return () => listeners.delete(fn);
 }
 
+// ─── Supabase sync ────────────────────────────────────────────────────────────
+
+let _synced = false;
+export async function syncPharmacyFromSupabase() {
+  if (typeof window === "undefined" || _synced) return;
+  try {
+    const { fetchPrescriptions, fetchNurseMedRequests, fetchPharmacyRestockRequests, fetchPharmacyBills } = await import("@/lib/supabase/db");
+    const [prescriptions, nurseRequests, restockRequests, bills] = await Promise.all([
+      fetchPrescriptions(),
+      fetchNurseMedRequests(),
+      fetchPharmacyRestockRequests(),
+      fetchPharmacyBills(),
+    ]);
+    if (prescriptions.length || nurseRequests.length || restockRequests.length || bills.length) {
+      _state = { prescriptions, nurseRequests, restockRequests, bills };
+      saveState(_state);
+      listeners.forEach((l) => l());
+      _synced = true;
+    }
+  } catch { /* keep localStorage/seed */ }
+}
+
 // ─── Prescriptions ────────────────────────────────────────────────────────────
 
 export function getPrescriptions(): SharedPrescription[] {
@@ -266,9 +288,8 @@ export function getPrescriptions(): SharedPrescription[] {
 }
 
 export function addPrescription(p: SharedPrescription) {
-  mutate((s) => {
-    s.prescriptions = [p, ...s.prescriptions];
-  });
+  mutate((s) => { s.prescriptions = [p, ...s.prescriptions]; });
+  import("@/lib/supabase/db").then(({ insertPrescription }) => insertPrescription(p)).catch(() => {});
 }
 
 export function updatePrescriptionStatus(
@@ -277,10 +298,9 @@ export function updatePrescriptionStatus(
   extra?: Partial<SharedPrescription>,
 ) {
   mutate((s) => {
-    s.prescriptions = s.prescriptions.map((p) =>
-      p.id === id ? { ...p, status, ...extra } : p,
-    );
+    s.prescriptions = s.prescriptions.map((p) => p.id === id ? { ...p, status, ...extra } : p);
   });
+  import("@/lib/supabase/db").then(({ upsertPrescriptionStatus }) => upsertPrescriptionStatus(id, status, extra)).catch(() => {});
 }
 
 // ─── Nurse Medication Requests ────────────────────────────────────────────────
@@ -290,9 +310,7 @@ export function getNurseRequests(): NurseMedRequest[] {
 }
 
 export function addNurseRequest(r: NurseMedRequest) {
-  mutate((s) => {
-    s.nurseRequests = [r, ...s.nurseRequests];
-  });
+  mutate((s) => { s.nurseRequests = [r, ...s.nurseRequests]; });
 }
 
 export function updateNurseRequestStatus(
@@ -301,9 +319,7 @@ export function updateNurseRequestStatus(
   extra?: Partial<NurseMedRequest>,
 ) {
   mutate((s) => {
-    s.nurseRequests = s.nurseRequests.map((r) =>
-      r.id === id ? { ...r, status, ...extra } : r,
-    );
+    s.nurseRequests = s.nurseRequests.map((r) => r.id === id ? { ...r, status, ...extra } : r);
   });
 }
 
@@ -314,9 +330,7 @@ export function getRestockRequests(): PharmacyRestockRequest[] {
 }
 
 export function addRestockRequest(r: PharmacyRestockRequest) {
-  mutate((s) => {
-    s.restockRequests = [r, ...s.restockRequests];
-  });
+  mutate((s) => { s.restockRequests = [r, ...s.restockRequests]; });
 }
 
 export function updateRestockStatus(
@@ -325,9 +339,7 @@ export function updateRestockStatus(
   extra?: Partial<PharmacyRestockRequest>,
 ) {
   mutate((s) => {
-    s.restockRequests = s.restockRequests.map((r) =>
-      r.id === id ? { ...r, status, ...extra } : r,
-    );
+    s.restockRequests = s.restockRequests.map((r) => r.id === id ? { ...r, status, ...extra } : r);
   });
 }
 
@@ -338,9 +350,7 @@ export function getPharmacyBills(): PharmacyBill[] {
 }
 
 export function addPharmacyBill(bill: PharmacyBill) {
-  mutate((s) => {
-    s.bills = [bill, ...s.bills];
-  });
+  mutate((s) => { s.bills = [bill, ...s.bills]; });
 }
 
 export function updateBillStatus(id: string, billStatus: PharmacyBill["billStatus"]) {

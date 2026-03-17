@@ -3,6 +3,7 @@
 import { useEffect, useReducer } from "react";
 import {
   subscribeAdminStore,
+  syncAdminFromSupabase,
   getApprovals,
   getDeptAlerts,
   getITTickets,
@@ -17,6 +18,7 @@ export function useAdminStore() {
   const [, rerender] = useReducer((x: number) => x + 1, 0);
 
   useEffect(() => {
+    syncAdminFromSupabase();
     const unsub = subscribeAdminStore(rerender);
     return () => { unsub(); };
   }, []);

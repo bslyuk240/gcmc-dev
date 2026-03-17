@@ -5,6 +5,7 @@ import {
   sessionDepartmentCookieName,
   sessionStaffNameCookieName,
   hmsSessionV2CookieName,
+  hmsStaffPortalSessionCookieName,
   sessionCookieOptions,
 } from "@/lib/auth/constants";
 import {
@@ -35,7 +36,7 @@ export type RoleKey =
   | "viewer";
 
 /**
- * Session payload stored in `hms-session-v2` cookie and forwarded as
+ * Session payload stored in HMS session cookies and forwarded as
  * request headers by middleware so Server Components can read it cheaply.
  */
 export type HMSSession = {
@@ -65,13 +66,10 @@ export function deserialiseSession(raw: string): HMSSession | null {
   }
 }
 
-// ─── Server-side session helpers (Server Components + Server Actions) ────────
+// ─── Management Portal session (/app/*) ──────────────────────────────────────
 
 /**
- * Read the production HMSSession from the v2 cookie.
- * Returns null when:
- *   - Supabase is not yet wired (cookie absent)
- *   - Cookie is malformed
+ * Read the management portal HMSSession from the hms-session-v2 cookie.
  */
 export async function getServerSession(): Promise<HMSSession | null> {
   const store = await cookies();
@@ -81,7 +79,7 @@ export async function getServerSession(): Promise<HMSSession | null> {
 }
 
 /**
- * Write the HMSSession cookie after a successful Supabase login.
+ * Write the management portal session cookie after a successful login.
  */
 export async function writeSessionCookie(session: HMSSession): Promise<void> {
   const store = await cookies();
@@ -92,9 +90,58 @@ export async function writeSessionCookie(session: HMSSession): Promise<void> {
 }
 
 /**
- * Clear all session cookies (v1 legacy + v2) on logout.
+ * Require a management portal session. Redirects to /login if absent.
  */
-export async function clearSessionCookies(): Promise<void> {
+export async function requireSession(): Promise<HMSSession> {
+  const session = await getServerSession();
+  if (!session) {
+    redirect("/login");
+  }
+  return session;
+}
+
+// ─── Staff Portal session (/staff/*) ─────────────────────────────────────────
+
+/**
+ * Read the staff portal HMSSession from the hms-staff-session cookie.
+ * Kept separate from management portal so the two portals require
+ * independent logins on the same device.
+ */
+export async function getStaffPortalSession(): Promise<HMSSession | null> {
+  const store = await cookies();
+  const raw = store.get(hmsStaffPortalSessionCookieName)?.value;
+  if (!raw) return null;
+  return deserialiseSession(raw);
+}
+
+/**
+ * Write the staff portal session cookie after a successful staff portal login.
+ */
+export async function writeStaffPortalSessionCookie(session: HMSSession): Promise<void> {
+  const store = await cookies();
+  store.set(hmsStaffPortalSessionCookieName, serialiseSession(session), {
+    ...sessionCookieOptions,
+    secure: process.env.NODE_ENV === "production",
+  });
+}
+
+/**
+ * Require a staff portal session. Redirects to /staff/login if absent.
+ */
+export async function requireStaffPortalSession(): Promise<HMSSession> {
+  const session = await getStaffPortalSession();
+  if (!session) {
+    redirect("/staff/login");
+  }
+  return session;
+}
+
+// ─── Shared cookie clearing ───────────────────────────────────────────────────
+
+/**
+ * Clear management portal session cookies (v2 + legacy).
+ */
+export async function clearManagementSessionCookies(): Promise<void> {
   const store = await cookies();
   store.delete(hmsSessionV2CookieName);
   store.delete(sessionCookieName);
@@ -103,15 +150,20 @@ export async function clearSessionCookies(): Promise<void> {
 }
 
 /**
- * Require an authenticated session in a Server Component / Server Action.
- * Redirects to /login if not authenticated.
+ * Clear staff portal session cookie.
  */
-export async function requireSession(): Promise<HMSSession> {
-  const session = await getServerSession();
-  if (!session) {
-    redirect("/login");
-  }
-  return session;
+export async function clearStaffPortalSessionCookies(): Promise<void> {
+  const store = await cookies();
+  store.delete(hmsStaffPortalSessionCookieName);
+}
+
+/**
+ * Clear ALL session cookies (both portals + legacy).
+ * Used when performing a full sign-out from Supabase.
+ */
+export async function clearSessionCookies(): Promise<void> {
+  await clearManagementSessionCookies();
+  await clearStaffPortalSessionCookies();
 }
 
 // ─── Legacy helpers (kept for backward compatibility) ────────────────────────
@@ -142,13 +194,12 @@ export function getDepartmentHomePath(department: DepartmentKey) {
 
 /**
  * Legacy getCurrentSession — reads from old mock cookies.
- * Used by existing components until they migrate to getServerSession().
- * Falls back gracefully: checks v2 cookie first, then legacy cookies.
+ * Falls back gracefully: checks mgmt v2 cookie first, then legacy cookies.
  */
 export async function getCurrentSession() {
   const store = await cookies();
 
-  // Try new v2 session first
+  // Try management portal v2 session first
   const v2Raw = store.get(hmsSessionV2CookieName)?.value;
   if (v2Raw) {
     const session = deserialiseSession(v2Raw);

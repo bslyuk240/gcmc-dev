@@ -395,11 +395,32 @@ export function subscribeAccountsStore(fn: () => void) {
   return () => { listeners.delete(fn); };
 }
 
+// ─── Supabase sync ────────────────────────────────────────────────────────────
+
+let _synced = false;
+export async function syncAccountsFromSupabase() {
+  if (typeof window === "undefined" || _synced) return;
+  try {
+    const { fetchFrontDeskCharges, fetchConsultationFees, fetchSupplierPayments, fetchPayrollBatches, fetchKioskSales, fetchLabCharges, fetchNursingCharges } = await import("@/lib/supabase/db");
+    const [frontDeskCharges, consultationFees, supplierPayments, payrollBatches, kioskSales, labCharges, nursingCharges] = await Promise.all([
+      fetchFrontDeskCharges(), fetchConsultationFees(), fetchSupplierPayments(),
+      fetchPayrollBatches(), fetchKioskSales(), fetchLabCharges(), fetchNursingCharges(),
+    ]);
+    if (frontDeskCharges.length || consultationFees.length || supplierPayments.length) {
+      _state = { frontDeskCharges, consultationFees, supplierPayments, payrollBatches, kioskSales, labCharges, nursingCharges };
+      saveState(_state);
+      listeners.forEach((l) => l());
+      _synced = true;
+    }
+  } catch { /* keep localStorage/seed */ }
+}
+
 // ─── Front Desk Charges ───────────────────────────────────────────────────────
 
 export function getFrontDeskCharges(): FrontDeskCharge[] { return [...getState().frontDeskCharges]; }
 export function addFrontDeskCharge(c: FrontDeskCharge) {
   mutate((s) => { s.frontDeskCharges = [c, ...s.frontDeskCharges]; });
+  import("@/lib/supabase/db").then(({ insertFrontDeskCharge }) => insertFrontDeskCharge(c)).catch(() => {});
 }
 export function updateFrontDeskChargeStatus(id: string, status: ChargeStatus) {
   mutate((s) => { s.frontDeskCharges = s.frontDeskCharges.map((c) => c.id === id ? { ...c, status } : c); });

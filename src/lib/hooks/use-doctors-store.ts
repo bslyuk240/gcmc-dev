@@ -3,6 +3,7 @@
 import { useEffect, useReducer } from "react";
 import {
   subscribeDoctorsStore,
+  syncDoctorsFromSupabase,
   getConsultations,
   getDoctors,
   getAdmissionOrders,
@@ -13,6 +14,7 @@ export function useDoctorsStore() {
   const [, rerender] = useReducer((x: number) => x + 1, 0);
 
   useEffect(() => {
+    syncDoctorsFromSupabase();
     const unsub = subscribeDoctorsStore(rerender);
     return () => { unsub(); };
   }, []);

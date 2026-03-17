@@ -3,6 +3,7 @@
 import { useEffect, useReducer } from "react";
 import {
   subscribeHRStore,
+  syncHRFromSupabase,
   getStaffMembers,
   getLeaveRequests,
   getOnboarding,
@@ -19,6 +20,7 @@ export function useHRStore() {
   const [, rerender] = useReducer((x: number) => x + 1, 0);
 
   useEffect(() => {
+    syncHRFromSupabase();
     const unsub = subscribeHRStore(rerender);
     return () => { unsub(); };
   }, []);

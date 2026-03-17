@@ -3,6 +3,7 @@
 import { useEffect, useReducer } from "react";
 import {
   subscribeLabStore,
+  syncLabFromSupabase,
   getLabTests,
   getTestCatalog,
   getLabMetrics,
@@ -12,6 +13,7 @@ export function useLabStore() {
   const [, rerender] = useReducer((x: number) => x + 1, 0);
 
   useEffect(() => {
+    syncLabFromSupabase();
     const unsub = subscribeLabStore(rerender);
     return () => { unsub(); };
   }, []);

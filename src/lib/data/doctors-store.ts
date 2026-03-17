@@ -166,6 +166,27 @@ export function subscribeDoctorsStore(fn: () => void) {
   return () => { listeners.delete(fn); };
 }
 
+// ─── Supabase sync ────────────────────────────────────────────────────────────
+
+let _synced = false;
+export async function syncDoctorsFromSupabase() {
+  if (typeof window === "undefined" || _synced) return;
+  try {
+    const { fetchDoctors, fetchConsultations, fetchAdmissionOrders } = await import("@/lib/supabase/db");
+    const [doctors, consultations, admissionOrders] = await Promise.all([
+      fetchDoctors(),
+      fetchConsultations(),
+      fetchAdmissionOrders(),
+    ]);
+    if (doctors.length || consultations.length || admissionOrders.length) {
+      _state = { doctors, consultations, admissionOrders };
+      saveState(_state);
+      listeners.forEach((l) => l());
+      _synced = true;
+    }
+  } catch { /* Supabase unavailable — keep localStorage/seed data */ }
+}
+
 // ─── Doctors ──────────────────────────────────────────────────────────────────
 
 export function getDoctors(): DoctorProfile[] { return [...getState().doctors]; }
@@ -175,11 +196,13 @@ export function getDoctors(): DoctorProfile[] { return [...getState().doctors]; 
 export function getConsultations(): ConsultationRecord[] { return [...getState().consultations]; }
 export function addConsultation(c: ConsultationRecord) {
   mutate((s) => { s.consultations = [c, ...s.consultations]; });
+  import("@/lib/supabase/db").then(({ insertConsultation }) => insertConsultation(c)).catch(() => {});
 }
 export function updateConsultation(id: string, updates: Partial<ConsultationRecord>) {
   mutate((s) => {
     s.consultations = s.consultations.map((c) => c.id === id ? { ...c, ...updates } : c);
   });
+  import("@/lib/supabase/db").then(({ upsertConsultation }) => upsertConsultation(id, updates)).catch(() => {});
 }
 
 // ─── Admissions ───────────────────────────────────────────────────────────────
@@ -187,6 +210,7 @@ export function updateConsultation(id: string, updates: Partial<ConsultationReco
 export function getAdmissionOrders(): AdmissionOrder[] { return [...getState().admissionOrders]; }
 export function addAdmissionOrder(a: AdmissionOrder) {
   mutate((s) => { s.admissionOrders = [a, ...s.admissionOrders]; });
+  import("@/lib/supabase/db").then(({ insertAdmissionOrder }) => insertAdmissionOrder(a)).catch(() => {});
 }
 
 // ─── Metrics ──────────────────────────────────────────────────────────────────

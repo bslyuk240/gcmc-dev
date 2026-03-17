@@ -244,6 +244,26 @@ export function subscribeAdminStore(fn: () => void) {
   return () => { listeners.delete(fn); };
 }
 
+// ─── Supabase sync ────────────────────────────────────────────────────────────
+
+let _synced = false;
+export async function syncAdminFromSupabase() {
+  if (typeof window === "undefined" || _synced) return;
+  try {
+    const { fetchAdminApprovals, fetchDeptAlerts, fetchITTickets, fetchStoreItems, fetchStorePOs } = await import("@/lib/supabase/db");
+    const [approvals, alerts, itTickets, storeItems, storePOs] = await Promise.all([
+      fetchAdminApprovals(), fetchDeptAlerts(), fetchITTickets(), fetchStoreItems(), fetchStorePOs(),
+    ]);
+    if (approvals.length || alerts.length || itTickets.length || storeItems.length) {
+      const current = getState();
+      _state = { ...current, approvals, alerts, itTickets, storeItems, storePOs };
+      saveState(_state);
+      listeners.forEach((l) => l());
+      _synced = true;
+    }
+  } catch { /* keep localStorage/seed */ }
+}
+
 // ─── Approvals ────────────────────────────────────────────────────────────────
 
 export function getApprovals(): AdminApproval[] { return [...getState().approvals]; }

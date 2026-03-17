@@ -7,6 +7,7 @@ import {
   markRead,
   markAllReadForDept,
   subscribeNotificationStore,
+  syncNotificationsFromSupabase,
   type AppNotification,
 } from "@/lib/data/notification-store";
 
@@ -22,6 +23,7 @@ export function useNotificationStore(department: string) {
   });
 
   useEffect(() => {
+    syncNotificationsFromSupabase();
     setNotifications(getNotificationsForDept(department));
     setUnreadCount(getUnreadCountForDept(department));
     return subscribeNotificationStore(() => {

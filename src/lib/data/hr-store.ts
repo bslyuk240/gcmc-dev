@@ -324,6 +324,24 @@ export function subscribeHRStore(fn: () => void) {
   return () => { listeners.delete(fn); };
 }
 
+// ─── Supabase sync ────────────────────────────────────────────────────────────
+
+let _synced = false;
+export async function syncHRFromSupabase() {
+  if (typeof window === "undefined" || _synced) return;
+  try {
+    const { fetchStaffMembers, fetchLeaveRequests } = await import("@/lib/supabase/db");
+    const [staff, leaveRequests] = await Promise.all([fetchStaffMembers(), fetchLeaveRequests()]);
+    if (staff.length || leaveRequests.length) {
+      const current = getState();
+      _state = { ...current, staff, leaveRequests };
+      saveState(_state);
+      listeners.forEach((l) => l());
+      _synced = true;
+    }
+  } catch { /* keep localStorage/seed */ }
+}
+
 // ─── Staff ────────────────────────────────────────────────────────────────────
 
 export function getStaffMembers(): StaffMember[] { return [...getState().staff]; }
@@ -332,6 +350,7 @@ export function getStaffByDepartment(dept: StaffDepartment): StaffMember[] {
 }
 export function addStaffMember(s: StaffMember) {
   mutate((state) => { state.staff = [s, ...state.staff]; });
+  import("@/lib/supabase/db").then(({ insertStaffMember }) => insertStaffMember(s)).catch(() => {});
 }
 export function updateStaffStatus(id: string, status: StaffStatus, notes?: string) {
   mutate((state) => {

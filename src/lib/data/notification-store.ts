@@ -313,6 +313,24 @@ export function subscribeNotificationStore(fn: () => void) {
   return () => { storeListeners.delete(fn); };
 }
 
+// ─── Supabase sync ────────────────────────────────────────────────────────────
+
+let _synced = false;
+export async function syncNotificationsFromSupabase() {
+  if (typeof window === "undefined" || _synced) return;
+  try {
+    const { fetchNotifications } = await import("@/lib/supabase/db");
+    const notifications = await fetchNotifications();
+    if (notifications.length) {
+      const current = getState();
+      _state = { ...current, notifications };
+      saveState(_state);
+      storeListeners.forEach((l) => l());
+      _synced = true;
+    }
+  } catch { /* keep localStorage/seed */ }
+}
+
 // ─── Toast listeners ─────────────────────────────────────────────────────────
 
 type ToastListener = (notif: AppNotification) => void;

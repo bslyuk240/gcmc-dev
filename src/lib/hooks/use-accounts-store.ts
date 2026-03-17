@@ -3,6 +3,7 @@
 import { useEffect, useReducer } from "react";
 import {
   subscribeAccountsStore,
+  syncAccountsFromSupabase,
   getFrontDeskCharges,
   getConsultationFees,
   getSupplierPayments,
@@ -17,6 +18,7 @@ export function useAccountsStore() {
   const [, rerender] = useReducer((x: number) => x + 1, 0);
 
   useEffect(() => {
+    syncAccountsFromSupabase();
     const unsub = subscribeAccountsStore(rerender);
     return () => { unsub(); };
   }, []);

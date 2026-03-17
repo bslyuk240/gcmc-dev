@@ -3,8 +3,13 @@ export const sessionCookieName = "hms-session";
 export const sessionDepartmentCookieName = "hms-department";
 export const sessionStaffNameCookieName = "hms-staff-name";
 
-// Production session cookie — carries serialised HMSSession JSON (set after real Supabase auth)
+// Management/Work portal session cookie (/app/* routes)
 export const hmsSessionV2CookieName = "hms-session-v2";
+
+// Staff Self-Service portal session cookie (/staff/* routes)
+// Kept SEPARATE so logging into the management portal does not automatically
+// grant access to the staff portal — each portal requires its own login.
+export const hmsStaffPortalSessionCookieName = "hms-staff-session";
 
 // Cookie options shared across all session cookies
 export const sessionCookieOptions = {

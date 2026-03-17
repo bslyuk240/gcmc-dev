@@ -3,6 +3,7 @@
 import { useEffect, useReducer } from "react";
 import {
   subscribeNursesStore,
+  syncNursesFromSupabase,
   getWardPatients,
   getNursingProcedures,
   getNurseSampleRequests,
@@ -16,6 +17,7 @@ export function useNursesStore() {
   const [, rerender] = useReducer((x: number) => x + 1, 0);
 
   useEffect(() => {
+    syncNursesFromSupabase();
     const unsub = subscribeNursesStore(rerender);
     return () => { unsub(); };
   }, []);

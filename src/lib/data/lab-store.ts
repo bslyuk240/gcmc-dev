@@ -257,18 +257,37 @@ export function subscribeLabStore(fn: () => void) {
   return () => { listeners.delete(fn); };
 }
 
+// ─── Supabase sync ────────────────────────────────────────────────────────────
+
+let _synced = false;
+export async function syncLabFromSupabase() {
+  if (typeof window === "undefined" || _synced) return;
+  try {
+    const { fetchLabTests, fetchTestCatalog } = await import("@/lib/supabase/db");
+    const [tests, catalog] = await Promise.all([fetchLabTests(), fetchTestCatalog()]);
+    if (tests.length || catalog.length) {
+      _state = { tests, catalog: catalog.length ? catalog : getState().catalog };
+      saveState(_state);
+      listeners.forEach((l) => l());
+      _synced = true;
+    }
+  } catch { /* keep localStorage/seed */ }
+}
+
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
 export function getLabTests(): LabTest[] { return [...getState().tests]; }
 
 export function addLabTest(t: LabTest) {
   mutate((s) => { s.tests = [t, ...s.tests]; });
+  import("@/lib/supabase/db").then(({ insertLabTest }) => insertLabTest(t)).catch(() => {});
 }
 
 export function updateLabTest(id: string, updates: Partial<LabTest>) {
   mutate((s) => {
     s.tests = s.tests.map((t) => t.id === id ? { ...t, ...updates } : t);
   });
+  import("@/lib/supabase/db").then(({ upsertLabTestResult }) => upsertLabTestResult(id, updates)).catch(() => {});
 }
 
 // ─── Catalog ──────────────────────────────────────────────────────────────────
