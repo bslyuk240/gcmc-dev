@@ -59,7 +59,7 @@ function buildPatientHTML(name: string, id: string, visits: Record<string, unkno
 // ─── Component ────────────────────────────────────────────────────────────────
 export default function DataExportPage() {
   const { consultationFees, labCharges, nursingCharges } = useAccountsStore();
-  const { testRequests, results } = useLabStore();
+  const { tests: labTests } = useLabStore();
   const { prescriptions, bills: pharmBills } = usePharmacyStore();
   const { wardPatients, triageQueue } = useNursesStore();
   const { consultations, labOrders } = useDoctorsStore();
@@ -69,15 +69,15 @@ export default function DataExportPage() {
 
   // ── Department reports ──────────────────────────────────────────────────────
   function exportAccountsCSV() {
-    const rows = consultationFees.map((r) => [r.id, r.patientName, r.patientId, r.type, r.doctor, r.visitDate, r.fee, r.status]);
+    const rows = consultationFees.map((r) => [r.id, r.patientName, r.patientId, r.consultationType, r.doctorName, r.consultedAt, r.fee, r.status]);
     downloadCSV(`accounts_consultation_${timestamp()}.csv`,
       toCSV(["ID","Patient","Patient ID","Type","Doctor","Date","Fee","Status"], rows));
     setToast({ message: "Accounts consultation fees exported.", type: "success" });
   }
   function exportLabCSV() {
-    const rows = testRequests.map((r) => [r.id, r.patientName, r.patientId, r.tests?.join("; ") ?? r.test, r.doctor, r.requestedAt, r.status]);
+    const rows = labTests.map((r) => [r.id, r.patientName, r.patientId, r.testName, r.orderedBy, r.orderedAt, r.status]);
     downloadCSV(`lab_test_requests_${timestamp()}.csv`,
-      toCSV(["ID","Patient","Patient ID","Tests","Doctor","Requested At","Status"], rows));
+      toCSV(["ID","Patient","Patient ID","Test","Ordered By","Ordered At","Status"], rows));
     setToast({ message: "Lab test requests exported.", type: "success" });
   }
   function exportPharmacyCSV() {
@@ -133,10 +133,10 @@ export default function DataExportPage() {
       patientMap.get(key)!.visits.push(visit);
     };
 
-    consultationFees.forEach((c) => addVisit(c.patientName, c.patientId, { date: c.visitDate, department: "Accounts – Consultation", description: `${c.type} with ${c.doctor}`, amount: c.fee }));
+    consultationFees.forEach((c) => addVisit(c.patientName, c.patientId, { date: c.consultedAt, department: "Accounts – Consultation", description: `${c.consultationType} with ${c.doctorName}`, amount: c.fee }));
     labCharges.forEach((c) => addVisit(c.patientName, c.patientId, { date: c.completedAt, department: "Lab", description: c.testName, amount: c.amount }));
     nursingCharges.forEach((c) => addVisit(c.patientName, c.patientId ?? "", { date: c.performedAt, department: "Nursing", description: c.description, amount: c.amount }));
-    testRequests.forEach((r) => addVisit(r.patientName, r.patientId, { date: r.requestedAt, department: "Lab – Test Request", description: Array.isArray(r.tests) ? r.tests.join(", ") : r.test, status: r.status }));
+    labTests.forEach((r) => addVisit(r.patientName, r.patientId, { date: r.orderedAt, department: "Lab – Test Request", description: r.testName, status: r.status }));
     prescriptions.forEach((p) => addVisit(p.patientName, p.patientId, { date: p.date ?? p.createdAt ?? "—", department: "Pharmacy", description: `${p.drug} ${p.dose}`, status: p.status }));
     pharmBills.forEach((b) => addVisit(b.patientName, b.patientId, { date: b.dispensedAt, department: "Pharmacy – Bill", description: b.drugs, amount: b.totalCost }));
     wardPatients.forEach((p) => addVisit(p.name, p.id, { date: p.admittedDate, department: "Nursing Ward", description: `Admitted · ${p.diagnosis}`, status: p.status }));
