@@ -61,8 +61,9 @@ export default function DataExportPage() {
   const { consultationFees, labCharges, nursingCharges } = useAccountsStore();
   const { tests: labTests } = useLabStore();
   const { prescriptions, bills: pharmBills } = usePharmacyStore();
-  const { wardPatients, triageQueue } = useNursesStore();
-  const { consultations, labOrders } = useDoctorsStore();
+  const { allPatients: wardPatients } = useNursesStore();
+  const triageQueue = wardPatients.filter((p) => p.unit === "Triage");
+  const { consultations } = useDoctorsStore();
 
   const [toast, setToast] = useState<ToastData | null>(null);
   const [exporting, setExporting] = useState<string | null>(null);
@@ -87,14 +88,14 @@ export default function DataExportPage() {
     setToast({ message: "Pharmacy prescriptions exported.", type: "success" });
   }
   function exportNursingCSV() {
-    const rows = [...wardPatients.map((p) => [p.id, p.name, "Ward", `Bed ${p.bed}`, p.diagnosis, p.status, p.admittedDate]),
-                  ...triageQueue.map((t) => [t.id, t.name, "Triage", "—", t.complaint, t.priority, t.checkIn])];
+    const rows = [...wardPatients.map((p) => [p.id, p.patientName, p.unit, `Bed ${p.bed}`, p.diagnosis, p.status, p.admittedAt]),
+                  ...triageQueue.map((t) => [t.id, t.patientName, "Triage", "—", t.diagnosis, t.priority, t.admittedAt])];
     downloadCSV(`nursing_patients_${timestamp()}.csv`,
       toCSV(["ID","Name","Unit","Bed/Location","Diagnosis/Complaint","Status/Priority","Date"], rows));
     setToast({ message: "Nursing patient data exported.", type: "success" });
   }
   function exportConsultationsCSV() {
-    const rows = consultations.map((c) => [c.id, c.patientName, c.patientId, c.doctor, c.diagnosis, c.date, c.status]);
+    const rows = consultations.map((c) => [c.id, c.patientName, c.patientId, c.doctorName, c.diagnosis ?? c.chiefComplaint, c.date, c.status]);
     downloadCSV(`doctors_consultations_${timestamp()}.csv`,
       toCSV(["ID","Patient","Patient ID","Doctor","Diagnosis","Date","Status"], rows));
     setToast({ message: "Consultations exported.", type: "success" });
@@ -139,8 +140,8 @@ export default function DataExportPage() {
     labTests.forEach((r) => addVisit(r.patientName, r.patientId, { date: r.orderedAt, department: "Lab – Test Request", description: r.testName, status: r.status }));
     prescriptions.forEach((p) => addVisit(p.patientName, p.patientId, { date: p.date ?? p.createdAt ?? "—", department: "Pharmacy", description: `${p.drug} ${p.dose}`, status: p.status }));
     pharmBills.forEach((b) => addVisit(b.patientName, b.patientId, { date: b.dispensedAt, department: "Pharmacy – Bill", description: b.drugs, amount: b.totalCost }));
-    wardPatients.forEach((p) => addVisit(p.name, p.id, { date: p.admittedDate, department: "Nursing Ward", description: `Admitted · ${p.diagnosis}`, status: p.status }));
-    consultations.forEach((c) => addVisit(c.patientName, c.patientId, { date: c.date, department: "Doctors", description: c.diagnosis, status: c.status }));
+    wardPatients.forEach((p) => addVisit(p.patientName, p.patientId, { date: p.admittedAt, department: "Nursing Ward", description: `Admitted · ${p.diagnosis}`, status: p.status }));
+    consultations.forEach((c) => addVisit(c.patientName, c.patientId, { date: c.date, department: "Doctors", description: c.diagnosis ?? c.chiefComplaint, status: c.status }));
 
     let count = 0;
     patientMap.forEach(({ name, id, visits }) => {
@@ -177,17 +178,17 @@ export default function DataExportPage() {
       onCSV: exportAccountsCSV,
       onPrint: () => printDepartmentReport("Accounts – Consultation Fees",
         ["ID","Patient","Type","Doctor","Date","Fee","Status"],
-        consultationFees.map((r) => [r.id, r.patientName, r.type, r.doctor, r.visitDate, `₦${r.fee.toLocaleString()}`, r.status])),
+        consultationFees.map((r) => [r.id, r.patientName, r.consultationType, r.doctorName, r.consultedAt, `₦${r.fee.toLocaleString()}`, r.status])),
     },
     {
       dept: "Lab — Test Requests",
       color: "text-violet-700",
       bg: "bg-violet-50",
-      count: testRequests.length,
+      count: labTests.length,
       onCSV: exportLabCSV,
       onPrint: () => printDepartmentReport("Lab – Test Requests",
-        ["ID","Patient","Tests","Doctor","Requested At","Status"],
-        testRequests.map((r) => [r.id, r.patientName, Array.isArray(r.tests) ? r.tests.join(", ") : r.test, r.doctor, r.requestedAt, r.status])),
+        ["ID","Patient","Test","Ordered By","Ordered At","Status"],
+        labTests.map((r) => [r.id, r.patientName, r.testName, r.orderedBy, r.orderedAt, r.status])),
     },
     {
       dept: "Pharmacy — Prescriptions",
@@ -208,8 +209,8 @@ export default function DataExportPage() {
       onPrint: () => printDepartmentReport("Nursing – Patients",
         ["ID","Name","Unit","Bed/Location","Diagnosis / Complaint","Status"],
         [
-          ...wardPatients.map((p) => [p.id, p.name, "Ward", `Bed ${(p as Record<string, unknown>).bed ?? "—"}`, (p as Record<string, unknown>).diagnosis ?? "—", p.status]),
-          ...triageQueue.map((t) => [t.id, t.name, "Triage", "—", (t as Record<string, unknown>).complaint ?? "—", (t as Record<string, unknown>).priority ?? "—"]),
+          ...wardPatients.map((p) => [p.id, p.patientName, p.unit, `Bed ${p.bed}`, p.diagnosis, p.status]),
+          ...triageQueue.map((t) => [t.id, t.patientName, "Triage", "—", t.diagnosis, t.priority]),
         ]),
     },
     {
@@ -220,22 +221,26 @@ export default function DataExportPage() {
       onCSV: exportConsultationsCSV,
       onPrint: () => printDepartmentReport("Doctors – Consultations",
         ["ID","Patient","Doctor","Diagnosis","Date","Status"],
-        consultations.map((c) => [c.id, c.patientName, c.doctor, c.diagnosis, c.date, c.status])),
+        consultations.map((c) => [c.id, c.patientName, c.doctorName, c.diagnosis ?? c.chiefComplaint, c.date, c.status])),
     },
     {
       dept: "Lab — Results",
       color: "text-pink-700",
       bg: "bg-pink-50",
-      count: results.length,
+      count: labTests.filter((r) => r.status === "Completed").length,
       onCSV: () => {
+        const completed = labTests.filter((r) => r.status === "Completed");
         downloadCSV(`lab_results_${timestamp()}.csv`,
-          toCSV(["ID","Patient","Test","Result","Reference","Interpretation","Date"],
-            results.map((r) => [r.id, r.patientName, r.testName, r.result, r.referenceRange, r.interpretation, r.completedAt])));
+          toCSV(["ID","Patient","Test","Result","Reference","Interpretation","Completed At"],
+            completed.map((r) => [r.id, r.patientName, r.testName, r.resultValue ?? "—", r.referenceRange ?? "—", r.interpretation ?? "—", r.completedAt ?? "—"])));
         setToast({ message: "Lab results exported.", type: "success" });
       },
-      onPrint: () => printDepartmentReport("Lab – Results",
-        ["ID","Patient","Test","Result","Reference","Status","Date"],
-        results.map((r) => [r.id, r.patientName, r.testName, r.result, r.referenceRange, r.interpretation, r.completedAt])),
+      onPrint: () => {
+        const completed = labTests.filter((r) => r.status === "Completed");
+        printDepartmentReport("Lab – Results",
+          ["ID","Patient","Test","Result","Reference","Interpretation","Date"],
+          completed.map((r) => [r.id, r.patientName, r.testName, r.resultValue ?? "—", r.referenceRange ?? "—", r.interpretation ?? "—", r.completedAt ?? "—"]));
+      },
     },
   ];
 
