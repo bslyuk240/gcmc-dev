@@ -1,0 +1,37 @@
+"use client";
+
+import { useEffect, useReducer } from "react";
+import {
+  subscribeHRStore,
+  getStaffMembers,
+  getLeaveRequests,
+  getOnboarding,
+  getOffboarding,
+  getPayrollPreps,
+  getHRMetrics,
+  getStaffByDepartment,
+  getDepartmentHeads,
+  getDepartmentHead,
+  type StaffDepartment,
+} from "@/lib/data/hr-store";
+
+export function useHRStore() {
+  const [, rerender] = useReducer((x: number) => x + 1, 0);
+
+  useEffect(() => {
+    const unsub = subscribeHRStore(rerender);
+    return () => { unsub(); };
+  }, []);
+
+  return {
+    staff: getStaffMembers(),
+    leaveRequests: getLeaveRequests(),
+    onboarding: getOnboarding(),
+    offboarding: getOffboarding(),
+    payrollPreps: getPayrollPreps(),
+    metrics: getHRMetrics(),
+    departmentHeads: getDepartmentHeads(),
+    getByDept: (dept: StaffDepartment) => getStaffByDepartment(dept),
+    getDeptHead: (dept: StaffDepartment) => getDepartmentHead(dept),
+  };
+}

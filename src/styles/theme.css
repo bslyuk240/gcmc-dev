@@ -1,0 +1,103 @@
+/* Design system: match existing UI screens (global dashboard, front desk, pharmacy, accounts, etc.) */
+:root {
+  --background: #f6f8fb;
+  --foreground: #0f172a;
+  --muted: #f8fafc;
+  --muted-foreground: #64748b;
+  --border: #e2e8f0;
+  --card: #ffffff;
+  --accent: #1e7df0;
+  --accent-soft: #e0efff;
+  --accent-foreground: #1e7df0;
+  --success: #059669;
+  --success-soft: #d1fae5;
+  --warning: #ea580c;
+  --warning-soft: #ffedd5;
+  --destructive: #dc2626;
+  --destructive-soft: #fee2e2;
+  --sidebar-bg: #ffffff;
+  --sidebar-bg-dark: #1e293b;
+  --font-jakarta: "Plus Jakarta Sans", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  --font-plex-mono: "Cascadia Code", "Consolas", monospace;
+  --shadow-card: 0 1px 3px rgba(15, 23, 42, 0.06);
+  --radius-card: 0.5rem;
+  --radius-button: 0.5rem;
+}
+
+[data-department="dashboard"] {
+  --accent: #137fec;
+  --accent-soft: #e0efff;
+  --accent-foreground: #137fec;
+}
+
+[data-department="frontdesk"] {
+  --accent: #0d9488;
+  --accent-soft: #ccfbf1;
+  --accent-foreground: #0f766e;
+}
+
+[data-department="doctors"] {
+  --accent: #0d9488;
+  --accent-soft: #ccfbf1;
+  --accent-foreground: #0f766e;
+}
+
+[data-department="nurses"] {
+  --accent: #0f766e;
+  --accent-soft: #ccfbf1;
+  --accent-foreground: #115e59;
+}
+
+[data-department="pharmacy"] {
+  --accent: #ea580c;
+  --accent-soft: #ffedd5;
+  --accent-foreground: #9a3412;
+}
+
+[data-department="accounts"] {
+  --accent: #059669;
+  --accent-soft: #d1fae5;
+  --accent-foreground: #065f46;
+}
+
+[data-department="store"] {
+  --accent: #0f766e;
+  --accent-soft: #dcfce7;
+  --accent-foreground: #166534;
+}
+
+[data-department="admin"] {
+  --accent: #334155;
+  --accent-soft: #e2e8f0;
+  --accent-foreground: #0f172a;
+}
+
+[data-department="hr"] {
+  --accent: #7c3aed;
+  --accent-soft: #ede9fe;
+  --accent-foreground: #5b21b6;
+}
+
+[data-department="it"] {
+  --accent: #0f172a;
+  --accent-soft: #dbeafe;
+  --accent-foreground: #1e293b;
+}
+
+[data-department="support"] {
+  --accent: #2563eb;
+  --accent-soft: #dbeafe;
+  --accent-foreground: #1d4ed8;
+}
+
+[data-department="profile"] {
+  --accent: #2563eb;
+  --accent-soft: #dbeafe;
+  --accent-foreground: #1d4ed8;
+}
+
+[data-department="notifications"] {
+  --accent: #2563eb;
+  --accent-soft: #dbeafe;
+  --accent-foreground: #1d4ed8;
+}
