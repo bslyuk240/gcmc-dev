@@ -5,12 +5,14 @@
       "name": "Next.js Dev",
       "runtimeExecutable": "C:\\Program Files\\nodejs\\npm.cmd",
       "runtimeArgs": ["run", "dev"],
+      "cwd": "C:\\Users\\user\\hospital-mgt-sys",
       "port": 3000
     },
     {
       "name": "Next.js Production",
       "runtimeExecutable": "C:\\Program Files\\nodejs\\npm.cmd",
       "runtimeArgs": ["run", "start"],
+      "cwd": "C:\\Users\\user\\hospital-mgt-sys",
       "port": 3000
     }
   ]

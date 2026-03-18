@@ -817,6 +817,146 @@ export async function insertLeaveRequest(r: LeaveRequest): Promise<void> {
   });
 }
 
+export async function fetchLeaveRequestsByDept(department: string): Promise<LeaveRequest[]> {
+  const sb = getSupabase();
+  if (!sb) return [];
+  const { data } = await sb
+    .from("leave_requests")
+    .select("*")
+    .eq("department", department)
+    .order("submitted_at", { ascending: false });
+  return (data ?? []).map(mapLeaveRequest);
+}
+
+export async function reviewLeaveRequestByHOD(
+  id: string,
+  status: "Approved" | "Rejected",
+  reviewedBy: string,
+  notes: string,
+): Promise<void> {
+  const sb = getSupabase();
+  if (!sb) return;
+  await sb.from("leave_requests").update({
+    status,
+    reviewed_by: reviewedBy,
+    reviewed_at: new Date().toISOString(),
+    hr_notes: notes,
+  }).eq("id", id);
+}
+
+// ─── Performance Reviews ──────────────────────────────────────────────────────
+
+export type KpiScore = {
+  category: string;
+  rating: number;
+  comment: string;
+};
+
+export type PerformanceReview = {
+  id: string;
+  staffId: string;
+  staffName: string;
+  department: string;
+  reviewerId: string;
+  reviewerName: string;
+  period: string;
+  periodLabel: string;
+  kpiScores: KpiScore[];
+  overallRating: number | null;
+  strengths: string;
+  improvements: string;
+  comments: string;
+  status: "draft" | "submitted" | "acknowledged";
+  submittedAt: string | null;
+  acknowledgedAt: string | null;
+  createdAt: string;
+};
+
+function mapReview(r: Record<string, unknown>): PerformanceReview {
+  return {
+    id: r.id as string,
+    staffId: r.staff_id as string,
+    staffName: r.staff_name as string,
+    department: r.department as string,
+    reviewerId: r.reviewer_id as string,
+    reviewerName: r.reviewer_name as string,
+    period: r.period as string,
+    periodLabel: r.period_label as string,
+    kpiScores: (r.kpi_scores as KpiScore[]) ?? [],
+    overallRating: r.overall_rating as number | null,
+    strengths: (r.strengths as string) ?? "",
+    improvements: (r.improvements as string) ?? "",
+    comments: (r.comments as string) ?? "",
+    status: (r.status as PerformanceReview["status"]) ?? "draft",
+    submittedAt: r.submitted_at as string | null,
+    acknowledgedAt: r.acknowledged_at as string | null,
+    createdAt: r.created_at as string,
+  };
+}
+
+export async function fetchReviewsByDept(department: string): Promise<PerformanceReview[]> {
+  const sb = getSupabase();
+  if (!sb) return [];
+  const { data } = await sb
+    .from("performance_reviews")
+    .select("*")
+    .eq("department", department)
+    .order("created_at", { ascending: false });
+  return (data ?? []).map(mapReview);
+}
+
+export async function fetchReviewsForStaff(staffId: string): Promise<PerformanceReview[]> {
+  const sb = getSupabase();
+  if (!sb) return [];
+  const { data } = await sb
+    .from("performance_reviews")
+    .select("*")
+    .eq("staff_id", staffId)
+    .order("created_at", { ascending: false });
+  return (data ?? []).map(mapReview);
+}
+
+export async function upsertPerformanceReview(
+  review: Omit<PerformanceReview, "id" | "createdAt"> & { id?: string },
+): Promise<PerformanceReview | null> {
+  const sb = getSupabase();
+  if (!sb) return null;
+  const payload: Record<string, unknown> = {
+    staff_id: review.staffId,
+    staff_name: review.staffName,
+    department: review.department,
+    reviewer_id: review.reviewerId,
+    reviewer_name: review.reviewerName,
+    period: review.period,
+    period_label: review.periodLabel,
+    kpi_scores: review.kpiScores,
+    overall_rating: review.overallRating,
+    strengths: review.strengths,
+    improvements: review.improvements,
+    comments: review.comments,
+    status: review.status,
+    submitted_at: review.submittedAt,
+    updated_at: new Date().toISOString(),
+  };
+  if (review.id) payload.id = review.id;
+  const { data, error } = await sb
+    .from("performance_reviews")
+    .upsert(payload)
+    .select("*")
+    .single();
+  if (error || !data) return null;
+  return mapReview(data as Record<string, unknown>);
+}
+
+export async function acknowledgeReview(id: string): Promise<void> {
+  const sb = getSupabase();
+  if (!sb) return;
+  await sb.from("performance_reviews").update({
+    status: "acknowledged",
+    acknowledged_at: new Date().toISOString(),
+  }).eq("id", id);
+}
+
 // ─── Admin / IT / Store ───────────────────────────────────────────────────────
 
 function mapAdminApproval(r: Record<string, unknown>): AdminApproval {
@@ -1342,6 +1482,8 @@ export async function createDeptShift(params: {
   department: string; // DB key e.g. "pharmacy"
   shiftDate: string;
   shiftType: NcShift["shiftType"];
+  customStart?: string; // override default start time e.g. "09:00"
+  customEnd?: string;   // override default end time e.g. "17:00"
 }): Promise<NcShift | null> {
   const sb = getSupabase();
   if (!sb) return null;
@@ -1354,8 +1496,8 @@ export async function createDeptShift(params: {
       unit:        params.department, // for clinical depts, unit mirrors department
       shift_date:  params.shiftDate,
       shift_type:  params.shiftType,
-      shift_start: times.start,
-      shift_end:   times.end,
+      shift_start: params.customStart ?? times.start,
+      shift_end:   params.customEnd   ?? times.end,
       status:      "scheduled",
     })
     .select("*")
@@ -1435,4 +1577,69 @@ export async function setNcUnitHOD(params: {
     assigned_on: new Date().toISOString().slice(0, 10),
     assigned_by: params.assignedBy,
   });
+}
+
+// ─── Shift Presets ────────────────────────────────────────────────────────────
+
+export type ShiftPreset = {
+  id: string;
+  department: string;
+  name: string;
+  startTime: string;
+  endTime: string;
+  shiftType: NcShift["shiftType"];
+  colorKey: string;
+  createdAt: string;
+};
+
+function mapShiftPreset(r: Record<string, unknown>): ShiftPreset {
+  return {
+    id:         r.id as string,
+    department: r.department as string,
+    name:       r.name as string,
+    startTime:  r.start_time as string,
+    endTime:    r.end_time as string,
+    shiftType:  r.shift_type as NcShift["shiftType"],
+    colorKey:   r.color_key as string,
+    createdAt:  r.created_at as string,
+  };
+}
+
+export async function fetchShiftPresets(department: string): Promise<ShiftPreset[]> {
+  const sb = getSupabase();
+  if (!sb) return [];
+  const { data } = await sb
+    .from("shift_presets")
+    .select("*")
+    .eq("department", department)
+    .order("created_at", { ascending: true });
+  return (data ?? []).map(mapShiftPreset);
+}
+
+export async function addShiftPreset(
+  preset: Omit<ShiftPreset, "id" | "createdAt"> & { createdBy?: string },
+): Promise<ShiftPreset | null> {
+  const sb = getSupabase();
+  if (!sb) return null;
+  const { data, error } = await sb
+    .from("shift_presets")
+    .insert({
+      department:  preset.department,
+      name:        preset.name,
+      start_time:  preset.startTime,
+      end_time:    preset.endTime,
+      shift_type:  preset.shiftType,
+      color_key:   preset.colorKey,
+      created_by:  preset.createdBy ?? null,
+    })
+    .select("*")
+    .single();
+  if (error || !data) return null;
+  return mapShiftPreset(data as Record<string, unknown>);
+}
+
+export async function deleteShiftPreset(id: string): Promise<void> {
+  const sb = getSupabase();
+  if (!sb) return;
+  await sb.from("shift_presets").delete().eq("id", id);
 }
