@@ -13,24 +13,57 @@ import {
   addStaffMember, updateStaffSystemAccess,
   type OnboardingRecord, type OffboardingRecord,
 } from "@/lib/data/hr-store";
+import { createStaffAccountAction } from "@/server/actions/hr/create-staff-account";
+import type { DBDepartmentKey } from "@/lib/constants/navigation";
+import type { RoleKey } from "@/lib/auth/session";
 
-const DEPARTMENTS = ["Doctors", "Nurses", "Pharmacy", "Lab", "Front Desk", "Accounts", "Store", "IT", "HR", "Administration"];
+// Display name → DB key
+const DEPT_OPTIONS: { label: string; value: DBDepartmentKey }[] = [
+  { label: "Doctors",      value: "doctors"   },
+  { label: "Nurses",       value: "nurses"    },
+  { label: "Pharmacy",     value: "pharmacy"  },
+  { label: "Lab",          value: "lab"       },
+  { label: "Front Desk",   value: "frontdesk" },
+  { label: "Accounts",     value: "accounts"  },
+  { label: "Store",        value: "store"     },
+  { label: "HR",           value: "hr"        },
+  { label: "IT",           value: "it"        },
+  { label: "Admin",        value: "admin"     },
+];
+
+const ROLE_OPTIONS: { label: string; value: RoleKey }[] = [
+  { label: "Admin",              value: "admin"              },
+  { label: "Head of Department", value: "hod"                },
+  { label: "HR Manager",         value: "hr_manager"         },
+  { label: "HR Staff",           value: "hr_staff"           },
+  { label: "Doctor",             value: "doctor"             },
+  { label: "Nurse",              value: "nurse"              },
+  { label: "Pharmacist",         value: "pharmacist"         },
+  { label: "Pharmacy Assistant", value: "pharmacy_assistant" },
+  { label: "Lab Scientist",      value: "lab_scientist"      },
+  { label: "Accountant",         value: "accountant"         },
+  { label: "Front Desk Staff",   value: "front_desk_staff"   },
+  { label: "Store Keeper",       value: "store_keeper"       },
+  { label: "IT Staff",           value: "it_staff"           },
+  { label: "Viewer",             value: "viewer"             },
+];
+
 const CONTRACT_TYPES = ["Permanent", "Contract", "Locum", "Intern"];
 
 const ONB_STATUS_STYLES: Record<string, string> = {
-  Initiated: "bg-slate-100 text-slate-600",
+  Initiated:    "bg-slate-100 text-slate-600",
   "IT Pending": "bg-sky-50 text-sky-700 font-bold",
-  "IT Done": "bg-violet-50 text-violet-700",
-  Orientation: "bg-amber-50 text-amber-700",
-  Completed: "bg-emerald-50 text-emerald-700",
+  "IT Done":    "bg-violet-50 text-violet-700",
+  Orientation:  "bg-amber-50 text-amber-700",
+  Completed:    "bg-emerald-50 text-emerald-700",
 };
 
 const OFF_STATUS_STYLES: Record<string, string> = {
-  Initiated: "bg-slate-100 text-slate-600",
-  "IT Revoke Pending": "bg-red-50 text-red-700 font-bold",
-  "IT Revoked": "bg-amber-50 text-amber-700",
-  Clearance: "bg-sky-50 text-sky-700",
-  Completed: "bg-emerald-50 text-emerald-700",
+  Initiated:            "bg-slate-100 text-slate-600",
+  "IT Revoke Pending":  "bg-red-50 text-red-700 font-bold",
+  "IT Revoked":         "bg-amber-50 text-amber-700",
+  Clearance:            "bg-sky-50 text-sky-700",
+  Completed:            "bg-emerald-50 text-emerald-700",
 };
 
 export default function OnboardingPage() {
@@ -43,36 +76,72 @@ export default function OnboardingPage() {
   const [toast, setToast] = useState<ToastData | null>(null);
 
   // New hire form
-  const [nhName, setNhName] = useState(""); const [nhDept, setNhDept] = useState("Doctors");
-  const [nhRole, setNhRole] = useState(""); const [nhContract, setNhContract] = useState("Permanent");
-  const [nhEmail, setNhEmail] = useState(""); const [nhPhone, setNhPhone] = useState("");
-  const [nhSalary, setNhSalary] = useState(""); const [nhStart, setNhStart] = useState("Mar 15, 2026");
+  const [nhName,     setNhName]     = useState("");
+  const [nhDept,     setNhDept]     = useState<DBDepartmentKey>("doctors");
+  const [nhRole,     setNhRole]     = useState<RoleKey>("doctor");
+  const [nhContract, setNhContract] = useState("Permanent");
+  const [nhEmail,    setNhEmail]    = useState("");
+  const [nhPhone,    setNhPhone]    = useState("");
+  const [nhSalary,   setNhSalary]   = useState("");
+  const [nhStart,    setNhStart]    = useState("");
+
+  // Credentials modal
+  const [createdCreds, setCreatedCreds] = useState<{ email: string; password: string } | null>(null);
+  const [creating, setCreating] = useState(false);
 
   // Exit form
-  const [exitStaffId, setExitStaffId] = useState(""); const [exitReason, setExitReason] = useState<"Resignation" | "Retirement" | "Termination" | "Contract End">("Resignation");
-  const [exitDate, setExitDate] = useState("Mar 31, 2026");
+  const [exitStaffId, setExitStaffId] = useState("");
+  const [exitReason,  setExitReason]  = useState<"Resignation" | "Retirement" | "Termination" | "Contract End">("Resignation");
+  const [exitDate,    setExitDate]    = useState("");
 
-  function handleNewHire() {
-    if (!nhName || !nhRole) return;
-    const id = `EMP-${Date.now().toString().slice(-5)}`;
-    const itReqId = `IT-ONB-${Date.now().toString().slice(-4)}`;
-    addStaffMember({
-      id, name: nhName, department: nhDept as any, role: nhRole,
-      contractType: nhContract as any, email: nhEmail || `${nhName.toLowerCase().replace(/ /g, ".")}@gcmc.local`,
-      phone: nhPhone, joinDate: nhStart, status: "Probation",
-      salary: parseInt(nhSalary || "3000"), systemAccessCreated: false,
+  async function handleNewHire() {
+    if (!nhName || !nhEmail) return;
+    setCreating(true);
+
+    // 1. Create Supabase Auth user + staff_profiles row
+    const result = await createStaffAccountAction({
+      full_name:  nhName,
+      email:      nhEmail,
+      department: nhDept,
+      role:       nhRole,
     });
+
+    if (!result.success) {
+      setToast({ message: `Account creation failed: ${result.error}`, type: "error" });
+      setCreating(false);
+      return;
+    }
+
+    // 2. Add to local HR workflow store
+    const id       = `EMP-${Date.now().toString().slice(-5)}`;
+    const itReqId  = `IT-ONB-${Date.now().toString().slice(-4)}`;
+    const deptLabel = DEPT_OPTIONS.find((d) => d.value === nhDept)?.label ?? nhDept;
+    const roleLabel = ROLE_OPTIONS.find((r) => r.value === nhRole)?.label ?? nhRole;
+
+    addStaffMember({
+      id, name: nhName, department: deptLabel as any, role: roleLabel,
+      contractType: nhContract as any, email: nhEmail,
+      phone: nhPhone, joinDate: nhStart || new Date().toLocaleDateString("en-GB"),
+      status: "Probation", salary: parseInt(nhSalary || "0"),
+      systemAccessCreated: true,
+    });
+
     addOnboarding({
       id: `ONB-${Date.now().toString().slice(-5)}`, staffId: id,
-      staffName: nhName, department: nhDept as any, role: nhRole,
-      startDate: nhStart, status: "IT Pending", itRequestId: itReqId,
-      itAccountCreated: false, orientationCompleted: false,
+      staffName: nhName, department: deptLabel as any, role: roleLabel,
+      startDate: nhStart || new Date().toLocaleDateString("en-GB"),
+      status: "IT Done", itRequestId: itReqId,
+      itAccountCreated: true, orientationCompleted: false,
       credentialsVerified: false, contractSigned: true,
-      initiatedBy: "HR Manager", initiatedAt: "Mar 15, 2026",
+      initiatedBy: "HR Manager", initiatedAt: new Date().toLocaleDateString("en-GB"),
     });
-    setToast({ message: `${nhName} onboarding started — IT access request ${itReqId} raised.`, type: "success" });
+
+    setCreating(false);
     setShowNewHire(false);
-    setNhName(""); setNhRole(""); setNhEmail(""); setNhPhone(""); setNhSalary("");
+    setNhName(""); setNhEmail(""); setNhPhone(""); setNhSalary(""); setNhStart("");
+
+    // 3. Show credentials to HR (once only)
+    setCreatedCreds({ email: nhEmail, password: result.tempPassword });
   }
 
   function handleExit() {
@@ -86,7 +155,7 @@ export default function OnboardingPage() {
       exitDate, reason: exitReason, status: "IT Revoke Pending",
       itRevokeRequestId: itRevokeId, itAccessRevoked: false,
       equipmentReturned: false, exitInterviewDone: false,
-      initiatedBy: "HR Manager", initiatedAt: "Mar 15, 2026",
+      initiatedBy: "HR Manager", initiatedAt: new Date().toLocaleDateString("en-GB"),
     });
     setToast({ message: `Exit initiated for ${member.name} — IT revocation request ${itRevokeId} raised.`, type: "info" });
     setShowExit(false);
@@ -96,15 +165,22 @@ export default function OnboardingPage() {
   function handleOnbStep(rec: OnboardingRecord, step: "itAccountCreated" | "credentialsVerified" | "orientationCompleted") {
     const updates: Partial<OnboardingRecord> = { [step]: true };
     const allDone = (step === "orientationCompleted")
-      || (step === "itAccountCreated" && rec.credentialsVerified && rec.orientationCompleted)
-      || (step === "credentialsVerified" && rec.itAccountCreated && rec.orientationCompleted);
+      || (step === "itAccountCreated"    && rec.credentialsVerified && rec.orientationCompleted)
+      || (step === "credentialsVerified" && rec.itAccountCreated    && rec.orientationCompleted);
     if (step === "itAccountCreated") {
       updateStaffSystemAccess(rec.staffId, true);
       updates.status = "IT Done";
     }
     if (allDone) updates.status = "Completed";
     updateOnboardingStep(rec.id, updates);
-    setToast({ message: `${step === "itAccountCreated" ? "IT account created" : step === "credentialsVerified" ? "Credentials verified" : "Orientation completed"} for ${rec.staffName}.`, type: "success" });
+    setToast({
+      message: step === "itAccountCreated"
+        ? `IT account created for ${rec.staffName}.`
+        : step === "credentialsVerified"
+          ? `Credentials verified for ${rec.staffName}.`
+          : `Orientation completed for ${rec.staffName}.`,
+      type: "success",
+    });
     setShowStepModal(null);
   }
 
@@ -114,7 +190,14 @@ export default function OnboardingPage() {
     const willComplete = (step === "exitInterviewDone") && rec.itAccessRevoked && rec.equipmentReturned;
     if (willComplete) updates.status = "Completed";
     updateOffboardingStep(rec.id, updates);
-    setToast({ message: `${step === "itAccessRevoked" ? "IT access revoked" : step === "equipmentReturned" ? "Equipment returned" : "Exit interview done"} for ${rec.staffName}.`, type: "success" });
+    setToast({
+      message: step === "itAccessRevoked"
+        ? `IT access revoked for ${rec.staffName}.`
+        : step === "equipmentReturned"
+          ? `Equipment returned by ${rec.staffName}.`
+          : `Exit interview done for ${rec.staffName}.`,
+      type: "success",
+    });
     setShowOffModal(null);
   }
 
@@ -153,14 +236,12 @@ export default function OnboardingPage() {
                     <span className="rounded-full bg-violet-50 text-violet-700 px-2 py-0.5 text-xs font-semibold">{o.department}</span>
                   </div>
                   <p className="text-xs text-slate-400 mb-3">Start: {o.startDate} · Initiated by: {o.initiatedBy}</p>
-
-                  {/* Progress steps */}
                   <div className="flex flex-wrap gap-2">
                     {[
-                      { key: "contractSigned", label: "Contract Signed", done: o.contractSigned },
-                      { key: "credentialsVerified", label: "Credentials Verified", done: o.credentialsVerified },
-                      { key: "itAccountCreated", label: "IT Account", done: o.itAccountCreated },
-                      { key: "orientationCompleted", label: "Orientation", done: o.orientationCompleted },
+                      { key: "contractSigned",       label: "Contract Signed",    done: o.contractSigned       },
+                      { key: "credentialsVerified",  label: "Credentials Verified", done: o.credentialsVerified },
+                      { key: "itAccountCreated",     label: "IT Account",         done: o.itAccountCreated     },
+                      { key: "orientationCompleted", label: "Orientation",         done: o.orientationCompleted },
                     ].map((step) => (
                       <div key={step.key} className={`flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ${step.done ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>
                         <span>{step.done ? "✓" : "○"}</span>
@@ -168,7 +249,6 @@ export default function OnboardingPage() {
                       </div>
                     ))}
                   </div>
-
                   {o.itRequestId && !o.itAccountCreated && (
                     <p className="text-xs text-sky-700 font-semibold mt-2">IT Request: {o.itRequestId} — awaiting IT confirmation</p>
                   )}
@@ -203,12 +283,11 @@ export default function OnboardingPage() {
                     <span className="rounded-full bg-red-50 text-red-700 px-2 py-0.5 text-xs font-semibold">{o.reason}</span>
                   </div>
                   <p className="text-xs text-slate-400 mb-3">{o.department} · Exit date: {o.exitDate}</p>
-
                   <div className="flex flex-wrap gap-2">
                     {[
-                      { label: "IT Access Revoked", done: o.itAccessRevoked },
+                      { label: "IT Access Revoked", done: o.itAccessRevoked  },
                       { label: "Equipment Returned", done: o.equipmentReturned },
-                      { label: "Exit Interview", done: o.exitInterviewDone },
+                      { label: "Exit Interview",     done: o.exitInterviewDone },
                     ].map((step) => (
                       <div key={step.label} className={`flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ${step.done ? "bg-emerald-100 text-emerald-700" : "bg-red-50 text-red-600"}`}>
                         <span>{step.done ? "✓" : "○"}</span>
@@ -216,7 +295,6 @@ export default function OnboardingPage() {
                       </div>
                     ))}
                   </div>
-
                   {o.itRevokeRequestId && !o.itAccessRevoked && (
                     <p className="text-xs text-red-700 font-semibold mt-2">IT Revoke Request: {o.itRevokeRequestId} — pending IT action</p>
                   )}
@@ -242,40 +320,93 @@ export default function OnboardingPage() {
       <Modal open={showNewHire} onClose={() => setShowNewHire(false)} title="New Hire Onboarding">
         <div className="space-y-3">
           <div className="grid grid-cols-2 gap-3">
-            <div><label className="block text-xs font-semibold text-slate-600 mb-1">Full Name *</label><input value={nhName} onChange={(e) => setNhName(e.target.value)} placeholder="Dr. / Nurse / Staff..." className={inputCls} /></div>
-            <div><label className="block text-xs font-semibold text-slate-600 mb-1">Department *</label>
-              <select value={nhDept} onChange={(e) => setNhDept(e.target.value)} className={inputCls}>
-                {DEPARTMENTS.map((d) => <option key={d}>{d}</option>)}
+            <div className="col-span-2">
+              <label className="block text-xs font-semibold text-slate-600 mb-1">Full Name *</label>
+              <input value={nhName} onChange={(e) => setNhName(e.target.value)} placeholder="e.g. Dr. Amara Osei" className={inputCls} />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-600 mb-1">Work Email *</label>
+              <input type="email" value={nhEmail} onChange={(e) => setNhEmail(e.target.value)} placeholder="name@gcmc.local" className={inputCls} />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-600 mb-1">Phone</label>
+              <input value={nhPhone} onChange={(e) => setNhPhone(e.target.value)} placeholder="+234..." className={inputCls} />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-600 mb-1">Department *</label>
+              <select value={nhDept} onChange={(e) => setNhDept(e.target.value as DBDepartmentKey)} className={inputCls}>
+                {DEPT_OPTIONS.map((d) => <option key={d.value} value={d.value}>{d.label}</option>)}
               </select>
             </div>
-            <div><label className="block text-xs font-semibold text-slate-600 mb-1">Role *</label><input value={nhRole} onChange={(e) => setNhRole(e.target.value)} placeholder="e.g. Staff Nurse" className={inputCls} /></div>
-            <div><label className="block text-xs font-semibold text-slate-600 mb-1">Contract Type</label>
+            <div>
+              <label className="block text-xs font-semibold text-slate-600 mb-1">System Role *</label>
+              <select value={nhRole} onChange={(e) => setNhRole(e.target.value as RoleKey)} className={inputCls}>
+                {ROLE_OPTIONS.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-600 mb-1">Contract Type</label>
               <select value={nhContract} onChange={(e) => setNhContract(e.target.value)} className={inputCls}>
                 {CONTRACT_TYPES.map((c) => <option key={c}>{c}</option>)}
               </select>
             </div>
-            <div><label className="block text-xs font-semibold text-slate-600 mb-1">Email</label><input value={nhEmail} onChange={(e) => setNhEmail(e.target.value)} placeholder="auto-generated if empty" className={inputCls} /></div>
-            <div><label className="block text-xs font-semibold text-slate-600 mb-1">Phone</label><input value={nhPhone} onChange={(e) => setNhPhone(e.target.value)} placeholder="+233..." className={inputCls} /></div>
-            <div><label className="block text-xs font-semibold text-slate-600 mb-1">Start Date</label><input value={nhStart} onChange={(e) => setNhStart(e.target.value)} className={inputCls} /></div>
-            <div><label className="block text-xs font-semibold text-slate-600 mb-1">Monthly Salary (₦)</label><input type="number" value={nhSalary} onChange={(e) => setNhSalary(e.target.value)} placeholder="e.g. 5000" className={inputCls} /></div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-600 mb-1">Start Date</label>
+              <input type="date" value={nhStart} onChange={(e) => setNhStart(e.target.value)} className={inputCls} />
+            </div>
+            <div className="col-span-2">
+              <label className="block text-xs font-semibold text-slate-600 mb-1">Monthly Salary (₦)</label>
+              <input type="number" value={nhSalary} onChange={(e) => setNhSalary(e.target.value)} placeholder="e.g. 150000" className={inputCls} />
+            </div>
           </div>
-          <div className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-800">
-            An IT access request will automatically be raised when this onboarding is submitted.
+          <div className="rounded-lg border border-violet-200 bg-violet-50 px-3 py-2 text-xs text-violet-800">
+            A login account will be created in Supabase automatically. A temporary password will be shown once — share it with the new hire immediately.
           </div>
         </div>
         <ModalFooter>
           <Button variant="ghost" size="md" onClick={() => setShowNewHire(false)}>Cancel</Button>
-          <Button size="md" onClick={handleNewHire} disabled={!nhName || !nhRole}>Start Onboarding</Button>
+          <Button size="md" onClick={handleNewHire} disabled={!nhName || !nhEmail || creating}>
+            {creating ? "Creating account…" : "Create Account & Start Onboarding"}
+          </Button>
+        </ModalFooter>
+      </Modal>
+
+      {/* Credentials Modal — shown once after account creation */}
+      <Modal open={!!createdCreds} onClose={() => setCreatedCreds(null)} title="Account Created">
+        {createdCreds && (
+          <div className="space-y-4">
+            <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800 font-medium">
+              Login account created successfully. Share these credentials with the new hire — this is the only time the password will be shown.
+            </div>
+            <div className="space-y-2">
+              <div>
+                <p className="text-xs font-semibold text-slate-500 mb-1">Email</p>
+                <p className="rounded-lg bg-slate-100 px-3 py-2 text-sm font-mono text-slate-900 select-all">{createdCreds.email}</p>
+              </div>
+              <div>
+                <p className="text-xs font-semibold text-slate-500 mb-1">Temporary Password</p>
+                <p className="rounded-lg bg-slate-100 px-3 py-2 text-sm font-mono text-slate-900 select-all">{createdCreds.password}</p>
+              </div>
+            </div>
+            <p className="text-xs text-slate-400">The staff member should change their password after first login.</p>
+          </div>
+        )}
+        <ModalFooter>
+          <Button size="md" onClick={() => setCreatedCreds(null)}>Done — I have noted the credentials</Button>
         </ModalFooter>
       </Modal>
 
       {/* Exit Modal */}
       <Modal open={showExit} onClose={() => setShowExit(false)} title="Initiate Staff Exit">
         <div className="space-y-3">
-          <div><label className="block text-xs font-semibold text-slate-600 mb-1">Staff Name or ID *</label>
+          <div>
+            <label className="block text-xs font-semibold text-slate-600 mb-1">Staff Name or ID *</label>
             <input value={exitStaffId} onChange={(e) => setExitStaffId(e.target.value)} placeholder="Search by name or ID..." className={inputCls} />
             <div className="mt-1 space-y-0.5 max-h-24 overflow-y-auto">
-              {staff.filter((s) => s.status !== "Terminated" && exitStaffId && (s.name.toLowerCase().includes(exitStaffId.toLowerCase()) || s.id.includes(exitStaffId))).map((s) => (
+              {staff.filter((s) =>
+                s.status !== "Terminated" && exitStaffId &&
+                (s.name.toLowerCase().includes(exitStaffId.toLowerCase()) || s.id.includes(exitStaffId))
+              ).map((s) => (
                 <button key={s.id} onClick={() => setExitStaffId(s.name)}
                   className="block w-full text-left px-2 py-1 text-xs rounded hover:bg-slate-100 text-slate-700">
                   {s.name} — {s.department} · {s.role}
@@ -284,8 +415,12 @@ export default function OnboardingPage() {
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <div><label className="block text-xs font-semibold text-slate-600 mb-1">Exit Date</label><input value={exitDate} onChange={(e) => setExitDate(e.target.value)} className={inputCls} /></div>
-            <div><label className="block text-xs font-semibold text-slate-600 mb-1">Reason</label>
+            <div>
+              <label className="block text-xs font-semibold text-slate-600 mb-1">Exit Date</label>
+              <input type="date" value={exitDate} onChange={(e) => setExitDate(e.target.value)} className={inputCls} />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-600 mb-1">Reason</label>
               <select value={exitReason} onChange={(e) => setExitReason(e.target.value as any)} className={inputCls}>
                 {["Resignation", "Retirement", "Termination", "Contract End"].map((r) => <option key={r}>{r}</option>)}
               </select>
@@ -306,9 +441,9 @@ export default function OnboardingPage() {
         {showStepModal && (
           <div className="space-y-3">
             {[
-              { key: "itAccountCreated" as const, label: "Mark IT Account Created", done: showStepModal.itAccountCreated, note: "This will confirm system access was provisioned by IT." },
+              { key: "itAccountCreated"    as const, label: "Mark IT Account Created",   done: showStepModal.itAccountCreated,    note: "Confirm system access was provisioned." },
               { key: "credentialsVerified" as const, label: "Mark Credentials Verified", done: showStepModal.credentialsVerified, note: "Licence/certification documents reviewed by HR." },
-              { key: "orientationCompleted" as const, label: "Mark Orientation Complete", done: showStepModal.orientationCompleted, note: "New hire attended hospital orientation session." },
+              { key: "orientationCompleted" as const, label: "Mark Orientation Complete", done: showStepModal.orientationCompleted, note: "New hire attended hospital orientation." },
             ].map((step) => (
               <div key={step.key} className={`flex items-center justify-between rounded-lg p-3 ${step.done ? "bg-emerald-50 border border-emerald-200" : "bg-slate-50 border border-slate-200"}`}>
                 <div>
@@ -332,8 +467,8 @@ export default function OnboardingPage() {
         {showOffModal && (
           <div className="space-y-3">
             {[
-              { key: "itAccessRevoked" as const, label: "Confirm IT Access Revoked", done: showOffModal.itAccessRevoked, note: "IT has deactivated all system logins and access." },
-              { key: "equipmentReturned" as const, label: "Confirm Equipment Returned", done: showOffModal.equipmentReturned, note: "Laptop, badge, and hospital equipment returned." },
+              { key: "itAccessRevoked"   as const, label: "Confirm IT Access Revoked",  done: showOffModal.itAccessRevoked,   note: "IT has deactivated all system logins." },
+              { key: "equipmentReturned" as const, label: "Confirm Equipment Returned", done: showOffModal.equipmentReturned, note: "Laptop, badge, and equipment returned." },
               { key: "exitInterviewDone" as const, label: "Confirm Exit Interview Done", done: showOffModal.exitInterviewDone, note: "Exit interview completed with HR." },
             ].map((step) => (
               <div key={step.key} className={`flex items-center justify-between rounded-lg p-3 ${step.done ? "bg-emerald-50 border border-emerald-200" : "bg-slate-50 border border-slate-200"}`}>
