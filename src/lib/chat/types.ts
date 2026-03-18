@@ -34,16 +34,17 @@ export type ChatMessage = {
 };
 
 export const CHAT_DEPARTMENT_LABELS: Record<DBDepartmentKey | ChatTargetDepartment, string> = {
-  frontdesk: "Front Desk",
-  doctors: "Doctors",
-  nurses: "Nurses",
-  pharmacy: "Pharmacy",
-  lab: "Lab",
-  accounts: "Accounts",
-  store: "Store",
-  admin: "Administration",
-  hr: "HR",
-  it: "IT",
+  frontdesk:    "Front Desk",
+  doctors:      "Doctors",
+  nurses:       "Nurses",
+  pharmacy:     "Pharmacy",
+  lab:          "Lab",
+  accounts:     "Accounts",
+  store:        "Store",
+  admin:        "Administration",
+  hr:           "HR",
+  it:           "IT",
+  non_clinical: "Non-Clinical",
 };
 
 export function formatRoleLabel(role: string) {
