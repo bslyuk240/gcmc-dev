@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -14,37 +14,47 @@ import {
   type OnboardingRecord, type OffboardingRecord,
 } from "@/lib/data/hr-store";
 import { createStaffAccountAction } from "@/server/actions/hr/create-staff-account";
+import { fetchNonClinicalUnits } from "@/lib/supabase/db";
 import type { DBDepartmentKey } from "@/lib/constants/navigation";
 import type { RoleKey } from "@/lib/auth/session";
 
 // Display name → DB key
 const DEPT_OPTIONS: { label: string; value: DBDepartmentKey }[] = [
-  { label: "Doctors",      value: "doctors"   },
-  { label: "Nurses",       value: "nurses"    },
-  { label: "Pharmacy",     value: "pharmacy"  },
-  { label: "Lab",          value: "lab"       },
-  { label: "Front Desk",   value: "frontdesk" },
-  { label: "Accounts",     value: "accounts"  },
-  { label: "Store",        value: "store"     },
-  { label: "HR",           value: "hr"        },
-  { label: "IT",           value: "it"        },
-  { label: "Admin",        value: "admin"     },
+  { label: "Doctors",            value: "doctors"      },
+  { label: "Nurses",             value: "nurses"       },
+  { label: "Pharmacy",           value: "pharmacy"     },
+  { label: "Lab",                value: "lab"          },
+  { label: "Front Desk",         value: "frontdesk"    },
+  { label: "Accounts",           value: "accounts"     },
+  { label: "Store",              value: "store"        },
+  { label: "HR",                 value: "hr"           },
+  { label: "IT",                 value: "it"           },
+  { label: "Admin",              value: "admin"        },
+  { label: "Non-Clinical Staff", value: "non_clinical" },
 ];
 
 const ROLE_OPTIONS: { label: string; value: RoleKey }[] = [
-  { label: "Admin",              value: "admin"              },
+  { label: "Admin",                value: "admin"              },
+  { label: "Head of Department",   value: "hod"                },
+  { label: "HR Manager",           value: "hr_manager"         },
+  { label: "HR Staff",             value: "hr_staff"           },
+  { label: "Doctor",               value: "doctor"             },
+  { label: "Nurse",                value: "nurse"              },
+  { label: "Pharmacist",           value: "pharmacist"         },
+  { label: "Pharmacy Assistant",   value: "pharmacy_assistant" },
+  { label: "Lab Scientist",        value: "lab_scientist"      },
+  { label: "Accountant",           value: "accountant"         },
+  { label: "Front Desk Staff",     value: "front_desk_staff"   },
+  { label: "Store Keeper",         value: "store_keeper"       },
+  { label: "IT Staff",             value: "it_staff"           },
+  { label: "Non-Clinical Staff",   value: "non_clinical_staff" },
+  { label: "Viewer",               value: "viewer"             },
+];
+
+/** Roles that make sense for non-clinical staff */
+const NC_ROLE_OPTIONS: { label: string; value: RoleKey }[] = [
+  { label: "Non-Clinical Staff", value: "non_clinical_staff" },
   { label: "Head of Department", value: "hod"                },
-  { label: "HR Manager",         value: "hr_manager"         },
-  { label: "HR Staff",           value: "hr_staff"           },
-  { label: "Doctor",             value: "doctor"             },
-  { label: "Nurse",              value: "nurse"              },
-  { label: "Pharmacist",         value: "pharmacist"         },
-  { label: "Pharmacy Assistant", value: "pharmacy_assistant" },
-  { label: "Lab Scientist",      value: "lab_scientist"      },
-  { label: "Accountant",         value: "accountant"         },
-  { label: "Front Desk Staff",   value: "front_desk_staff"   },
-  { label: "Store Keeper",       value: "store_keeper"       },
-  { label: "IT Staff",           value: "it_staff"           },
   { label: "Viewer",             value: "viewer"             },
 ];
 
@@ -79,11 +89,32 @@ export default function OnboardingPage() {
   const [nhName,     setNhName]     = useState("");
   const [nhDept,     setNhDept]     = useState<DBDepartmentKey>("doctors");
   const [nhRole,     setNhRole]     = useState<RoleKey>("doctor");
+  const [nhUnit,     setNhUnit]     = useState("");
   const [nhContract, setNhContract] = useState("Permanent");
   const [nhEmail,    setNhEmail]    = useState("");
   const [nhPhone,    setNhPhone]    = useState("");
   const [nhSalary,   setNhSalary]   = useState("");
   const [nhStart,    setNhStart]    = useState("");
+
+  // Non-clinical units (loaded when non_clinical dept is selected)
+  const [ncUnits, setNcUnits] = useState<{ id: string; name: string }[]>([]);
+  const [loadingUnits, setLoadingUnits] = useState(false);
+
+  useEffect(() => {
+    if (nhDept === "non_clinical") {
+      setLoadingUnits(true);
+      fetchNonClinicalUnits().then((units) => {
+        setNcUnits(units);
+        if (units.length > 0 && !nhUnit) setNhUnit(units[0].name);
+        setLoadingUnits(false);
+      });
+      // Default role to non_clinical_staff
+      setNhRole("non_clinical_staff");
+    } else {
+      setNhUnit("");
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nhDept]);
 
   // Credentials modal
   const [createdCreds, setCreatedCreds] = useState<{ email: string; password: string } | null>(null);
@@ -104,6 +135,7 @@ export default function OnboardingPage() {
       email:      nhEmail,
       department: nhDept,
       role:       nhRole,
+      ...(nhDept === "non_clinical" && nhUnit ? { unit_name: nhUnit } : {}),
     });
 
     if (!result.success) {
@@ -124,6 +156,7 @@ export default function OnboardingPage() {
       phone: nhPhone, joinDate: nhStart || new Date().toLocaleDateString("en-GB"),
       status: "Probation", salary: parseInt(nhSalary || "0"),
       systemAccessCreated: true,
+      ...(nhUnit ? { unit: nhUnit } : {}),
     });
 
     addOnboarding({
@@ -138,7 +171,7 @@ export default function OnboardingPage() {
 
     setCreating(false);
     setShowNewHire(false);
-    setNhName(""); setNhEmail(""); setNhPhone(""); setNhSalary(""); setNhStart("");
+    setNhName(""); setNhEmail(""); setNhPhone(""); setNhSalary(""); setNhStart(""); setNhUnit("");
 
     // 3. Show credentials to HR (once only)
     setCreatedCreds({ email: nhEmail, password: result.tempPassword });
@@ -341,9 +374,28 @@ export default function OnboardingPage() {
             <div>
               <label className="block text-xs font-semibold text-slate-600 mb-1">System Role *</label>
               <select value={nhRole} onChange={(e) => setNhRole(e.target.value as RoleKey)} className={inputCls}>
-                {ROLE_OPTIONS.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
+                {(nhDept === "non_clinical" ? NC_ROLE_OPTIONS : ROLE_OPTIONS).map((r) => (
+                  <option key={r.value} value={r.value}>{r.label}</option>
+                ))}
               </select>
             </div>
+            {nhDept === "non_clinical" && (
+              <div className="col-span-2">
+                <label className="block text-xs font-semibold text-slate-600 mb-1">Unit *</label>
+                {loadingUnits ? (
+                  <div className={`${inputCls} text-slate-400`}>Loading units…</div>
+                ) : (
+                  <select value={nhUnit} onChange={(e) => setNhUnit(e.target.value)} className={inputCls}>
+                    {ncUnits.map((u) => (
+                      <option key={u.id} value={u.name}>{u.name}</option>
+                    ))}
+                    {ncUnits.length === 0 && (
+                      <option value="" disabled>No units available — add one in the Non-Clinical Units page</option>
+                    )}
+                  </select>
+                )}
+              </div>
+            )}
             <div>
               <label className="block text-xs font-semibold text-slate-600 mb-1">Contract Type</label>
               <select value={nhContract} onChange={(e) => setNhContract(e.target.value)} className={inputCls}>
@@ -365,7 +417,7 @@ export default function OnboardingPage() {
         </div>
         <ModalFooter>
           <Button variant="ghost" size="md" onClick={() => setShowNewHire(false)}>Cancel</Button>
-          <Button size="md" onClick={handleNewHire} disabled={!nhName || !nhEmail || creating}>
+          <Button size="md" onClick={handleNewHire} disabled={!nhName || !nhEmail || (nhDept === "non_clinical" && !nhUnit) || creating}>
             {creating ? "Creating account…" : "Create Account & Start Onboarding"}
           </Button>
         </ModalFooter>
