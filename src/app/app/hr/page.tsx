@@ -43,13 +43,6 @@ export default function HRDashboardPage() {
     return { dept, total: members.length, active: members.filter((s) => s.status === "Active").length };
   }).filter((d) => d.total > 0);
 
-  const UPCOMING = [
-    { event: "Payroll processing deadline", date: "Mar 25, 2026", tag: "Payroll" },
-    { event: "Contract renewal — Dr. Chen", date: "Dec 31, 2026", tag: "Contract" },
-    { event: "New staff orientation — Lab hire", date: "Mar 17, 2026", tag: "Onboarding" },
-    { event: "Lab licence renewal — Dr. Agyeman", date: "Mar 30, 2026", tag: "Licence" },
-    { event: "Quarterly performance reviews", date: "Mar 31, 2026", tag: "Review" },
-  ];
 
   return (
     <div className="space-y-5 sm:space-y-6">
@@ -254,17 +247,10 @@ export default function HRDashboardPage() {
           {/* Upcoming events */}
           <Card className="p-5">
             <h3 className="font-bold text-slate-900 mb-3">Upcoming</h3>
-            <ul className="space-y-3">
-              {UPCOMING.map((u) => (
-                <li key={u.event} className="flex items-start gap-2">
-                  <span className="mt-0.5 shrink-0 rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-bold text-violet-700 uppercase">{u.tag}</span>
-                  <div>
-                    <p className="text-xs font-medium text-slate-900">{u.event}</p>
-                    <p className="text-[11px] text-slate-400">{u.date}</p>
-                  </div>
-                </li>
-              ))}
-            </ul>
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-6 text-center">
+              <p className="text-sm font-medium text-slate-500">No records yet.</p>
+              <p className="mt-1 text-xs text-slate-400">Data will appear here once entries are created.</p>
+            </div>
           </Card>
         </div>
       </div>

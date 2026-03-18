@@ -9,20 +9,6 @@ import { useLabStore } from "@/lib/hooks/use-lab-store";
 import { useNursesStore } from "@/lib/hooks/use-nurses-store";
 import { useAdminStore } from "@/lib/hooks/use-admin-store";
 
-const kpis = [
-  { label: "TOTAL REVENUE TODAY", value: "₦ 45,280", change: "+12.5% vs yesterday", up: true },
-  { label: "TOTAL PATIENTS", value: "1,284", change: "-2.1% from last week", up: false },
-  { label: "STAFF ATTENDANCE", value: "94%", change: "On target (+0.5%)", up: true },
-  { label: "OPEN IT TICKETS", value: "12", change: "! 3 Urgent Priority", urgent: true },
-];
-
-const visitTrendData = [32, 28, 45, 38, 52, 48, 55];
-
-const deptStatus = [
-  { name: "Clinical Care", status: "HIGH LOAD", statusClass: "text-red-600", barPct: 94, barClass: "bg-orange-500", detail: "Active Staff 84", sub: "Avg Recovery 3.2d" },
-  { name: "Accounts & Billing", status: "BALANCED", statusClass: "text-emerald-600", barPct: 76, barClass: "bg-emerald-500", detail: "Claims Paid ₦210k", sub: "Outstanding ₦45k" },
-  { name: "Nursing", status: "OPERATIONAL", statusClass: "text-emerald-600", barPct: 81, barClass: "bg-blue-400", detail: "Ward Coverage 96%", sub: "3 Shift Handovers" },
-];
 
 export default function AdminDashboardPage() {
   const { metrics, prescriptions, restockRequests } = usePharmacyStore();
@@ -44,18 +30,18 @@ export default function AdminDashboardPage() {
         <p className="mt-0.5 text-xs text-slate-500 sm:text-sm">Hospital-wide oversight — operations, finances, and staffing</p>
       </div>
 
-      {/* KPI row */}
+      {/* KPI row — sourced from live stores */}
       <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
-        {kpis.map((k) => (
+        {[
+          { label: "REVENUE TODAY", value: `₦${accMetrics.revenueToday.toLocaleString()}`, sub: "Collected across all depts", color: "text-emerald-700" },
+          { label: "ACTIVE PATIENTS", value: nurseMetrics.totalActive, sub: "Across all nursing units", color: "text-slate-900" },
+          { label: "PAYROLL PENDING", value: accMetrics.payrollPendingCount, sub: `₦${accMetrics.payrollPendingValue.toLocaleString()} awaiting approval`, color: accMetrics.payrollPendingCount > 0 ? "text-sky-700" : "text-slate-400" },
+          { label: "OPEN IT TICKETS", value: adminMetrics.openITTickets, sub: adminMetrics.criticalITTickets > 0 ? `${adminMetrics.criticalITTickets} critical/urgent` : "No critical tickets", color: adminMetrics.criticalITTickets > 0 ? "text-red-600" : "text-slate-900" },
+        ].map((k) => (
           <Card key={k.label} className="p-4 sm:p-5">
             <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">{k.label}</p>
-            <p className="mt-1.5 text-2xl font-bold text-slate-900">{k.value}</p>
-            <p className={`mt-1 flex items-center gap-1 text-xs font-medium ${k.urgent ? "text-amber-600" : k.up ? "text-emerald-600" : "text-red-600"}`}>
-              {k.up && !k.urgent && <span aria-hidden>↑</span>}
-              {!k.up && !k.urgent && <span aria-hidden>↓</span>}
-              {k.urgent && <span aria-hidden>!</span>}
-              {k.change}
-            </p>
+            <p className={`mt-1.5 text-2xl font-bold ${k.color}`}>{k.value}</p>
+            <p className="mt-1 text-xs text-slate-500">{k.sub}</p>
           </Card>
         ))}
       </div>
@@ -649,15 +635,15 @@ export default function AdminDashboardPage() {
             </div>
             <div className="flex gap-3 mb-3">
               <div className="flex-1 rounded-lg bg-white px-3 py-2 text-center border border-slate-100">
-                <p className="text-xl font-bold text-violet-700">3</p>
-                <p className="text-[10px] text-slate-500">Active Visits</p>
+                <p className="text-xl font-bold text-violet-700">{nurseMetrics.outpatientCount}</p>
+                <p className="text-[10px] text-slate-500">Outpatient</p>
               </div>
               <div className="flex-1 rounded-lg bg-white px-3 py-2 text-center border border-slate-100">
-                <p className="text-xl font-bold text-emerald-700">6</p>
-                <p className="text-[10px] text-slate-500">Completed</p>
+                <p className="text-xl font-bold text-emerald-700">{nurseMetrics.totalActive}</p>
+                <p className="text-[10px] text-slate-500">Total Active</p>
               </div>
             </div>
-            <p className="text-xs text-slate-500">9 patients processed today · Peak at 09:00.</p>
+            <p className="text-xs text-slate-500">Live counts from Nurses Bay records.</p>
           </Card>
 
           {/* Doctors Monitor */}
@@ -668,15 +654,15 @@ export default function AdminDashboardPage() {
             </div>
             <div className="flex gap-3 mb-3">
               <div className="flex-1 rounded-lg bg-white px-3 py-2 text-center border border-slate-100">
-                <p className="text-xl font-bold text-violet-700">2</p>
-                <p className="text-[10px] text-slate-500">In Consult</p>
+                <p className="text-xl font-bold text-violet-700">{metrics.pendingPrescriptions}</p>
+                <p className="text-[10px] text-slate-500">Pending Rx</p>
               </div>
               <div className="flex-1 rounded-lg bg-white px-3 py-2 text-center border border-slate-100">
-                <p className="text-xl font-bold text-emerald-700">4</p>
-                <p className="text-[10px] text-slate-500">Completed</p>
+                <p className="text-xl font-bold text-emerald-700">{metrics.dispensedToday}</p>
+                <p className="text-[10px] text-slate-500">Dispensed</p>
               </div>
             </div>
-            <p className="text-xs text-slate-500">3 prescriptions sent to pharmacy today.</p>
+            <p className="text-xs text-slate-500">Prescription activity from Pharmacy store.</p>
           </Card>
 
           {/* Approvals Spotlight */}
@@ -710,58 +696,38 @@ export default function AdminDashboardPage() {
       {/* Charts row */}
       <div className="grid gap-6 lg:grid-cols-2">
         <Card className="p-5">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between mb-4">
             <div>
               <h3 className="font-bold text-slate-900">Patient Visits Trend</h3>
               <p className="text-xs text-slate-500">Daily admissions and outpatient flow</p>
             </div>
-            <div className="flex gap-1">
-              <button type="button" className="rounded bg-blue-100 px-2 py-1 text-xs font-semibold text-blue-700">7D</button>
-              <button type="button" className="rounded px-2 py-1 text-xs font-medium text-slate-500 hover:bg-slate-100">30D</button>
-            </div>
           </div>
-          <div className="mt-6 h-48">
-            <svg viewBox="0 0 340 120" className="h-full w-full" preserveAspectRatio="none">
-              <polyline
-                fill="none"
-                stroke="#2563eb"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                points={visitTrendData.map((y, i) => {
-                  const x = (i / (visitTrendData.length - 1)) * 320;
-                  const yNorm = 100 - ((y - 25) / 35) * 80;
-                  return `${x},${Math.max(20, Math.min(100, yNorm))}`;
-                }).join(" ")}
-              />
-            </svg>
-          </div>
-          <div className="flex justify-between text-[10px] font-medium text-slate-400">
-            <span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span><span>Sun</span>
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-8 text-center">
+            <p className="text-sm font-medium text-slate-500">No records yet.</p>
+            <p className="mt-1 text-xs text-slate-400">Data will appear here once entries are created.</p>
           </div>
         </Card>
 
         <Card className="p-5">
           <h3 className="font-bold text-slate-900">Revenue by Dept</h3>
-          <p className="text-xs text-slate-500">Monthly distribution</p>
-          <div className="mt-4 flex items-center justify-center gap-6">
-            <div className="relative h-36 w-36">
-              <svg viewBox="0 0 36 36" className="h-full w-full -rotate-90">
-                <circle cx="18" cy="18" r="16" fill="none" stroke="#e2e8f0" strokeWidth="4" />
-                <circle cx="18" cy="18" r="16" fill="none" stroke="#2563eb" strokeWidth="4" strokeDasharray={`${0.42 * 100.5} 100.5`} />
-                <circle cx="18" cy="18" r="16" fill="none" stroke="#93c5fd" strokeWidth="4" strokeDasharray={`${0.28 * 100.5} 100.5`} strokeDashoffset={-0.42 * 100.5} />
-                <circle cx="18" cy="18" r="16" fill="none" stroke="#cbd5e1" strokeWidth="4" strokeDasharray={`${0.3 * 100.5} 100.5`} strokeDashoffset={-(0.42 + 0.28) * 100.5} />
-              </svg>
+          <p className="text-xs text-slate-500">Today&apos;s collected revenue by source</p>
+          <div className="mt-4 space-y-3 text-sm">
+            <div className="flex justify-between">
+              <span className="text-slate-500">Front Desk / Registration</span>
+              <span className="font-bold text-slate-800">₦{accMetrics.revenueToday.toLocaleString()}</span>
             </div>
-            <div className="text-center">
-              <p className="text-lg font-bold text-slate-900">TOTAL</p>
-              <p className="text-2xl font-bold text-slate-900">₦1.2M</p>
+            <div className="flex justify-between">
+              <span className="text-slate-500">Pending Collections</span>
+              <span className={`font-bold ${accMetrics.frontDeskPendingCount + accMetrics.consultationPendingCount > 0 ? "text-amber-700" : "text-slate-400"}`}>
+                ₦{(accMetrics.frontDeskPendingValue + accMetrics.consultationPendingValue).toLocaleString()}
+              </span>
             </div>
-          </div>
-          <div className="mt-4 flex flex-wrap justify-center gap-4 text-xs">
-            <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-blue-500" /> Surgery 42%</span>
-            <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-blue-300" /> Pharmacy 28%</span>
-            <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-slate-300" /> Other 30%</span>
+            <div className="flex justify-between">
+              <span className="text-slate-500">Lab Bills Pending</span>
+              <span className={`font-bold ${labMetrics.pendingBillCount > 0 ? "text-amber-700" : "text-slate-400"}`}>
+                ₦{labMetrics.pendingBillValue}
+              </span>
+            </div>
           </div>
         </Card>
       </div>
@@ -788,39 +754,38 @@ export default function AdminDashboardPage() {
               <p className="mt-2 text-xs text-slate-600">Dispensed: {metrics.dispensedToday} · Pending: {metrics.pendingPrescriptions}</p>
               <p className="text-xs text-slate-500">Bills pending: {metrics.pendingBills}</p>
             </Card>
-            {deptStatus.map((d) => (
-              <Card key={d.name} className="p-4">
-                <p className={`text-[10px] font-bold uppercase tracking-wider ${d.statusClass}`}>{d.status}</p>
-                <p className="mt-1 font-bold text-slate-900">{d.name}</p>
-                <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-slate-100">
-                  <div className={`h-full rounded-full ${d.barClass}`} style={{ width: `${d.barPct}%` }} />
-                </div>
-                <p className="mt-2 text-xs text-slate-600">{d.detail}</p>
-                <p className="text-xs text-slate-500">{d.sub}</p>
-              </Card>
-            ))}
+            {/* Accounts live status card */}
+            <Card className="p-4">
+              <p className={`text-[10px] font-bold uppercase tracking-wider ${accMetrics.frontDeskPendingCount + accMetrics.consultationPendingCount > 0 ? "text-amber-600" : "text-emerald-600"}`}>
+                {accMetrics.frontDeskPendingCount + accMetrics.consultationPendingCount > 0 ? "COLLECTIONS PENDING" : "BALANCED"}
+              </p>
+              <p className="mt-1 font-bold text-slate-900">Accounts &amp; Billing</p>
+              <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-slate-100">
+                <div className="h-full rounded-full bg-emerald-500" style={{ width: `${accMetrics.revenueToday > 0 ? 70 : 0}%` }} />
+              </div>
+              <p className="mt-2 text-xs text-slate-600">Revenue: ₦{accMetrics.revenueToday.toLocaleString()}</p>
+              <p className="text-xs text-slate-500">Pending: ₦{(accMetrics.frontDeskPendingValue + accMetrics.consultationPendingValue).toLocaleString()}</p>
+            </Card>
+            {/* Nursing live status card */}
+            <Card className="p-4">
+              <p className={`text-[10px] font-bold uppercase tracking-wider ${nurseMetrics.criticalCount > 0 ? "text-red-600" : "text-emerald-600"}`}>
+                {nurseMetrics.criticalCount > 0 ? "CRITICAL PATIENTS" : "OPERATIONAL"}
+              </p>
+              <p className="mt-1 font-bold text-slate-900">Nursing</p>
+              <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-slate-100">
+                <div className="h-full rounded-full bg-blue-400" style={{ width: `${nurseMetrics.totalActive > 0 ? 70 : 0}%` }} />
+              </div>
+              <p className="mt-2 text-xs text-slate-600">Active: {nurseMetrics.totalActive} patients</p>
+              <p className="text-xs text-slate-500">Critical: {nurseMetrics.criticalCount}</p>
+            </Card>
           </div>
         </div>
 
         <Card className="p-5">
           <h3 className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Recent Audit Logs</h3>
-          <div className="mt-4 flex items-start gap-3 rounded-lg bg-slate-50 p-3">
-            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-100 text-blue-600">
-              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeWidth="2" d="M12 4.354a4 4 0 11 4 4M15 21H3v-1a6 6 0 016-6h0M21 21v-1a6 6 0 00-6-6" /></svg>
-            </span>
-            <div className="min-w-0 flex-1">
-              <p className="text-sm font-medium text-slate-900">Staff shift updated</p>
-              <p className="text-xs text-slate-500">14:22 PM</p>
-            </div>
-          </div>
-          <div className="mt-3 flex items-start gap-3 rounded-lg bg-slate-50 p-3">
-            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-violet-100 text-violet-600">
-              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
-            </span>
-            <div className="min-w-0 flex-1">
-              <p className="text-sm font-medium text-slate-900">Prescription dispensed</p>
-              <p className="text-xs text-slate-500">Pharmacy · just now</p>
-            </div>
+          <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-6 text-center">
+            <p className="text-sm font-medium text-slate-500">No records yet.</p>
+            <p className="mt-1 text-xs text-slate-400">Data will appear here once entries are created.</p>
           </div>
         </Card>
       </div>
