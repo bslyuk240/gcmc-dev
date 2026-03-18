@@ -117,6 +117,7 @@ export function ChatManagement({
   const [loadingThreads, setLoadingThreads] = useState(true);
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [sending, setSending] = useState(false);
+  const [mobileView, setMobileView] = useState<"list" | "chat">("list");
 
   const loadThreads = useCallback(async () => {
     setLoadingThreads(true);
@@ -217,7 +218,13 @@ export function ChatManagement({
 
   return (
     <div className="flex h-[calc(100vh-8rem)] min-h-[400px] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm xl:h-[calc(100vh-9rem)]">
-      <div className="flex w-[320px] shrink-0 flex-col border-r border-slate-200 bg-white">
+      <div
+        className={cn(
+          "flex-col border-r border-slate-200 bg-white",
+          "w-full md:w-[320px] md:shrink-0",
+          mobileView === "chat" ? "hidden md:flex" : "flex",
+        )}
+      >
         <div className="flex items-center justify-between border-b border-slate-100 px-4 py-4">
           <div>
             <h2 className="font-bold text-slate-900">{title}</h2>
@@ -270,13 +277,46 @@ export function ChatManagement({
                 key={thread.id}
                 thread={thread}
                 active={thread.id === activeId}
-                onClick={() => setActiveId(thread.id)}
+                onClick={() => {
+                  setActiveId(thread.id);
+                  setMobileView("chat");
+                }}
               />
             ))}
         </div>
       </div>
 
-      <div className="min-w-0 flex-1">
+      <div
+        className={cn(
+          "min-w-0 flex-col",
+          "md:flex md:flex-1",
+          mobileView === "list" ? "hidden md:flex" : "flex flex-1",
+        )}
+      >
+        {/* Back button — mobile only */}
+        <div className="flex shrink-0 items-center gap-2 border-b border-slate-200 bg-white px-3 py-2 md:hidden">
+          <button
+            type="button"
+            onClick={() => setMobileView("list")}
+            className="flex items-center gap-1.5 text-sm font-medium text-[var(--accent)]"
+          >
+            <svg
+              className="h-4 w-4"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M15 19l-7-7 7-7"
+              />
+            </svg>
+            Back
+          </button>
+        </div>
+
         {activeThread ? (
           <ChatWindow
             contactName={activeThread.requesterName}
