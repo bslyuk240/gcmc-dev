@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card } from "@/components/ui/card";
@@ -10,6 +10,7 @@ import { Modal, ModalFooter } from "@/components/ui/modal";
 import { Toast, type ToastData } from "@/components/ui/toast";
 import { INTERNAL_PREFIX } from "@/lib/constants/navigation";
 import { printReceipt } from "@/lib/utils/print-receipt";
+import { fetchInvoices, insertInvoice, type InvoiceRecord } from "@/lib/supabase/db";
 
 type InvoiceStatus = "paid" | "pending" | "overdue" | "draft";
 
@@ -22,48 +23,6 @@ type Invoice = {
   items: string;
 };
 
-const INITIAL: Invoice[] = [
-  {
-    id: "INV-2026-0081",
-    patient: "Mary Ibrahim",
-    amount: 36000,
-    dueDate: "2026-03-10",
-    status: "paid",
-    items: "Lab tests + consultation",
-  },
-  {
-    id: "INV-2026-0082",
-    patient: "Joseph James",
-    amount: 84000,
-    dueDate: "2026-03-20",
-    status: "pending",
-    items: "Surgery (Appendectomy)",
-  },
-  {
-    id: "INV-2026-0083",
-    patient: "Ruth Cole",
-    amount: 12500,
-    dueDate: "2026-03-01",
-    status: "overdue",
-    items: "Physiotherapy (3 sessions)",
-  },
-  {
-    id: "INV-2026-0084",
-    patient: "Kwame Asante",
-    amount: 5500,
-    dueDate: "2026-03-25",
-    status: "pending",
-    items: "Outpatient consultation + meds",
-  },
-  {
-    id: "INV-2026-0085",
-    patient: "Ama Owusu",
-    amount: 18200,
-    dueDate: "2026-04-01",
-    status: "draft",
-    items: "Antenatal visit package",
-  },
-];
 
 const STATUS_BADGE: Record<
   InvoiceStatus,
@@ -77,28 +36,24 @@ const STATUS_BADGE: Record<
 
 const PAGE_SIZE = 8;
 
-const PATIENTS = [
-  "Kwame Asante",
-  "Ama Owusu",
-  "Kofi Mensah",
-  "Efua Boateng",
-  "Yaw Darko",
-  "Abena Kyei",
-];
-
-const SERVICE_ITEMS = [
-  "Outpatient consultation",
-  "Lab tests",
-  "X-Ray",
-  "Surgery",
-  "Antenatal visit",
-  "Physiotherapy",
-  "Medication dispensed",
-  "Ward admission",
-];
 
 export default function AccountsInvoicesPage() {
-  const [invoices, setInvoices] = useState<Invoice[]>(INITIAL);
+  const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetchInvoices().then((data) => {
+      setInvoices(data.map((d) => ({
+        id: d.id,
+        patient: d.patient,
+        amount: d.amount,
+        dueDate: d.dueDate,
+        status: d.status,
+        items: d.items,
+      })));
+      setLoading(false);
+    }).catch(() => setLoading(false));
+  }, []);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("All status");
   const [page, setPage] = useState(0);
@@ -142,15 +97,10 @@ export default function AccountsInvoicesPage() {
     };
 
     setInvoices((previous) => [invoice, ...previous]);
-    setToast({
-      message: `Invoice ${invoice.id} created as draft.`,
-      type: "success",
-    });
+    insertInvoice(invoice).catch(() => {});
+    setToast({ message: `Invoice ${invoice.id} created as draft.`, type: "success" });
     setShowCreate(false);
-    setNewPatient("");
-    setNewItems("");
-    setNewAmount("");
-    setNewDue("");
+    setNewPatient(""); setNewItems(""); setNewAmount(""); setNewDue("");
   }
 
   const inputCls =
@@ -163,6 +113,8 @@ export default function AccountsInvoicesPage() {
         description="Patient invoices and payment tracking."
         action={<Button onClick={() => setShowCreate(true)}>+ Create New Invoice</Button>}
       />
+
+      {loading && <p className="text-sm text-slate-400">Loading invoices…</p>}
 
       <Card className="overflow-hidden p-0">
         <div className="flex flex-wrap items-center gap-3 border-b border-slate-100 px-5 py-4">
@@ -336,32 +288,26 @@ export default function AccountsInvoicesPage() {
             <label className="mb-1 block text-sm font-medium text-slate-700">
               Patient <span className="text-red-500">*</span>
             </label>
-            <select
+            <input
               required
+              type="text"
+              placeholder="Patient name..."
               value={newPatient}
               onChange={(event) => setNewPatient(event.target.value)}
               className={inputCls}
-            >
-              <option value="">Select patient...</option>
-              {PATIENTS.map((patient) => (
-                <option key={patient}>{patient}</option>
-              ))}
-            </select>
+            />
           </div>
           <div>
             <label className="mb-1 block text-sm font-medium text-slate-700">
               Services / Description
             </label>
-            <select
+            <input
+              type="text"
+              placeholder="e.g. Outpatient consultation + meds"
               value={newItems}
               onChange={(event) => setNewItems(event.target.value)}
               className={inputCls}
-            >
-              <option value="">Select service...</option>
-              {SERVICE_ITEMS.map((service) => (
-                <option key={service}>{service}</option>
-              ))}
-            </select>
+            />
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div>

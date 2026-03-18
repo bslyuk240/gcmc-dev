@@ -9,6 +9,7 @@ import { Modal, ModalFooter } from "@/components/ui/modal";
 import { Toast, type ToastData } from "@/components/ui/toast";
 import { INTERNAL_PREFIX } from "@/lib/constants/navigation";
 import { useHRStore } from "@/lib/hooks/use-hr-store";
+import { formatStaffDisplayId } from "@/lib/staff-id";
 import {
   updateStaffStatus,
   setDepartmentHead,
@@ -76,6 +77,15 @@ export default function DepartmentStaffingPage() {
   const meta       = DEPT_META[activeDept];
   const currentHod = getDeptHead(activeDept);
   const departmentRows = [DEPT_ORDER.slice(0, 5), DEPT_ORDER.slice(5, 10)];
+
+  function getInitials(name: string) {
+    return name
+      .split(" ")
+      .filter(Boolean)
+      .map((part) => part[0]?.toUpperCase() ?? "")
+      .slice(0, 2)
+      .join("") || "?";
+  }
 
   // ─────────────────────────────────────────────────────────────────────────
 
@@ -180,7 +190,7 @@ export default function DepartmentStaffingPage() {
               <table className="min-w-full text-sm">
                 <thead>
                   <tr className="border-b border-slate-100 bg-slate-50">
-                    {["Staff ID", "Name", "System Role", "Unit", "Contract", "Access", "Status", "Actions"].map((h) => (
+                    {["Staff", "Staff ID Number", "System Role", "Unit", "Contract", "Access", "Status", "Actions"].map((h) => (
                       <th key={h} className="whitespace-nowrap px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">{h}</th>
                     ))}
                   </tr>
@@ -190,17 +200,27 @@ export default function DepartmentStaffingPage() {
                     const isHod = s.id === currentHod?.staffId;
                     return (
                       <tr key={s.id} className={`hover:bg-slate-50 ${s.status === "Suspended" ? "bg-red-50/20" : ""}`}>
-                        <td className="px-4 py-3 font-mono text-xs text-slate-400">{s.id}</td>
                         <td className="px-4 py-3">
-                          <div className="flex items-center gap-2">
-                            <p className="whitespace-nowrap font-semibold text-slate-900">{s.name}</p>
-                            {isHod && (
-                              <span className="rounded-full bg-violet-100 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wide text-violet-700">HOD</span>
-                            )}
+                          <div className="flex items-start gap-3">
+                            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-violet-100 text-sm font-bold text-violet-700">
+                              {getInitials(s.name)}
+                            </div>
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-2">
+                                <p className="whitespace-nowrap font-semibold text-slate-900">{s.name}</p>
+                                {isHod && (
+                                  <span className="rounded-full bg-violet-100 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wide text-violet-700">HOD</span>
+                                )}
+                              </div>
+                              <p className="truncate text-xs text-slate-500">{s.email}</p>
+                              {s.role && (
+                                <p className="mt-0.5 text-[10px] text-slate-400">{s.role}</p>
+                              )}
+                            </div>
                           </div>
-                          {s.role && (
-                            <p className="mt-0.5 text-[10px] text-slate-400">{s.role}</p>
-                          )}
+                        </td>
+                        <td className="px-4 py-3 font-mono text-xs text-slate-500">
+                          {formatStaffDisplayId({ id: s.id, name: s.name, department: s.department })}
                         </td>
                         <td className="px-4 py-3">
                           {s.roleKey ? (

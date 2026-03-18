@@ -222,19 +222,17 @@ const SEED: LabStoreState = {
 // ─── Internal state ───────────────────────────────────────────────────────────
 
 const STORAGE_KEY = "hms_lab_store";
+const EMPTY_STATE: LabStoreState = {
+  tests: [],
+  catalog: [],
+};
 
 function loadState(): LabStoreState {
-  if (typeof window === "undefined") return SEED;
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) return JSON.parse(raw) as LabStoreState;
-  } catch { /* ignore */ }
-  return SEED;
+  return EMPTY_STATE;
 }
 
 function saveState(s: LabStoreState) {
-  if (typeof window === "undefined") return;
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(s)); } catch { /* ignore */ }
+  void s;
 }
 
 let _state: LabStoreState | null = null;
@@ -265,12 +263,9 @@ export async function syncLabFromSupabase() {
   try {
     const { fetchLabTests, fetchTestCatalog } = await import("@/lib/supabase/db");
     const [tests, catalog] = await Promise.all([fetchLabTests(), fetchTestCatalog()]);
-    if (tests.length || catalog.length) {
-      _state = { tests, catalog: catalog.length ? catalog : getState().catalog };
-      saveState(_state);
-      listeners.forEach((l) => l());
-      _synced = true;
-    }
+    _state = { tests, catalog };
+    listeners.forEach((l) => l());
+    _synced = true;
   } catch { /* keep localStorage/seed */ }
 }
 
@@ -321,7 +316,6 @@ export function getLabMetrics() {
 }
 
 export function resetLabStore() {
-  _state = SEED;
-  saveState(SEED);
+  _state = EMPTY_STATE;
   listeners.forEach((l) => l());
 }

@@ -57,11 +57,59 @@ export type SupplierPayment = {
 
 export type PayrollStatus = "Draft" | "Submitted" | "Approved" | "Paid";
 
+export type PayrollAllowanceBreakdown = {
+  housing: number;
+  transport: number;
+  medical: number;
+  meal: number;
+  duty: number;
+  overtime: number;
+  bonus: number;
+  arrears: number;
+  other: number;
+};
+
+export type PayrollDeductionBreakdown = {
+  paye: number;
+  pension: number;
+  nhf: number;
+  loan: number;
+  insurance: number;
+  absence: number;
+  other: number;
+};
+
+export type PayrollLineItem = {
+  label: string;
+  amount: number;
+  percentage?: number;
+};
+
 export type PayrollEntry = {
+  staffId?: string;
   staffName: string;
   department: string;
   role: string;
+  employmentType?: string;
+  unit?: string;
+  bankName?: string;
+  bankAccount?: string;
+  taxId?: string;
+  paymentMethod?: "Bank Transfer" | "Cash" | "Mobile Money";
+  payGrade?: string;
+  payStep?: string;
+  payrollRef?: string;
+  payslipId?: string;
+  monthKey?: string;
   baseSalary: number;
+  grossPay?: number;
+  taxablePay?: number;
+  employerPension?: number;
+  taxPercent?: number;
+  customEarnings?: PayrollLineItem[];
+  customDeductions?: PayrollLineItem[];
+  allowanceBreakdown?: PayrollAllowanceBreakdown;
+  deductionBreakdown?: PayrollDeductionBreakdown;
   allowances: number;
   deductions: number;
   netPay: number;
@@ -70,6 +118,7 @@ export type PayrollEntry = {
 export type PayrollBatch = {
   id: string;
   period: string;
+  department?: string;
   totalStaff: number;
   totalAmount: number;
   preparedBy: string;
@@ -77,6 +126,7 @@ export type PayrollBatch = {
   status: PayrollStatus;
   approvedAt?: string;
   paidAt?: string;
+  payslipIds?: string[];
   entries: PayrollEntry[];
 };
 
@@ -360,19 +410,22 @@ const SEED: AccountsStoreState = {
 // ─── Internal state ───────────────────────────────────────────────────────────
 
 const STORAGE_KEY = "hms_accounts_store";
+const EMPTY_STATE: AccountsStoreState = {
+  frontDeskCharges: [],
+  consultationFees: [],
+  supplierPayments: [],
+  payrollBatches: [],
+  kioskSales: [],
+  labCharges: [],
+  nursingCharges: [],
+};
 
 function loadState(): AccountsStoreState {
-  if (typeof window === "undefined") return SEED;
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) return JSON.parse(raw) as AccountsStoreState;
-  } catch { /* ignore */ }
-  return SEED;
+  return EMPTY_STATE;
 }
 
 function saveState(state: AccountsStoreState) {
-  if (typeof window === "undefined") return;
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch { /* ignore */ }
+  void state;
 }
 
 let _state: AccountsStoreState | null = null;
@@ -406,12 +459,9 @@ export async function syncAccountsFromSupabase() {
       fetchFrontDeskCharges(), fetchConsultationFees(), fetchSupplierPayments(),
       fetchPayrollBatches(), fetchKioskSales(), fetchLabCharges(), fetchNursingCharges(),
     ]);
-    if (frontDeskCharges.length || consultationFees.length || supplierPayments.length) {
-      _state = { frontDeskCharges, consultationFees, supplierPayments, payrollBatches, kioskSales, labCharges, nursingCharges };
-      saveState(_state);
-      listeners.forEach((l) => l());
-      _synced = true;
-    }
+    _state = { frontDeskCharges, consultationFees, supplierPayments, payrollBatches, kioskSales, labCharges, nursingCharges };
+    listeners.forEach((l) => l());
+    _synced = true;
   } catch { /* keep localStorage/seed */ }
 }
 
@@ -547,7 +597,6 @@ export function getAccountsMetrics() {
 }
 
 export function resetAccountsStore() {
-  _state = SEED;
-  saveState(SEED);
+  _state = EMPTY_STATE;
   listeners.forEach((l) => l());
 }

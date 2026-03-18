@@ -13,6 +13,7 @@ const NAV = [
   { href: "/staff/attendance",   label: "Attendance",   icon: ClockIcon },
   { href: "/staff/leave",        label: "Leave",        icon: PlaneIcon },
   { href: "/staff/payslips",     label: "Payslips",     icon: MoneyIcon },
+  { href: "/staff/chat",         label: "Chat to HR",   icon: ChatIcon },
   { href: "/staff/notifications",label: "Notifications",icon: BellIcon },
   { href: "/staff/profile",      label: "Profile",      icon: UserIcon },
 ];
@@ -76,6 +77,13 @@ function BellIcon({ active }: { active: boolean }) {
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={active ? 2.5 : 2} strokeLinecap="round" strokeLinejoin="round">
       <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
       <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+    </svg>
+  );
+}
+function ChatIcon({ active }: { active: boolean }) {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={active ? 2.5 : 2} strokeLinecap="round" strokeLinejoin="round">
+      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
     </svg>
   );
 }

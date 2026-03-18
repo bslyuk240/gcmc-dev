@@ -19,6 +19,7 @@ import {
   type StaffDepartment,
   type RoleKeyValue,
 } from "@/lib/data/hr-store";
+import { formatStaffDisplayId } from "@/lib/staff-id";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -92,11 +93,21 @@ export default function StaffDirectoryPage() {
   // ── Filtered list ──────────────────────────────────────────────────────────
   const filtered = staff.filter((s) => {
     const q = search.toLowerCase();
-    const matchSearch  = !q || s.name.toLowerCase().includes(q) || s.role.toLowerCase().includes(q) || s.id.toLowerCase().includes(q) || (s.roleKey ?? "").includes(q);
+    const displayStaffId = formatStaffDisplayId({ id: s.id, name: s.name, department: s.department }).toLowerCase();
+    const matchSearch  = !q || s.name.toLowerCase().includes(q) || s.role.toLowerCase().includes(q) || s.id.toLowerCase().includes(q) || displayStaffId.includes(q) || (s.roleKey ?? "").includes(q);
     const matchDept    = deptFilter   === "All" || s.department === deptFilter;
     const matchStatus  = statusFilter === "All" || s.status     === statusFilter;
     return matchSearch && matchDept && matchStatus;
   });
+
+  function getInitials(name: string) {
+    return name
+      .split(" ")
+      .filter(Boolean)
+      .map((part) => part[0]?.toUpperCase() ?? "")
+      .slice(0, 2)
+      .join("") || "?";
+  }
 
   // ── Handlers ──────────────────────────────────────────────────────────────
 
@@ -211,22 +222,31 @@ export default function StaffDirectoryPage() {
           <table className="min-w-full text-sm">
             <thead>
               <tr className="border-b border-slate-100 bg-slate-50">
-                {["ID", "Name", "Department", "Role", "Unit", "Contract", "Access", "Status", ""].map((h) => (
-                  <th key={h} className="whitespace-nowrap px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {filtered.map((s) => (
-                <tr key={s.id} className={`hover:bg-slate-50 ${s.status === "Suspended" ? "bg-red-50/20" : s.status === "Terminated" ? "opacity-50" : ""}`}>
-                  <td className="px-4 py-3 font-mono text-xs text-slate-400">{s.id}</td>
-
-                  {/* Name */}
+                  {["Staff", "Staff ID Number", "Department", "Role", "Unit", "Contract", "Access", "Status", ""].map((h) => (
+                    <th key={h} className="whitespace-nowrap px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {filtered.map((s) => (
+                  <tr key={s.id} className={`hover:bg-slate-50 ${s.status === "Suspended" ? "bg-red-50/20" : s.status === "Terminated" ? "opacity-50" : ""}`}>
                   <td className="px-4 py-3">
-                    <p className="font-semibold text-slate-900">{s.name}</p>
-                    {s.roleKey === "hod" && (
-                      <span className="mt-0.5 inline-block rounded-full bg-violet-100 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-violet-700">HOD</span>
-                    )}
+                    <div className="flex items-start gap-3">
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-violet-100 text-sm font-bold text-violet-700">
+                        {getInitials(s.name)}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="font-semibold text-slate-900">{s.name}</p>
+                        <p className="truncate text-xs text-slate-500">{s.email}</p>
+                        {s.roleKey === "hod" && (
+                          <span className="mt-0.5 inline-block rounded-full bg-violet-100 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-violet-700">HOD</span>
+                        )}
+                      </div>
+                    </div>
+                  </td>
+
+                  <td className="px-4 py-3 font-mono text-xs text-slate-500">
+                    {formatStaffDisplayId({ id: s.id, name: s.name, department: s.department })}
                   </td>
 
                   {/* Department */}

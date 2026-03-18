@@ -132,19 +132,14 @@ const SEED: DoctorsStoreState = {
 // ─── Internal state ───────────────────────────────────────────────────────────
 
 const STORAGE_KEY = "hms_doctors_store";
+const EMPTY_STATE: DoctorsStoreState = { doctors: [], consultations: [], admissionOrders: [] };
 
 function loadState(): DoctorsStoreState {
-  if (typeof window === "undefined") return SEED;
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) return JSON.parse(raw) as DoctorsStoreState;
-  } catch { /* ignore */ }
-  return SEED;
+  return EMPTY_STATE;
 }
 
 function saveState(s: DoctorsStoreState) {
-  if (typeof window === "undefined") return;
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(s)); } catch { /* ignore */ }
+  void s;
 }
 
 let _state: DoctorsStoreState | null = null;
@@ -178,12 +173,9 @@ export async function syncDoctorsFromSupabase() {
       fetchConsultations(),
       fetchAdmissionOrders(),
     ]);
-    if (doctors.length || consultations.length || admissionOrders.length) {
-      _state = { doctors, consultations, admissionOrders };
-      saveState(_state);
-      listeners.forEach((l) => l());
-      _synced = true;
-    }
+    _state = { doctors, consultations, admissionOrders };
+    listeners.forEach((l) => l());
+    _synced = true;
   } catch { /* Supabase unavailable — keep localStorage/seed data */ }
 }
 

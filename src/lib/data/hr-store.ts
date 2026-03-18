@@ -203,9 +203,42 @@ export type PayrollPrep = {
   grossTotal: number;
   deductions: number;
   netTotal: number;
-  status: "Draft" | "Ready" | "Submitted to Accounts";
+  status: "Draft" | "Ready" | "Submitted to Accounts" | "Approved" | "Paid";
   preparedBy: string;
   preparedAt: string;
+  batchId?: string;
+};
+
+export type PayslipLineItem = {
+  label: string;
+  amount: number;
+  percentage?: number;
+};
+
+export type GeneratedPayslip = {
+  id: string;
+  period: string;
+  monthKey: string;
+  department: StaffDepartment;
+  staffId: string;
+  staffName: string;
+  role: string;
+  unit?: string;
+  bankName?: string;
+  bankAccount?: string;
+  taxId?: string;
+  baseSalary: number;
+  earnings: PayslipLineItem[];
+  deductions: PayslipLineItem[];
+  grossPay: number;
+  totalDeductions: number;
+  netPay: number;
+  paymentStatus: "Processing" | "Paid";
+  workflowStatus: "Generated" | "Batched" | "Submitted to Accounts" | "Approved" | "Paid";
+  createdAt: string;
+  createdBy: string;
+  batchId?: string;
+  paidAt?: string;
 };
 
 // ─── Store State ──────────────────────────────────────────────────────────────
@@ -216,31 +249,14 @@ type HRStoreState = {
   onboarding: OnboardingRecord[];
   offboarding: OffboardingRecord[];
   payrollPreps: PayrollPrep[];
+  generatedPayslips: GeneratedPayslip[];
   departmentHeads: DepartmentHead[];
 };
 
 // ─── Seed Data ────────────────────────────────────────────────────────────────
 
 const SEED: HRStoreState = {
-  staff: [
-    { id: "EMP-001", name: "Dr. Amaka Osei",          department: "Doctors",    role: "Senior Medical Officer",  roleKey: "hod",                contractType: "Permanent", email: "a.osei@gcmc.local",      phone: "+233 24 100 2200", joinDate: "Jan 2022",      status: "Active",    licenseNumber: "MED-4421", licenseExpiry: "Dec 2026", salary: 9500,  systemAccessCreated: true },
-    { id: "EMP-002", name: "Dr. Kwame Mensah",         department: "Doctors",    role: "Cardiologist",            roleKey: "doctor",             contractType: "Permanent", email: "kw.mensah@gcmc.local",   phone: "+233 24 222 3344", joinDate: "Feb 2018",      status: "Active",    licenseNumber: "MED-2218", licenseExpiry: "Jun 2027", salary: 14000, systemAccessCreated: true },
-    { id: "EMP-003", name: "Dr. Chen Lin",             department: "Doctors",    role: "General Practitioner",    roleKey: "doctor",             contractType: "Contract",  email: "c.lin@gcmc.local",       phone: "+233 20 300 4400", joinDate: "Jan 2025",      status: "Active",    licenseNumber: "MED-5530", licenseExpiry: "Jan 2027", salary: 7500,  systemAccessCreated: true, contractEndDate: "Dec 2026" },
-    { id: "EMP-004", name: "Nurse Patricia Ama",       department: "Nurses",     role: "Charge Nurse",            roleKey: "hod",  unit: "Ward A", contractType: "Permanent", email: "p.ama@gcmc.local",       phone: "+233 26 400 5500", joinDate: "Mar 2021",      status: "Active",    licenseNumber: "NUR-1128", licenseExpiry: "Mar 2027", salary: 4500,  systemAccessCreated: true },
-    { id: "EMP-005", name: "Nurse Sandra Boateng",     department: "Nurses",     role: "ICU Nurse",               roleKey: "nurse", unit: "ICU",  contractType: "Permanent", email: "s.boateng@gcmc.local",   phone: "+233 24 500 6600", joinDate: "Jul 2021",      status: "Active",    licenseNumber: "NUR-2244", licenseExpiry: "Jul 2027", salary: 5200,  systemAccessCreated: true },
-    { id: "EMP-006", name: "Nurse James Asante",       department: "Nurses",     role: "Staff Nurse",             roleKey: "nurse", unit: "Ward A",contractType: "Permanent", email: "j.asante@gcmc.local",    phone: "+233 27 600 7700", joinDate: "Sep 2022",      status: "Suspended", salary: 3800,  systemAccessCreated: true,  notes: "Under disciplinary investigation." },
-    { id: "EMP-007", name: "James Adu",                department: "Pharmacy",   role: "Pharmacist",              roleKey: "hod",                contractType: "Permanent", email: "j.adu@gcmc.local",       phone: "+233 50 333 4455", joinDate: "Jun 2023",      status: "Active",    licenseNumber: "PHM-3312", licenseExpiry: "Jun 2027", salary: 5200,  systemAccessCreated: true },
-    { id: "EMP-008", name: "Abena Darko",              department: "Pharmacy",   role: "Pharmacy Technician",     roleKey: "pharmacy_assistant", contractType: "Contract",  email: "a.darko@gcmc.local",     phone: "+233 24 800 9900", joinDate: "Jan 2025",      status: "Active",    salary: 3200,  systemAccessCreated: true, contractEndDate: "Dec 2026" },
-    { id: "EMP-009", name: "Grace Asante",             department: "Lab",        role: "Senior Lab Technician",   roleKey: "lab_scientist",      contractType: "Permanent", email: "g.asante@gcmc.local",    phone: "+233 26 900 1100", joinDate: "Nov 2022",      status: "Active",    licenseNumber: "LAB-8821", licenseExpiry: "Nov 2027", salary: 5000,  systemAccessCreated: true },
-    { id: "EMP-010", name: "Dr. Kofi Agyeman",         department: "Lab",        role: "Lab Scientist",           roleKey: "hod",                contractType: "Permanent", email: "k.agyeman@gcmc.local",   phone: "+233 24 001 2211", joinDate: "Mar 2020",      status: "Active",    licenseNumber: "LAB-4400", licenseExpiry: "Mar 2026", salary: 7200,  systemAccessCreated: true, notes: "License renewal due Mar 2026." },
-    { id: "EMP-011", name: "Tom Kwesi",                department: "Front Desk", role: "Senior Receptionist",     roleKey: "hod",                contractType: "Permanent", email: "t.kwesi@gcmc.local",     phone: "+233 24 112 2233", joinDate: "Sep 2022",      status: "Active",    salary: 3000,  systemAccessCreated: true },
-    { id: "EMP-012", name: "Mary Osei",                department: "Front Desk", role: "Receptionist",            roleKey: "front_desk_staff",   contractType: "Permanent", email: "m.osei@gcmc.local",      phone: "+233 26 223 3344", joinDate: "Jan 2024",      status: "Active",    salary: 2500,  systemAccessCreated: true },
-    { id: "EMP-013", name: "Sarah Mensah",             department: "Accounts",   role: "Senior Accountant",       roleKey: "hod",                contractType: "Permanent", email: "s.mensah@gcmc.local",    phone: "+233 24 334 4455", joinDate: "Apr 2020",      status: "On Leave",  salary: 7000,  systemAccessCreated: true },
-    { id: "EMP-014", name: "Michael Tawiah",           department: "Accounts",   role: "Cashier",                 roleKey: "accountant",         contractType: "Permanent", email: "m.tawiah@gcmc.local",    phone: "+233 27 445 5566", joinDate: "Oct 2022",      status: "Active",    salary: 3500,  systemAccessCreated: true },
-    { id: "EMP-015", name: "John Darko",               department: "IT",         role: "IT Support Lead",         roleKey: "hod",                contractType: "Permanent", email: "j.darko@gcmc.local",     phone: "+233 24 556 6677", joinDate: "Jan 2023",      status: "Active",    salary: 6500,  systemAccessCreated: true },
-    { id: "EMP-016", name: "Ama Frimpong",             department: "IT",         role: "Systems Administrator",   roleKey: "it_staff",           contractType: "Permanent", email: "a.frimpong@gcmc.local",  phone: "+233 26 667 7788", joinDate: "Mar 2022",      status: "Active",    salary: 7200,  systemAccessCreated: true },
-    { id: "EMP-017", name: "Dr. Mensah Okeke (New)",  department: "Lab",        role: "Lab Technician",          roleKey: "lab_scientist",      contractType: "Contract",  email: "m.okeke@gcmc.local",     phone: "+233 24 778 8899", joinDate: "Mar 15, 2026",  status: "Probation", salary: 4500,  systemAccessCreated: false, contractEndDate: "Mar 2027" },
-  ],
+  staff: [],
 
   leaveRequests: [
     { id: "LV-001", staffId: "EMP-001", staffName: "Dr. Amaka Osei", department: "Doctors", role: "Senior Medical Officer", leaveType: "Annual", startDate: "Dec 20, 2026", endDate: "Dec 31, 2026", days: 8, reason: "Year-end family holiday.", status: "Pending", submittedAt: "Mar 10, 2026" },
@@ -270,6 +286,7 @@ const SEED: HRStoreState = {
     { id: "PP-MAR-2026-FD", period: "March 2026", department: "Front Desk", staffCount: 8, grossTotal: 22000, deductions: 3300, netTotal: 18700, status: "Submitted to Accounts", preparedBy: "HR Manager", preparedAt: "Mar 13, 2026" },
     { id: "PP-MAR-2026-AC", period: "March 2026", department: "Accounts", staffCount: 9, grossTotal: 46000, deductions: 6900, netTotal: 39100, status: "Submitted to Accounts", preparedBy: "HR Manager", preparedAt: "Mar 13, 2026" },
   ],
+  generatedPayslips: [],
 
   departmentHeads: [
     { id: "HOD-001", department: "Doctors",    staffId: "EMP-001", staffName: "Dr. Amaka Osei",    roleLabel: "Senior Medical Officer", assignedOn: "Jan 2022",  assignedBy: "HR Manager" },
@@ -282,22 +299,73 @@ const SEED: HRStoreState = {
   ],
 };
 
+function buildPayrollPrepsFromPayslips(payslips: GeneratedPayslip[]): PayrollPrep[] {
+  const grouped = new Map<string, GeneratedPayslip[]>();
+
+  payslips.forEach((payslip) => {
+    const key = `${payslip.period}::${payslip.department}`;
+    const current = grouped.get(key) ?? [];
+    grouped.set(key, [...current, payslip]);
+  });
+
+  return Array.from(grouped.entries())
+    .map(([key, items]) => {
+      const [period, department] = key.split("::");
+      const batchId = items.find((item) => item.batchId)?.batchId;
+      const workflowStates = items.map((item) => item.workflowStatus);
+
+      let status: PayrollPrep["status"] = "Draft";
+      if (workflowStates.every((item) => item === "Paid")) status = "Paid";
+      else if (workflowStates.every((item) => item === "Approved" || item === "Paid")) status = "Approved";
+      else if (workflowStates.some((item) => item === "Submitted to Accounts")) status = "Submitted to Accounts";
+      else if (workflowStates.some((item) => item === "Batched")) status = "Ready";
+
+      return {
+        id: batchId ?? `PP-${period}-${department}`.replace(/\s+/g, "-").toUpperCase(),
+        period,
+        department: department as StaffDepartment,
+        staffCount: items.length,
+        grossTotal: items.reduce((sum, item) => sum + item.grossPay, 0),
+        deductions: items.reduce((sum, item) => sum + item.totalDeductions, 0),
+        netTotal: items.reduce((sum, item) => sum + item.netPay, 0),
+        status,
+        preparedBy: items[items.length - 1]?.createdBy ?? "HR Manager",
+        preparedAt: items[items.length - 1]?.createdAt ?? "Mar 18, 2026",
+        batchId,
+      };
+    })
+    .sort((left, right) => right.period.localeCompare(left.period) || left.department.localeCompare(right.department));
+}
+
 // ─── Internal state ───────────────────────────────────────────────────────────
 
 const STORAGE_KEY = "hms_hr_store";
+const EMPTY_HR_STATE: HRStoreState = {
+  ...SEED,
+  staff: [],
+  leaveRequests: [],
+  onboarding: [],
+  offboarding: [],
+  payrollPreps: [],
+  generatedPayslips: [],
+  departmentHeads: [],
+};
 
 function loadState(): HRStoreState {
-  if (typeof window === "undefined") return SEED;
+  if (typeof window === "undefined") return EMPTY_HR_STATE;
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw) as HRStoreState;
-      // Migrate: add departmentHeads if missing from old stored state
-      if (!parsed.departmentHeads) parsed.departmentHeads = SEED.departmentHeads;
-      return parsed;
+      const generatedPayslips = parsed.generatedPayslips ?? [];
+      return {
+        ...EMPTY_HR_STATE,
+        generatedPayslips,
+        payrollPreps: buildPayrollPrepsFromPayslips(generatedPayslips),
+      };
     }
   } catch { /* ignore */ }
-  return SEED;
+  return EMPTY_HR_STATE;
 }
 
 function saveState(s: HRStoreState) {
@@ -332,14 +400,17 @@ export async function syncHRFromSupabase() {
   try {
     const { fetchStaffMembers, fetchLeaveRequests } = await import("@/lib/supabase/db");
     const [staff, leaveRequests] = await Promise.all([fetchStaffMembers(), fetchLeaveRequests()]);
-    if (staff.length || leaveRequests.length) {
-      const current = getState();
-      _state = { ...current, staff, leaveRequests };
-      saveState(_state);
-      listeners.forEach((l) => l());
-      _synced = true;
-    }
-  } catch { /* keep localStorage/seed */ }
+    const current = getState();
+    _state = {
+      ...current,
+      staff,
+      leaveRequests,
+      payrollPreps: buildPayrollPrepsFromPayslips(current.generatedPayslips),
+    };
+    saveState(_state);
+    listeners.forEach((l) => l());
+    _synced = true;
+  } catch { /* keep local state */ }
 }
 
 // ─── Staff ────────────────────────────────────────────────────────────────────
@@ -514,6 +585,53 @@ export function getPayrollPreps(): PayrollPrep[] { return [...getState().payroll
 export function updatePayrollPrepStatus(id: string, status: PayrollPrep["status"]) {
   mutate((state) => {
     state.payrollPreps = state.payrollPreps.map((p) => p.id === id ? { ...p, status } : p);
+  });
+}
+
+export function getGeneratedPayslips(): GeneratedPayslip[] {
+  return [...getState().generatedPayslips];
+}
+
+export function addGeneratedPayslip(payslip: GeneratedPayslip) {
+  mutate((state) => {
+    state.generatedPayslips = [
+      payslip,
+      ...state.generatedPayslips.filter(
+        (item) => !(item.staffId === payslip.staffId && item.monthKey === payslip.monthKey),
+      ),
+    ];
+    state.payrollPreps = buildPayrollPrepsFromPayslips(state.generatedPayslips);
+  });
+}
+
+export function assignPayslipsToBatch(batchId: string, payslipIds: string[]) {
+  mutate((state) => {
+    state.generatedPayslips = state.generatedPayslips.map((item) =>
+      payslipIds.includes(item.id)
+        ? { ...item, batchId, workflowStatus: "Batched", paymentStatus: "Processing" }
+        : item,
+    );
+    state.payrollPreps = buildPayrollPrepsFromPayslips(state.generatedPayslips);
+  });
+}
+
+export function updatePayslipWorkflowByBatch(
+  batchId: string,
+  workflowStatus: GeneratedPayslip["workflowStatus"],
+  options?: { paymentStatus?: GeneratedPayslip["paymentStatus"]; paidAt?: string },
+) {
+  mutate((state) => {
+    state.generatedPayslips = state.generatedPayslips.map((item) =>
+      item.batchId === batchId
+        ? {
+            ...item,
+            workflowStatus,
+            paymentStatus: options?.paymentStatus ?? item.paymentStatus,
+            paidAt: options?.paidAt ?? item.paidAt,
+          }
+        : item,
+    );
+    state.payrollPreps = buildPayrollPrepsFromPayslips(state.generatedPayslips);
   });
 }
 

@@ -1,37 +1,14 @@
 "use client";
 
-import { ChatWindow } from "./chat-window";
 import { PageHeader } from "@/components/layout/page-header";
-import type { ChatMessage } from "./chat-window";
+import { LiveSupportChat } from "@/components/chat/live-support-chat";
+import { useHMSSession } from "@/modules/rbac/hooks";
+import { formatDepartmentLabel } from "@/lib/chat/types";
 
-const SEED_MESSAGES: ChatMessage[] = [
-  {
-    id: "seed-1",
-    sender: "IT Support",
-    senderRole: "IT",
-    body: "Hello! How can we help you today? Please describe your issue and we'll assist as soon as possible.",
-    time: "09:00",
-    isOwn: false,
-  },
-];
+export function ChatToIT() {
+  const session = useHMSSession();
+  const deptLabel = session ? formatDepartmentLabel(session.department) : "Department";
 
-/**
- * Reusable page body used by every department's /chat route.
- * dept        – URL segment, e.g. "pharmacy"
- * deptLabel   – Display name shown to IT, e.g. "Pharmacy"
- * staffName   – Current user's name (mock)
- * staffRole   – Current user's role (mock)
- */
-export function ChatToIT({
-  deptLabel,
-  staffName,
-  staffRole,
-}: {
-  dept: string;
-  deptLabel: string;
-  staffName: string;
-  staffRole: string;
-}) {
   return (
     <div className="flex h-[calc(100vh-7rem)] flex-col space-y-3">
       <PageHeader
@@ -39,15 +16,14 @@ export function ChatToIT({
         description={`${deptLabel} · Get technical support from the IT team.`}
       />
       <div className="min-h-0 flex-1 overflow-hidden rounded-xl shadow-sm">
-        <ChatWindow
-          contactName="IT Support"
-          contactRole="IT Department"
-          contactStatus="online"
-          initialMessages={SEED_MESSAGES}
-          channelId={`chat-to-it`}
-          placeholder="Describe your issue…"
-          myName={staffName}
-          mySubtitle={`${staffRole} · ${deptLabel}`}
+        <LiveSupportChat
+          channelType="department_it"
+          targetDepartment="it"
+          targetName="IT Support"
+          targetRole="IT Department"
+          placeholder="Describe your issue..."
+          senderPortal="management"
+          emptyStateDescription="Messages you send here will appear in the IT inbox."
         />
       </div>
     </div>

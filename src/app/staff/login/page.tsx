@@ -1,19 +1,13 @@
 import { loginStaffPortalAction } from "@/server/actions/auth/login-staff-portal";
-import { getServerSession, getCurrentSession } from "@/lib/auth/session";
-import { redirect } from "next/navigation";
+import { getStaffPortalSession } from "@/lib/auth/session";
 
 export const metadata = {
   title: "Staff Login — GCMC Staff Portal",
 };
 
-/**
- * If the user is already authenticated, go straight to the staff dashboard.
- */
 async function alreadyLoggedIn(): Promise<boolean> {
-  const v2 = await getServerSession();
-  if (v2) return true;
-  const legacy = await getCurrentSession();
-  return legacy.hasSession && !!legacy.department;
+  const session = await getStaffPortalSession();
+  return session !== null;
 }
 
 export default async function StaffLoginPage({

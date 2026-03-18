@@ -1,20 +1,51 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { PageHeader } from "@/components/layout/page-header";
-import { Card } from "@/components/ui/card";
+import { PayrollEntryBreakdown } from "@/components/payroll/payroll-entry-breakdown";
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import { Modal, ModalFooter } from "@/components/ui/modal";
 import { Toast, type ToastData } from "@/components/ui/toast";
-import { useAccountsStore } from "@/lib/hooks/use-accounts-store";
-import { useHRStore } from "@/lib/hooks/use-hr-store";
 import {
   addPayrollBatch,
   updatePayrollStatus,
   type PayrollBatch,
-  type PayrollEntry,
+  type PayrollLineItem,
 } from "@/lib/data/accounts-store";
-import { updatePayrollPrepStatus } from "@/lib/data/hr-store";
+import {
+  addGeneratedPayslip,
+  assignPayslipsToBatch,
+  updatePayslipWorkflowByBatch,
+  type GeneratedPayslip,
+  type StaffDepartment,
+} from "@/lib/data/hr-store";
+import { useAccountsStore } from "@/lib/hooks/use-accounts-store";
+import { useHRStore } from "@/lib/hooks/use-hr-store";
+import {
+  buildGeneratedPayslip,
+  buildPayrollEntry,
+  buildPayrollEntryFromPayslip,
+  EMPTY_PAYROLL_ADJUSTMENTS,
+  summarisePayrollEntries,
+  sumLineItems,
+  type PayrollDraftAdjustments,
+} from "@/lib/payroll/utils";
+
+const MONTH_OPTIONS = [
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
+];
 
 const PAYROLL_STATUS_STYLES: Record<string, string> = {
   Draft: "bg-slate-100 text-slate-600",
@@ -23,341 +54,686 @@ const PAYROLL_STATUS_STYLES: Record<string, string> = {
   Paid: "bg-emerald-50 text-emerald-700",
 };
 
-const DEPARTMENTS = ["Doctors", "Nurses", "Pharmacy", "Front Desk", "Accounts", "Store", "IT", "HR", "Administration"];
-const ROLES_BY_DEPT: Record<string, string[]> = {
-  Doctors: ["Consultant", "Senior Doctor", "Junior Doctor", "Resident"],
-  Nurses: ["Senior Nurse", "Staff Nurse", "Nursing Assistant"],
-  Pharmacy: ["Pharmacist", "Pharmacy Technician"],
-  "Front Desk": ["Receptionist", "Senior Receptionist"],
-  Accounts: ["Accountant", "Senior Accountant", "Finance Manager"],
-  Store: ["Store Manager", "Store Keeper"],
-  IT: ["IT Manager", "Systems Admin", "Support Technician"],
-  HR: ["HR Manager", "HR Officer"],
-  Administration: ["Administrator", "Department Head"],
-};
+function money(value: number) {
+  return `NGN ${value.toLocaleString()}`;
+}
 
-const BASE_SALARIES: Record<string, number> = {
-  Consultant: 12000, "Senior Doctor": 8000, "Junior Doctor": 5500, Resident: 4000,
-  "Senior Nurse": 4500, "Staff Nurse": 3500, "Nursing Assistant": 2500,
-  Pharmacist: 5000, "Pharmacy Technician": 3000,
-  Receptionist: 2800, "Senior Receptionist": 3500,
-  Accountant: 4500, "Senior Accountant": 6000, "Finance Manager": 8000,
-  "Store Manager": 4000, "Store Keeper": 3000,
-  "IT Manager": 7000, "Systems Admin": 5500, "Support Technician": 3500,
-  "HR Manager": 7000, "HR Officer": 4500,
-  Administrator: 5000, "Department Head": 9000,
-};
+function buildMonthKey(year: number, monthIndex: number) {
+  return `${year}-${String(monthIndex + 1).padStart(2, "0")}`;
+}
 
-const CURRENT_MONTH = "March 2026";
+function buildPeriodLabel(year: number, monthIndex: number) {
+  return `${MONTH_OPTIONS[monthIndex]} ${year}`;
+}
 
-const DEFAULT_ENTRIES: PayrollEntry[] = [
-  { staffName: "Dr. Amaka Osei", department: "Doctors", role: "Senior Doctor", baseSalary: 8000, allowances: 1200, deductions: 400, netPay: 8800 },
-  { staffName: "Dr. Kwame Mensah", department: "Doctors", role: "Consultant", baseSalary: 12000, allowances: 1800, deductions: 600, netPay: 13200 },
-  { staffName: "Nurse Patricia", department: "Nurses", role: "Senior Nurse", baseSalary: 4500, allowances: 800, deductions: 300, netPay: 5000 },
-  { staffName: "Nurse Grace", department: "Nurses", role: "Staff Nurse", baseSalary: 3500, allowances: 600, deductions: 200, netPay: 3900 },
-  { staffName: "James Adu", department: "Pharmacy", role: "Pharmacist", baseSalary: 5000, allowances: 600, deductions: 250, netPay: 5350 },
-  { staffName: "Tom Kwesi", department: "Front Desk", role: "Receptionist", baseSalary: 2800, allowances: 400, deductions: 150, netPay: 3050 },
-  { staffName: "Sarah Mensah", department: "Accounts", role: "Accountant", baseSalary: 4500, allowances: 700, deductions: 250, netPay: 4950 },
-  { staffName: "Store Manager", department: "Store", role: "Store Manager", baseSalary: 4000, allowances: 500, deductions: 200, netPay: 4300 },
-];
+type CustomLineKind = "customEarnings" | "customDeductions";
+type NumericAdjustmentField = Exclude<keyof PayrollDraftAdjustments, "customEarnings" | "customDeductions">;
 
 export default function HRPayrollPage() {
   const { payrollBatches } = useAccountsStore();
-  const { payrollPreps } = useHRStore();
+  const { generatedPayslips, staff, payrollPreps } = useHRStore();
+
+  const today = new Date();
+  const [selectedYear, setSelectedYear] = useState(today.getFullYear());
+  const [selectedMonthIndex, setSelectedMonthIndex] = useState(today.getMonth());
+  const [selectedDepartment, setSelectedDepartment] = useState<StaffDepartment>("Doctors");
+  const [selectedStaffId, setSelectedStaffId] = useState("");
+  const [draftAdjustments, setDraftAdjustments] = useState<PayrollDraftAdjustments>(EMPTY_PAYROLL_ADJUSTMENTS);
   const [showCreate, setShowCreate] = useState(false);
   const [viewBatch, setViewBatch] = useState<PayrollBatch | null>(null);
+  const [viewPayslip, setViewPayslip] = useState<GeneratedPayslip | null>(null);
   const [submitTarget, setSubmitTarget] = useState<PayrollBatch | null>(null);
   const [toast, setToast] = useState<ToastData | null>(null);
 
-  // New batch form
-  const [period, setPeriod] = useState(CURRENT_MONTH);
-  const [entries, setEntries] = useState<PayrollEntry[]>(DEFAULT_ENTRIES);
-  const [newEntry, setNewEntry] = useState<Partial<PayrollEntry>>({ department: DEPARTMENTS[0] });
-  const [creatingBatch, setCreatingBatch] = useState(false);
+  const monthKey = buildMonthKey(selectedYear, selectedMonthIndex);
+  const periodLabel = buildPeriodLabel(selectedYear, selectedMonthIndex);
 
-  const totalAmount = entries.reduce((s, e) => s + e.netPay, 0);
+  const eligibleStaff = useMemo(
+    () => staff.filter((member) => member.status !== "Suspended" && member.status !== "Terminated"),
+    [staff],
+  );
 
-  function addEntry() {
-    if (!newEntry.staffName || !newEntry.role || !newEntry.baseSalary) {
-      setToast({ message: "Fill in name, role, and base salary.", type: "error" });
+  const departments = useMemo(
+    () => Array.from(new Set(eligibleStaff.map((member) => member.department))).sort() as StaffDepartment[],
+    [eligibleStaff],
+  );
+
+  const staffInDepartment = useMemo(
+    () => eligibleStaff.filter((member) => member.department === selectedDepartment),
+    [eligibleStaff, selectedDepartment],
+  );
+
+  const selectedStaff = useMemo(
+    () => staffInDepartment.find((member) => member.id === selectedStaffId) ?? null,
+    [selectedStaffId, staffInDepartment],
+  );
+
+  const previewEntry = useMemo(
+    () => (selectedStaff ? buildPayrollEntry(selectedStaff, draftAdjustments) : null),
+    [selectedStaff, draftAdjustments],
+  );
+
+  const filteredPayslips = useMemo(
+    () => generatedPayslips.filter((payslip) => payslip.monthKey === monthKey),
+    [generatedPayslips, monthKey],
+  );
+
+  const payslipGroups = useMemo(() => {
+    const grouped = new Map<StaffDepartment, GeneratedPayslip[]>();
+    filteredPayslips.forEach((payslip) => {
+      const current = grouped.get(payslip.department) ?? [];
+      grouped.set(payslip.department, [...current, payslip]);
+    });
+    return Array.from(grouped.entries())
+      .map(([department, items]) => ({
+        department,
+        items: items.sort((left, right) => left.staffName.localeCompare(right.staffName)),
+        totals: {
+          gross: items.reduce((sum, item) => sum + item.grossPay, 0),
+          deductions: items.reduce((sum, item) => sum + item.totalDeductions, 0),
+          net: items.reduce((sum, item) => sum + item.netPay, 0),
+        },
+      }))
+      .sort((left, right) => left.department.localeCompare(right.department));
+  }, [filteredPayslips]);
+
+  const periodSummary = useMemo(
+    () => ({
+      staffCount: filteredPayslips.length,
+      gross: filteredPayslips.reduce((sum, item) => sum + item.grossPay, 0),
+      deductions: filteredPayslips.reduce((sum, item) => sum + item.totalDeductions, 0),
+      net: filteredPayslips.reduce((sum, item) => sum + item.netPay, 0),
+    }),
+    [filteredPayslips],
+  );
+
+  const periodBatches = useMemo(
+    () => payrollBatches.filter((batch) => batch.period === periodLabel && batch.department),
+    [payrollBatches, periodLabel],
+  );
+
+  function updateAdjustment(field: NumericAdjustmentField, value: string) {
+    setDraftAdjustments((current) => ({
+      ...current,
+      [field]: Number(value) || 0,
+    }));
+  }
+
+  function resetDraft() {
+    setDraftAdjustments(EMPTY_PAYROLL_ADJUSTMENTS);
+  }
+
+  function addCustomLine(kind: CustomLineKind) {
+    setDraftAdjustments((current) => ({
+      ...current,
+      [kind]: [...current[kind], { label: "", amount: 0 }],
+    }));
+  }
+
+  function updateCustomLine(kind: CustomLineKind, index: number, field: keyof PayrollLineItem, value: string) {
+    setDraftAdjustments((current) => ({
+      ...current,
+      [kind]: current[kind].map((item, itemIndex) =>
+        itemIndex === index
+          ? {
+              ...item,
+              [field]: field === "amount" ? Number(value) || 0 : value,
+            }
+          : item,
+      ),
+    }));
+  }
+
+  function removeCustomLine(kind: CustomLineKind, index: number) {
+    setDraftAdjustments((current) => ({
+      ...current,
+      [kind]: current[kind].filter((_, itemIndex) => itemIndex !== index),
+    }));
+  }
+
+  function handleCreatePayslip(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!selectedStaff) {
+      setToast({ message: "Select a staff member before creating a payslip.", type: "error" });
       return;
     }
-    const base = newEntry.baseSalary ?? 0;
-    const allow = newEntry.allowances ?? Math.round(base * 0.15);
-    const deduct = newEntry.deductions ?? Math.round(base * 0.05);
-    const entry: PayrollEntry = {
-      staffName: newEntry.staffName ?? "",
-      department: newEntry.department ?? DEPARTMENTS[0],
-      role: newEntry.role ?? "",
-      baseSalary: base,
-      allowances: allow,
-      deductions: deduct,
-      netPay: base + allow - deduct,
+
+    const payslip = buildGeneratedPayslip(
+      selectedStaff,
+      periodLabel,
+      monthKey,
+      "HR Manager (You)",
+      draftAdjustments,
+    );
+
+    addGeneratedPayslip(payslip);
+    setToast({
+      message: `${selectedStaff.name}'s ${periodLabel} payslip has been created and published to the staff portal.`,
+      type: "success",
+    });
+    resetDraft();
+    setShowCreate(false);
+  }
+
+  function handleGenerateDepartmentBatch(department: StaffDepartment) {
+    const group = payslipGroups.find((item) => item.department === department);
+    if (!group || group.items.length === 0) {
+      setToast({ message: `No generated payslips found for ${department} in ${periodLabel}.`, type: "error" });
+      return;
+    }
+
+    const existing = payrollBatches.find(
+      (batch) => batch.period === periodLabel && batch.department === department,
+    );
+    if (existing) {
+      setViewBatch(existing);
+      setToast({ message: `${department} already has a batch for ${periodLabel}.`, type: "info" });
+      return;
+    }
+
+    const entries = group.items.map((item) => buildPayrollEntryFromPayslip(item));
+    const totals = summarisePayrollEntries(entries);
+    const batchId = `PAY-${department}-${monthKey}`.replace(/\s+/g, "-").toUpperCase();
+    const batch: PayrollBatch = {
+      id: batchId,
+      period: periodLabel,
+      department,
+      totalStaff: group.items.length,
+      totalAmount: totals.net,
+      preparedBy: "HR Manager (You)",
+      preparedAt: new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }),
+      status: "Draft",
+      payslipIds: group.items.map((item) => item.id),
+      entries,
     };
-    setEntries((prev) => [...prev, entry]);
-    setNewEntry({ department: newEntry.department });
-  }
 
-  function removeEntry(idx: number) {
-    setEntries((prev) => prev.filter((_, i) => i !== idx));
-  }
-
-  function handleCreateBatch(e: React.FormEvent) {
-    e.preventDefault();
-    if (!period || entries.length === 0) return;
-    setCreatingBatch(true);
-    setTimeout(() => {
-      const batch: PayrollBatch = {
-        id: `PAY-${Date.now()}`,
-        period,
-        totalStaff: entries.length,
-        totalAmount,
-        preparedBy: "HR Manager (You)",
-        preparedAt: "Mar 15, 2026",
-        status: "Draft",
-        entries: [...entries],
-      };
-      addPayrollBatch(batch);
-      setToast({ message: `Payroll batch for ${period} created as Draft.`, type: "success" });
-      setShowCreate(false);
-      setCreatingBatch(false);
-      setEntries(DEFAULT_ENTRIES);
-      setPeriod(CURRENT_MONTH);
-    }, 600);
+    addPayrollBatch(batch);
+    assignPayslipsToBatch(batchId, group.items.map((item) => item.id));
+    setToast({
+      message: `${department} payroll batch generated from ${group.items.length} payslips for ${periodLabel}.`,
+      type: "success",
+    });
   }
 
   function handleSubmitToAccounts(batch: PayrollBatch) {
     updatePayrollStatus(batch.id, "Submitted");
+    updatePayslipWorkflowByBatch(batch.id, "Submitted to Accounts");
     setSubmitTarget(null);
-    setToast({ message: `Payroll for ${batch.period} submitted to Accounts for approval. ₦${batch.totalAmount.toLocaleString()} pending disbursement.`, type: "success" });
+    setToast({
+      message: `${batch.department ?? "Department"} payroll for ${batch.period} submitted to Accounts.`,
+      type: "success",
+    });
   }
 
-  const inputCls = "w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/20";
+  const inputCls =
+    "w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/20";
 
   return (
     <div className="space-y-6">
       <PageHeader
         title="Payroll Management"
-        description="Prepare monthly payroll and submit to Accounts for salary disbursement."
-        action={
-          <Button onClick={() => setShowCreate(true)}>+ Prepare Payroll</Button>
-        }
+        description="Create individual staff payslips by department, then generate and submit department payroll batches to Accounts."
+        action={<Button onClick={() => setShowCreate(true)}>Create Payslip</Button>}
       />
 
-      {/* Payroll Prep Pipeline from HR Store */}
-      {payrollPreps.some((p) => p.status !== "Submitted to Accounts") && (
-        <div>
-          <div className="flex items-center justify-between mb-2">
-            <h3 className="text-sm font-bold text-slate-800">Payroll Preparation Pipeline</h3>
-            <p className="text-xs text-slate-400">Prepared by HR — submit to Accounts for disbursement</p>
+      <Card className="p-5">
+        <div className="flex flex-wrap items-end gap-4">
+          <div>
+            <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Month</label>
+            <select value={selectedMonthIndex} onChange={(event) => setSelectedMonthIndex(Number(event.target.value))} className={inputCls}>
+              {MONTH_OPTIONS.map((month, index) => (
+                <option key={month} value={index}>{month}</option>
+              ))}
+            </select>
           </div>
-          <div className="flex flex-wrap gap-3">
-            {payrollPreps.map((p) => (
-              <div key={p.id} className={`flex items-center gap-3 rounded-xl border px-4 py-3 min-w-[200px] ${p.status === "Ready" ? "border-emerald-200 bg-emerald-50" : p.status === "Submitted to Accounts" ? "border-sky-200 bg-sky-50" : "border-slate-200 bg-white"}`}>
-                <div className="flex-1">
-                  <p className="text-xs font-bold text-slate-900">{p.department}</p>
-                  <p className="text-xs text-slate-500">{p.staffCount} staff · ₦{p.netTotal.toLocaleString()}</p>
-                </div>
-                <div className="text-right">
-                  <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${p.status === "Ready" ? "bg-emerald-100 text-emerald-700" : p.status === "Submitted to Accounts" ? "bg-sky-100 text-sky-700" : "bg-slate-100 text-slate-600"}`}>{p.status}</span>
-                  {p.status === "Ready" && (
-                    <button onClick={() => { updatePayrollPrepStatus(p.id, "Submitted to Accounts"); }}
-                      className="mt-1 block text-[10px] font-bold text-sky-600 hover:underline">
-                      Submit to Accounts →
-                    </button>
-                  )}
-                </div>
-              </div>
-            ))}
+          <div>
+            <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Year</label>
+            <select value={selectedYear} onChange={(event) => setSelectedYear(Number(event.target.value))} className={inputCls}>
+              {[2025, 2026, 2027].map((year) => (
+                <option key={year} value={year}>{year}</option>
+              ))}
+            </select>
+          </div>
+          <div className="min-w-[200px] flex-1">
+            <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Payroll Period</label>
+            <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm font-semibold text-slate-700">
+              {periodLabel}
+            </div>
           </div>
         </div>
-      )}
+      </Card>
 
-      {/* Summary KPIs */}
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className="grid gap-4 sm:grid-cols-4">
         {[
-          { label: "Batches This Year", value: payrollBatches.length, color: "text-slate-900" },
-          { label: "Pending Approval", value: payrollBatches.filter((b) => b.status === "Submitted").length, color: "text-sky-700" },
-          { label: "MTD Disbursed", value: `₦${payrollBatches.filter((b) => b.status === "Paid" && b.period.includes("2026")).reduce((s, b) => s + b.totalAmount, 0).toLocaleString()}`, color: "text-emerald-700" },
-        ].map((s) => (
-          <Card key={s.label} className="p-5">
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{s.label}</p>
-            <p className={`mt-1 text-2xl font-bold ${s.color}`}>{s.value}</p>
+          { label: "Generated Payslips", value: periodSummary.staffCount, color: "text-slate-900" },
+          { label: "Gross Payroll", value: money(periodSummary.gross), color: "text-violet-700" },
+          { label: "Total Deductions", value: money(periodSummary.deductions), color: "text-rose-700" },
+          { label: "Net Payroll", value: money(periodSummary.net), color: "text-emerald-700" },
+        ].map((card) => (
+          <Card key={card.label} className="p-5">
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{card.label}</p>
+            <p className={`mt-1 text-2xl font-bold ${card.color}`}>{card.value}</p>
           </Card>
         ))}
       </div>
 
-      {/* Payroll batches table */}
-      <Card className="overflow-hidden p-0">
-        <div className="border-b border-slate-100 px-5 py-4">
-          <h3 className="font-bold text-slate-900">Payroll Batches</h3>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="min-w-full text-sm text-left">
-            <thead>
-              <tr className="bg-slate-50 border-b border-slate-100">
-                {["Period", "Staff", "Total Amount", "Prepared By", "Prepared At", "Status", "Action"].map((h) => (
-                  <th key={h} className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {payrollBatches.map((batch) => (
-                <tr key={batch.id} className="hover:bg-slate-50">
-                  <td className="px-5 py-3 font-semibold text-slate-900">{batch.period}</td>
-                  <td className="px-5 py-3 text-slate-600">{batch.totalStaff} staff</td>
-                  <td className="px-5 py-3 font-bold text-slate-900">₦{batch.totalAmount.toLocaleString()}</td>
-                  <td className="px-5 py-3 text-slate-500">{batch.preparedBy}</td>
-                  <td className="px-5 py-3 text-slate-500">{batch.preparedAt}</td>
-                  <td className="px-5 py-3">
-                    <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${PAYROLL_STATUS_STYLES[batch.status]}`}>
-                      {batch.status}
-                    </span>
-                  </td>
-                  <td className="px-5 py-3">
-                    <div className="flex gap-2">
-                      <Button size="sm" variant="outline" onClick={() => setViewBatch(batch)}>View</Button>
-                      {batch.status === "Draft" && (
-                        <Button size="sm" onClick={() => setSubmitTarget(batch)}>
-                          Submit to Accounts
-                        </Button>
-                      )}
-                      {batch.status === "Submitted" && (
-                        <span className="text-xs font-medium text-sky-700">Awaiting Accounts approval</span>
-                      )}
-                      {batch.status === "Paid" && (
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs font-semibold text-emerald-700">✓ Disbursed</span>
-                          <a href="/app/hr/payslips" className="text-xs font-semibold text-sky-600 hover:underline">
-                            Payslips →
-                          </a>
-                        </div>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              ))}
-              {payrollBatches.length === 0 && (
-                <tr><td colSpan={7} className="px-6 py-10 text-center text-sm text-slate-400">No payroll batches yet.</td></tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </Card>
-
-      <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-500">
-        <strong className="text-slate-700">Flow:</strong> HR prepares payroll → clicks &quot;Submit to Accounts&quot; → Accounts approves → Accounts disburses salaries → status updates to Paid.
-      </div>
-
-      {/* Create payroll modal */}
-      <Modal open={showCreate} onClose={() => !creatingBatch && setShowCreate(false)} title="Prepare Payroll Batch">
-        <form onSubmit={handleCreateBatch} className="space-y-5">
-          <div>
-            <label className="mb-1 block text-sm font-semibold text-slate-700">Pay Period *</label>
-            <input type="text" required value={period} onChange={(e) => setPeriod(e.target.value)}
-              placeholder="e.g. March 2026" className={inputCls} />
+      {payrollPreps.length > 0 && (
+        <div>
+          <div className="mb-2 flex items-center justify-between">
+            <h3 className="text-sm font-bold text-slate-800">Department Payroll Status</h3>
+            <p className="text-xs text-slate-400">Generated payslips automatically roll up into department preparation totals.</p>
           </div>
-
-          {/* Staff entries */}
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-sm font-bold text-slate-800">Staff Entries ({entries.length})</span>
-              <span className="text-sm font-bold text-slate-700">Total: ₦{totalAmount.toLocaleString()}</span>
-            </div>
-            <div className="max-h-52 overflow-y-auto rounded-lg border border-slate-200 divide-y divide-slate-100">
-              {entries.map((e, i) => (
-                <div key={i} className="flex items-center justify-between px-3 py-2 text-sm hover:bg-slate-50">
-                  <div>
-                    <p className="font-medium text-slate-800">{e.staffName}</p>
-                    <p className="text-xs text-slate-500">{e.department} · {e.role}</p>
+          <div className="flex flex-wrap gap-3">
+            {payrollPreps
+              .filter((prep) => prep.period === periodLabel)
+              .map((prep) => (
+                <div key={prep.id} className="min-w-[220px] rounded-xl border border-slate-200 bg-white px-4 py-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <div>
+                      <p className="text-sm font-semibold text-slate-900">{prep.department}</p>
+                      <p className="text-xs text-slate-500">{prep.staffCount} payslips generated</p>
+                    </div>
+                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                      prep.status === "Paid"
+                        ? "bg-emerald-100 text-emerald-700"
+                        : prep.status === "Approved"
+                          ? "bg-violet-100 text-violet-700"
+                          : prep.status === "Submitted to Accounts"
+                            ? "bg-sky-100 text-sky-700"
+                            : prep.status === "Ready"
+                              ? "bg-amber-100 text-amber-700"
+                              : "bg-slate-100 text-slate-600"
+                    }`}>
+                      {prep.status}
+                    </span>
                   </div>
-                  <div className="flex items-center gap-3">
-                    <span className="font-bold text-slate-700">₦{e.netPay.toLocaleString()}</span>
-                    <button type="button" onClick={() => removeEntry(i)} className="text-red-400 hover:text-red-600 text-xs">✕</button>
-                  </div>
+                  <p className="mt-2 text-xs text-slate-500">Gross {money(prep.grossTotal)} · Net {money(prep.netTotal)}</p>
                 </div>
               ))}
+          </div>
+        </div>
+      )}
+
+      <div className="grid gap-6 lg:grid-cols-[1.15fr_0.85fr]">
+        <Card className="p-5">
+          <div className="mb-4 flex items-center justify-between">
+            <div>
+              <h3 className="font-bold text-slate-900">Generated Payslips by Department</h3>
+              <p className="text-sm text-slate-500">{periodLabel}</p>
             </div>
           </div>
+          <div className="space-y-4">
+            {payslipGroups.map((group) => {
+              const relatedBatch = periodBatches.find((batch) => batch.department === group.department);
+              return (
+                <div key={group.department} className="rounded-2xl border border-slate-200 p-4">
+                  <div className="flex flex-col gap-3 border-b border-slate-100 pb-3 lg:flex-row lg:items-center lg:justify-between">
+                    <div>
+                      <p className="text-base font-semibold text-slate-900">{group.department}</p>
+                      <p className="text-sm text-slate-500">
+                        {group.items.length} payslips · Gross {money(group.totals.gross)} · Net {money(group.totals.net)}
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {relatedBatch ? (
+                        <>
+                          <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${PAYROLL_STATUS_STYLES[relatedBatch.status]}`}>
+                            {relatedBatch.status}
+                          </span>
+                          <Button size="sm" variant="outline" onClick={() => setViewBatch(relatedBatch)}>View Batch</Button>
+                          {relatedBatch.status === "Draft" && (
+                            <Button size="sm" onClick={() => setSubmitTarget(relatedBatch)}>Send to Accounts</Button>
+                          )}
+                        </>
+                      ) : (
+                        <Button size="sm" onClick={() => handleGenerateDepartmentBatch(group.department)}>
+                          Generate Department Batch
+                        </Button>
+                      )}
+                    </div>
+                  </div>
 
-          {/* Add entry */}
-          <div className="rounded-xl border border-dashed border-slate-300 p-3 space-y-2">
-            <p className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Add Staff Member</p>
-            <div className="grid grid-cols-2 gap-2">
-              <input type="text" placeholder="Staff name" value={newEntry.staffName ?? ""} onChange={(e) => setNewEntry((p) => ({ ...p, staffName: e.target.value }))} className={inputCls} />
-              <select value={newEntry.department ?? DEPARTMENTS[0]} onChange={(e) => setNewEntry((p) => ({ ...p, department: e.target.value, role: undefined }))} className={inputCls}>
-                {DEPARTMENTS.map((d) => <option key={d}>{d}</option>)}
-              </select>
-              <select value={newEntry.role ?? ""} onChange={(e) => {
-                const base = BASE_SALARIES[e.target.value] ?? 3000;
-                setNewEntry((p) => ({ ...p, role: e.target.value, baseSalary: base, allowances: Math.round(base * 0.15), deductions: Math.round(base * 0.05) }));
-              }} className={inputCls}>
-                <option value="">Select role…</option>
-                {(ROLES_BY_DEPT[newEntry.department ?? DEPARTMENTS[0]] ?? []).map((r) => <option key={r}>{r}</option>)}
-              </select>
-              <input type="number" placeholder="Base salary" value={newEntry.baseSalary ?? ""} onChange={(e) => setNewEntry((p) => ({ ...p, baseSalary: parseFloat(e.target.value) }))} className={inputCls} />
+                  <div className="mt-3 space-y-2">
+                    {group.items.map((payslip) => (
+                      <button
+                        key={payslip.id}
+                        onClick={() => setViewPayslip(payslip)}
+                        className="flex w-full items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-left transition hover:border-slate-300 hover:bg-white"
+                      >
+                        <div>
+                          <p className="font-semibold text-slate-900">{payslip.staffName}</p>
+                          <p className="text-xs text-slate-500">{payslip.role}</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="font-semibold text-slate-900">{money(payslip.netPay)}</p>
+                          <p className="text-xs text-slate-500">{payslip.workflowStatus}</p>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+
+            {payslipGroups.length === 0 && (
+              <div className="rounded-xl border border-dashed border-slate-300 px-4 py-10 text-center text-sm text-slate-400">
+                No payslips have been generated for {periodLabel} yet.
+              </div>
+            )}
+          </div>
+        </Card>
+
+        <Card className="p-5">
+          <h3 className="font-bold text-slate-900">Department Payroll Batches</h3>
+          <p className="mt-1 text-sm text-slate-500">Batches created from generated payslips for {periodLabel}.</p>
+          <div className="mt-4 space-y-3">
+            {periodBatches.map((batch) => (
+              <div key={batch.id} className="rounded-xl border border-slate-200 p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="font-semibold text-slate-900">{batch.department}</p>
+                    <p className="text-xs text-slate-500">{batch.totalStaff} staff · {money(batch.totalAmount)}</p>
+                  </div>
+                  <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${PAYROLL_STATUS_STYLES[batch.status]}`}>
+                    {batch.status}
+                  </span>
+                </div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <Button size="sm" variant="outline" onClick={() => setViewBatch(batch)}>View</Button>
+                  {batch.status === "Draft" && (
+                    <Button size="sm" onClick={() => setSubmitTarget(batch)}>Send to Accounts</Button>
+                  )}
+                </div>
+              </div>
+            ))}
+            {periodBatches.length === 0 && (
+              <div className="rounded-xl border border-dashed border-slate-300 px-4 py-8 text-center text-sm text-slate-400">
+                Generate a department batch after creating payslips.
+              </div>
+            )}
+          </div>
+        </Card>
+      </div>
+
+      <Modal open={showCreate} onClose={() => setShowCreate(false)} title="Create Staff Payslip" className="max-w-4xl">
+        <form onSubmit={handleCreatePayslip} className="space-y-5">
+          <div className="space-y-4">
+            <div className="space-y-4">
+              <div className="rounded-xl border border-slate-200 p-4">
+                <p className="text-sm font-bold text-slate-900">Staff Selection</p>
+                <div className="mt-3 grid gap-3 md:grid-cols-2">
+                  <div>
+                    <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Department</label>
+                    <select
+                      value={selectedDepartment}
+                      onChange={(event) => {
+                        setSelectedDepartment(event.target.value as StaffDepartment);
+                        setSelectedStaffId("");
+                      }}
+                      className={inputCls}
+                    >
+                      {departments.map((department) => (
+                        <option key={department} value={department}>{department}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Staff</label>
+                    <select value={selectedStaffId} onChange={(event) => setSelectedStaffId(event.target.value)} className={inputCls}>
+                      <option value="">Select staff member</option>
+                      {staffInDepartment.map((member) => (
+                        <option key={member.id} value={member.id}>
+                          {member.name} - {member.role}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Pay Period</label>
+                    <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm font-semibold text-slate-700">
+                      {periodLabel}
+                    </div>
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Main Salary</label>
+                    <input value={selectedStaff?.salary ?? ""} readOnly className={`${inputCls} bg-slate-50`} />
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-slate-200 p-4">
+                <p className="text-sm font-bold text-slate-900">Earnings</p>
+                <div className="mt-3 grid gap-3 md:grid-cols-2">
+                  {[
+                    ["housing", "Housing"],
+                    ["transport", "Transport"],
+                    ["medical", "Medical"],
+                    ["meal", "Meal"],
+                    ["duty", "Duty"],
+                    ["overtime", "Overtime"],
+                    ["bonus", "Bonus"],
+                    ["arrears", "Arrears"],
+                    ["otherAllowance", "Other Allowance"],
+                  ].map(([field, label]) => (
+                    <div key={field}>
+                      <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</label>
+                      <input
+                        type="number"
+                        min="0"
+                        value={draftAdjustments[field as NumericAdjustmentField]}
+                        onChange={(event) => updateAdjustment(field as NumericAdjustmentField, event.target.value)}
+                        className={inputCls}
+                      />
+                    </div>
+                  ))}
+                </div>
+
+                <div className="mt-4 space-y-3 rounded-xl bg-slate-50 p-3">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Custom Earnings</p>
+                    <Button type="button" size="sm" variant="outline" onClick={() => addCustomLine("customEarnings")}>
+                      Add earning field
+                    </Button>
+                  </div>
+                  {draftAdjustments.customEarnings.map((item, index) => (
+                    <div key={`earning-${index}`} className="grid gap-2 md:grid-cols-[1fr_160px_auto]">
+                      <input
+                        placeholder="Label"
+                        value={item.label}
+                        onChange={(event) => updateCustomLine("customEarnings", index, "label", event.target.value)}
+                        className={inputCls}
+                      />
+                      <input
+                        type="number"
+                        min="0"
+                        placeholder="Amount"
+                        value={item.amount}
+                        onChange={(event) => updateCustomLine("customEarnings", index, "amount", event.target.value)}
+                        className={inputCls}
+                      />
+                      <Button type="button" size="sm" variant="ghost" onClick={() => removeCustomLine("customEarnings", index)}>
+                        Remove
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-slate-200 p-4">
+                <p className="text-sm font-bold text-slate-900">Deductions</p>
+                <div className="mt-3 grid gap-3 md:grid-cols-2">
+                  <div>
+                    <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Tax Percentage</label>
+                    <input type="number" min="0" step="0.1" value={draftAdjustments.taxPercent} onChange={(event) => updateAdjustment("taxPercent", event.target.value)} className={inputCls} />
+                  </div>
+                  {[
+                    ["pension", "Pension"],
+                    ["nhf", "NHF"],
+                    ["loan", "Loan"],
+                    ["insurance", "Insurance"],
+                    ["absence", "Absence"],
+                    ["otherDeduction", "Other Deduction"],
+                  ].map(([field, label]) => (
+                    <div key={field}>
+                      <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</label>
+                      <input
+                        type="number"
+                        min="0"
+                        value={draftAdjustments[field as NumericAdjustmentField]}
+                        onChange={(event) => updateAdjustment(field as NumericAdjustmentField, event.target.value)}
+                        className={inputCls}
+                      />
+                    </div>
+                  ))}
+                </div>
+
+                <div className="mt-4 space-y-3 rounded-xl bg-slate-50 p-3">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Custom Deductions</p>
+                    <Button type="button" size="sm" variant="outline" onClick={() => addCustomLine("customDeductions")}>
+                      Add deduction field
+                    </Button>
+                  </div>
+                  {draftAdjustments.customDeductions.map((item, index) => (
+                    <div key={`deduction-${index}`} className="grid gap-2 md:grid-cols-[1fr_160px_auto]">
+                      <input
+                        placeholder="Label"
+                        value={item.label}
+                        onChange={(event) => updateCustomLine("customDeductions", index, "label", event.target.value)}
+                        className={inputCls}
+                      />
+                      <input
+                        type="number"
+                        min="0"
+                        placeholder="Amount"
+                        value={item.amount}
+                        onChange={(event) => updateCustomLine("customDeductions", index, "amount", event.target.value)}
+                        className={inputCls}
+                      />
+                      <Button type="button" size="sm" variant="ghost" onClick={() => removeCustomLine("customDeductions", index)}>
+                        Remove
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
-            <Button type="button" size="sm" variant="outline" onClick={addEntry}>+ Add to Payroll</Button>
+
+            <div className="space-y-4">
+              <div className="rounded-xl bg-slate-50 p-4">
+                <p className="text-sm font-bold text-slate-900">Preview Summary</p>
+                <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Base Salary</p>
+                    <p className="font-semibold text-slate-800">{money(selectedStaff?.salary ?? 0)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Custom Earnings</p>
+                    <p className="font-semibold text-slate-800">{money(sumLineItems(draftAdjustments.customEarnings))}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Custom Deductions</p>
+                    <p className="font-semibold text-slate-800">{money(sumLineItems(draftAdjustments.customDeductions))}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Tax %</p>
+                    <p className="font-semibold text-slate-800">{draftAdjustments.taxPercent}%</p>
+                  </div>
+                </div>
+              </div>
+
+              {previewEntry ? (
+                <PayrollEntryBreakdown entry={previewEntry} />
+              ) : (
+                <div className="rounded-xl border border-dashed border-slate-300 px-4 py-10 text-center text-sm text-slate-400">
+                  Select a staff member to preview the payslip.
+                </div>
+              )}
+            </div>
           </div>
 
           <ModalFooter>
-            <Button variant="ghost" size="md" type="button" onClick={() => setShowCreate(false)} disabled={creatingBatch}>Cancel</Button>
-            <Button size="md" type="submit" disabled={creatingBatch || entries.length === 0}>
-              {creatingBatch ? "Creating…" : "Save Payroll Draft"}
-            </Button>
+            <Button variant="ghost" size="md" type="button" onClick={() => setShowCreate(false)}>Cancel</Button>
+            <Button type="button" size="md" variant="outline" onClick={resetDraft}>Clear Form</Button>
+            <Button size="md" type="submit">Create Payslip</Button>
           </ModalFooter>
         </form>
       </Modal>
 
-      {/* Submit confirm modal */}
       {submitTarget && (
-        <Modal open={true} onClose={() => setSubmitTarget(null)} title="Submit Payroll to Accounts">
+        <Modal open={true} onClose={() => setSubmitTarget(null)} title="Send Department Payroll to Accounts">
           <div className="space-y-3 text-sm">
-            <div className="rounded-lg bg-slate-50 p-3 space-y-1.5">
-              <div className="flex justify-between"><span className="text-slate-500">Period</span><span className="font-semibold">{submitTarget.period}</span></div>
-              <div className="flex justify-between"><span className="text-slate-500">Staff</span><span>{submitTarget.totalStaff}</span></div>
-              <div className="flex justify-between"><span className="text-slate-500 font-semibold">Total Amount</span><span className="font-bold text-xl text-slate-900">₦{submitTarget.totalAmount.toLocaleString()}</span></div>
-            </div>
+            {(() => {
+              const batchTotals = summarisePayrollEntries(submitTarget.entries ?? []);
+              return (
+                <div className="rounded-lg bg-slate-50 p-3 space-y-1.5">
+                  <div className="flex justify-between"><span className="text-slate-500">Department</span><span className="font-semibold">{submitTarget.department}</span></div>
+                  <div className="flex justify-between"><span className="text-slate-500">Period</span><span className="font-semibold">{submitTarget.period}</span></div>
+                  <div className="flex justify-between"><span className="text-slate-500">Staff</span><span>{submitTarget.totalStaff}</span></div>
+                  <div className="flex justify-between"><span className="text-slate-500">Gross Payroll</span><span>{money(batchTotals.gross)}</span></div>
+                  <div className="flex justify-between"><span className="text-slate-500">Total Deductions</span><span>{money(batchTotals.deductions)}</span></div>
+                  <div className="flex justify-between"><span className="text-slate-500 font-semibold">Net Amount</span><span className="font-bold text-xl text-slate-900">{money(submitTarget.totalAmount)}</span></div>
+                </div>
+              );
+            })()}
             <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
-              ✓ Submitting will send this payroll to Accounts for approval and disbursement. You cannot edit it after submission.
+              Once sent, this department batch moves to Accounts approval and the linked staff payslips stay visible in their portals.
             </div>
           </div>
           <ModalFooter>
             <Button variant="ghost" size="md" onClick={() => setSubmitTarget(null)}>Cancel</Button>
-            <Button size="md" onClick={() => handleSubmitToAccounts(submitTarget)}>Submit to Accounts</Button>
+            <Button size="md" onClick={() => handleSubmitToAccounts(submitTarget)}>Send to Accounts</Button>
           </ModalFooter>
         </Modal>
       )}
 
-      {/* View batch modal */}
+      {viewPayslip && (
+        <Modal open={true} onClose={() => setViewPayslip(null)} title={`${viewPayslip.staffName} - ${viewPayslip.period}`} className="max-w-5xl">
+          <PayrollEntryBreakdown entry={buildPayrollEntryFromPayslip(viewPayslip)} />
+          <ModalFooter>
+            <Button size="md" onClick={() => setViewPayslip(null)}>Close</Button>
+          </ModalFooter>
+        </Modal>
+      )}
+
       {viewBatch && (
-        <Modal open={true} onClose={() => setViewBatch(null)} title={`Payroll — ${viewBatch.period}`}>
-          <div className="space-y-3">
-            <div className="rounded-lg bg-slate-50 p-3 text-sm space-y-1.5">
-              <div className="flex justify-between"><span className="text-slate-500">Period</span><span className="font-semibold">{viewBatch.period}</span></div>
-              <div className="flex justify-between"><span className="text-slate-500">Total Staff</span><span>{viewBatch.totalStaff}</span></div>
-              <div className="flex justify-between"><span className="text-slate-500">Total Amount</span><span className="font-bold">₦{viewBatch.totalAmount.toLocaleString()}</span></div>
-              <div className="flex justify-between"><span className="text-slate-500">Status</span>
-                <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${PAYROLL_STATUS_STYLES[viewBatch.status]}`}>{viewBatch.status}</span>
-              </div>
-              {viewBatch.paidAt && <div className="flex justify-between"><span className="text-slate-500">Paid At</span><span>{viewBatch.paidAt}</span></div>}
-            </div>
-            {viewBatch.entries && viewBatch.entries.length > 0 && (
-              <div className="max-h-56 overflow-y-auto rounded-lg border border-slate-200 divide-y divide-slate-100">
-                {viewBatch.entries.map((e, i) => (
-                  <div key={i} className="flex items-center justify-between px-3 py-2 text-xs">
-                    <div>
-                      <p className="font-medium text-slate-800">{e.staffName}</p>
-                      <p className="text-slate-500">{e.department} · {e.role}</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="font-bold text-slate-700">₦{e.netPay.toLocaleString()}</p>
-                      <p className="text-slate-400">+{e.allowances} −{e.deductions}</p>
-                    </div>
+        <Modal open={true} onClose={() => setViewBatch(null)} title={`${viewBatch.department ?? "Department"} Payroll - ${viewBatch.period}`} className="max-w-6xl">
+          <div className="space-y-4">
+            {(() => {
+              const totals = summarisePayrollEntries(viewBatch.entries ?? []);
+              return (
+                <div className="grid gap-3 rounded-xl bg-slate-50 p-4 text-sm sm:grid-cols-2 xl:grid-cols-5">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Department</p>
+                    <p className="font-semibold text-slate-900">{viewBatch.department}</p>
                   </div>
-                ))}
-              </div>
-            )}
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Staff Count</p>
+                    <p className="font-semibold text-slate-900">{viewBatch.totalStaff}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Gross</p>
+                    <p className="font-semibold text-slate-900">{money(totals.gross)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Deductions</p>
+                    <p className="font-semibold text-slate-900">{money(totals.deductions)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Status</p>
+                    <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${PAYROLL_STATUS_STYLES[viewBatch.status]}`}>
+                      {viewBatch.status}
+                    </span>
+                  </div>
+                </div>
+              );
+            })()}
+
+            <div className="max-h-[70vh] space-y-3 overflow-y-auto pr-1">
+              {viewBatch.entries?.map((entry) => (
+                <PayrollEntryBreakdown key={entry.staffId ?? entry.staffName} entry={entry} />
+              ))}
+            </div>
           </div>
           <ModalFooter>
             <Button size="md" onClick={() => setViewBatch(null)}>Close</Button>

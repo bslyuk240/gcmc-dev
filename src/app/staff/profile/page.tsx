@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useHMSSession } from "@/modules/rbac/hooks";
 import { logoutStaffPortalAction } from "@/server/actions/auth/logout-staff-portal";
 import Link from "next/link";
+import { formatStaffDisplayId } from "@/lib/staff-id";
 
 const DEPT_LABELS: Record<string, string> = {
   frontdesk: "Front Desk", doctors: "Doctors", nurses: "Nurses Bay",
@@ -13,7 +14,6 @@ const DEPT_LABELS: Record<string, string> = {
 
 // Seed employment data (would come from Supabase in production)
 const EMPLOYMENT_DATA = {
-  employeeId:    "EMP-0042",
   startDate:     "15 Jan 2023",
   contractType:  "Full-time Permanent",
   unit:          "ICU / Ward A",
@@ -86,6 +86,13 @@ export default function StaffProfilePage() {
   const readCls  = "w-full rounded-xl border border-slate-100 bg-slate-50 px-3 py-2.5 text-sm text-slate-800 cursor-default";
 
   const initials = session?.full_name.split(" ").map((w) => w[0]).slice(0, 2).join("").toUpperCase() ?? "?";
+  const employeeId = session
+    ? formatStaffDisplayId({
+        id: session.staff_id,
+        name: session.full_name,
+        department: session.department,
+      })
+    : "STA.XX0000";
 
   if (!session) {
     return (
@@ -108,7 +115,7 @@ export default function StaffProfilePage() {
           <p className="text-sm text-slate-500">
             {DEPT_LABELS[session.department] ?? session.department} · {session.role.replace(/_/g, " ")}
           </p>
-          <p className="text-xs text-slate-400 mt-0.5">{EMPLOYMENT_DATA.employeeId} · {EMPLOYMENT_DATA.contractType}</p>
+          <p className="text-xs text-slate-400 mt-0.5">{employeeId} · {EMPLOYMENT_DATA.contractType}</p>
         </div>
       </div>
 
@@ -146,7 +153,7 @@ export default function StaffProfilePage() {
           {[
             { label: "Full Name",    value: session.full_name, readOnly: true },
             { label: "Email",        value: session.email,     readOnly: true },
-            { label: "Staff ID",     value: EMPLOYMENT_DATA.employeeId, readOnly: true },
+            { label: "Staff ID",     value: employeeId, readOnly: true },
             { label: "Department",   value: DEPT_LABELS[session.department] ?? session.department, readOnly: true },
             { label: "Role",         value: session.role.replace(/_/g, " "), readOnly: true },
           ].map((f) => (
@@ -194,7 +201,7 @@ export default function StaffProfilePage() {
           <div className="rounded-2xl border border-slate-200 bg-white p-4 space-y-3">
             <p className="text-xs font-bold uppercase tracking-wide text-slate-400">Contract & Posting</p>
             {[
-              { label: "Employee ID",    value: EMPLOYMENT_DATA.employeeId },
+              { label: "Employee ID",    value: employeeId },
               { label: "Start Date",     value: EMPLOYMENT_DATA.startDate },
               { label: "Contract Type",  value: EMPLOYMENT_DATA.contractType },
               { label: "Department",     value: DEPT_LABELS[session.department] ?? session.department },

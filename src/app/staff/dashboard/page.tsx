@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useState, useEffect, useRef } from "react";
 import { useHMSSession } from "@/modules/rbac/hooks";
+import { fetchStaffShifts, fetchLeaveRequests, type StaffShift } from "@/lib/supabase/db";
 
 // ─── constants ─────────────────────────────────────────────────────────────────
 const DEPT_LABELS: Record<string, string> = {
@@ -19,18 +20,6 @@ const SHIFT_COLORS: Record<string, string> = {
   on_call:   "bg-red-50    text-red-700    border-red-200",
 };
 
-const MOCK_SHIFTS = [
-  { id: "s1", shift_date: "2026-03-16", shift_type: "morning",   shift_start: "07:00", shift_end: "14:00", unit: "ICU",        status: "confirmed" },
-  { id: "s2", shift_date: "2026-03-17", shift_type: "morning",   shift_start: "07:00", shift_end: "14:00", unit: "ICU",        status: "confirmed" },
-  { id: "s3", shift_date: "2026-03-19", shift_type: "afternoon", shift_start: "14:00", shift_end: "21:00", unit: "Ward A",     status: "confirmed" },
-  { id: "s4", shift_date: "2026-03-20", shift_type: "night",     shift_start: "21:00", shift_end: "07:00", unit: "Emergency",  status: "scheduled" },
-  { id: "s5", shift_date: "2026-03-22", shift_type: "morning",   shift_start: "07:00", shift_end: "14:00", unit: "Outpatient", status: "confirmed" },
-];
-
-const MOCK_LEAVE = [
-  { type: "Annual", daysUsed: 5,  daysTotal: 21 },
-  { type: "Sick",   daysUsed: 2,  daysTotal: 10 },
-];
 
 // Quick-access tiles
 const QUICK_TILES = [
@@ -65,8 +54,23 @@ export default function StaffDashboardPage() {
   const [elapsed,     setElapsed]     = useState("00:00:00");
   const startRef = useRef<number | null>(null);
 
+  // Shift and leave data from Supabase
+  const [shifts, setShifts] = useState<StaffShift[]>([]);
+  const [leaveBalance, setLeaveBalance] = useState({ annual: { daysUsed: 0, daysTotal: 21 }, sick: { daysUsed: 0, daysTotal: 10 } });
+
   // Notifications from shared store
   const [notifs, setNotifs] = useState<Array<{ id: string; title: string; message: string; time: string; read: boolean }>>([]);
+
+  useEffect(() => {
+    if (!session?.staff_id) return;
+    fetchStaffShifts(session.staff_id).then(setShifts).catch(() => {});
+    fetchLeaveRequests().then((reqs) => {
+      const mine = reqs.filter((r) => r.staffId === session.staff_id);
+      const annualUsed = mine.filter((r) => r.leaveType === "Annual" && r.status === "Approved").reduce((s, r) => s + r.days, 0);
+      const sickUsed = mine.filter((r) => r.leaveType === "Sick" && r.status === "Approved").reduce((s, r) => s + r.days, 0);
+      setLeaveBalance({ annual: { daysUsed: annualUsed, daysTotal: 21 }, sick: { daysUsed: sickUsed, daysTotal: 10 } });
+    }).catch(() => {});
+  }, [session?.staff_id]);
 
   useEffect(() => {
     // Load attendance state from sessionStorage (resets on tab close — intentional for clock-in)
@@ -122,13 +126,12 @@ export default function StaffDashboardPage() {
 
   // Compute upcoming shifts (today + forward)
   const todayStr   = today();
-  const upcoming   = MOCK_SHIFTS.filter((s) => s.shift_date >= todayStr).sort((a, b) => a.shift_date.localeCompare(b.shift_date));
+  const upcoming   = shifts.filter((s) => s.shiftDate >= todayStr).sort((a, b) => a.shiftDate.localeCompare(b.shiftDate));
   const nextShift  = upcoming[0] ?? null;
-  const isOnShift  = nextShift?.shift_date === todayStr;
+  const isOnShift  = nextShift?.shiftDate === todayStr;
 
   // Leave balance
-  const annualLeave = MOCK_LEAVE.find((l) => l.type === "Annual");
-  const annualLeft  = (annualLeave?.daysTotal ?? 21) - (annualLeave?.daysUsed ?? 0);
+  const annualLeft = leaveBalance.annual.daysTotal - leaveBalance.annual.daysUsed;
 
   if (!session) {
     return (
@@ -206,22 +209,22 @@ export default function StaffDashboardPage() {
 
       {/* ── Next shift card ──────────────────────────────────────────────── */}
       {nextShift ? (
-        <div className={`rounded-2xl border p-4 ${SHIFT_COLORS[nextShift.shift_type]}`}>
+        <div className={`rounded-2xl border p-4 ${SHIFT_COLORS[nextShift.shiftType]}`}>
           <p className="text-xs font-bold uppercase tracking-wide opacity-60">
             {isOnShift ? "Today's Shift" : "Next Shift"}
           </p>
           <div className="mt-2 flex items-center justify-between">
             <div>
               <p className="font-bold text-slate-900">
-                {isOnShift ? "Today" : formatDate(nextShift.shift_date)}
+                {isOnShift ? "Today" : formatDate(nextShift.shiftDate)}
               </p>
               <p className="text-sm opacity-80">
-                {nextShift.shift_start} – {nextShift.shift_end} · {nextShift.unit}
+                {nextShift.shiftStart} – {nextShift.shiftEnd} · {nextShift.unit}
               </p>
             </div>
             <div className="text-right">
-              <span className={`rounded-full border px-2.5 py-0.5 text-xs font-bold capitalize ${SHIFT_COLORS[nextShift.shift_type]}`}>
-                {nextShift.shift_type.replace("_", " ")}
+              <span className={`rounded-full border px-2.5 py-0.5 text-xs font-bold capitalize ${SHIFT_COLORS[nextShift.shiftType]}`}>
+                {nextShift.shiftType.replace("_", " ")}
               </span>
               {upcoming.length > 1 && (
                 <p className="mt-1 text-[10px] opacity-60">+{upcoming.length - 1} more shifts</p>
@@ -300,7 +303,10 @@ export default function StaffDashboardPage() {
           <p className="text-xs font-bold uppercase tracking-wider text-slate-400">Leave Balance 2026</p>
           <Link href="/staff/leave" className="text-xs font-semibold text-indigo-600 hover:underline">Apply →</Link>
         </div>
-        {MOCK_LEAVE.map((l) => (
+        {[
+          { type: "Annual", daysUsed: leaveBalance.annual.daysUsed, daysTotal: leaveBalance.annual.daysTotal },
+          { type: "Sick", daysUsed: leaveBalance.sick.daysUsed, daysTotal: leaveBalance.sick.daysTotal },
+        ].map((l) => (
           <div key={l.type} className="mb-2 last:mb-0">
             <div className="mb-1 flex justify-between text-xs">
               <span className="font-semibold text-slate-700">{l.type} Leave</span>

@@ -4,7 +4,6 @@ import {
   getStaffPortalSession,
   type HMSSession,
 } from "@/lib/auth/session";
-import { redirect } from "next/navigation";
 
 export const metadata = {
   title: { default: "Staff Portal", template: "%s | Staff Portal" },
@@ -17,11 +16,13 @@ export default async function StaffPortalLayout({
   children: React.ReactNode;
 }) {
   // Read from the STAFF PORTAL cookie (hms-staff-session), not the management one.
-  // This enforces portal isolation — a management login does not grant staff portal access.
+  // Middleware already redirects unauthenticated requests on /staff/* (except /staff/login)
+  // so here we just skip the shell for the login page (session will be null).
   const session: HMSSession | null = await getStaffPortalSession();
 
   if (!session) {
-    redirect("/staff/login");
+    // No session — render children as-is (this only happens on /staff/login)
+    return <>{children}</>;
   }
 
   return (

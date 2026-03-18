@@ -271,27 +271,14 @@ const SEED: AppNotification[] = [
 
 // Bumped to v2 to flush old cache that lacked targetDepartments
 const STORAGE_KEY = "hms-notifications-v2";
+const EMPTY_STATE: NotifState = { notifications: [], toastedIds: [] };
 
 function loadState(): NotifState {
-  if (typeof window === "undefined") return { notifications: SEED, toastedIds: [] };
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw) as NotifState;
-      // Migration: back-fill targetDepartments for any stored notifs missing it
-      parsed.notifications = parsed.notifications.map((n) => ({
-        ...n,
-        targetDepartments: n.targetDepartments ?? ("all" as const),
-      }));
-      return parsed;
-    }
-  } catch {}
-  return { notifications: SEED, toastedIds: [] };
+  return EMPTY_STATE;
 }
 
 function saveState(s: NotifState) {
-  if (typeof window === "undefined") return;
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(s)); } catch {}
+  void s;
 }
 
 let _state: NotifState | null = null;
@@ -321,14 +308,11 @@ export async function syncNotificationsFromSupabase() {
   try {
     const { fetchNotifications } = await import("@/lib/supabase/db");
     const notifications = await fetchNotifications();
-    if (notifications.length) {
-      const current = getState();
-      _state = { ...current, notifications };
-      saveState(_state);
-      storeListeners.forEach((l) => l());
-      _synced = true;
-    }
-  } catch { /* keep localStorage/seed */ }
+    const current = getState();
+    _state = { ...current, notifications };
+    storeListeners.forEach((l) => l());
+    _synced = true;
+  } catch { /* keep empty Supabase-backed state */ }
 }
 
 // ─── Toast listeners ─────────────────────────────────────────────────────────

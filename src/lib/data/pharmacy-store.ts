@@ -215,25 +215,19 @@ const SEED: PharmacyStoreState = {
 // ─── Internal state ───────────────────────────────────────────────────────────
 
 const STORAGE_KEY = "hms_pharmacy_store";
+const EMPTY_STATE: PharmacyStoreState = {
+  prescriptions: [],
+  nurseRequests: [],
+  restockRequests: [],
+  bills: [],
+};
 
 function loadState(): PharmacyStoreState {
-  if (typeof window === "undefined") return SEED;
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) return JSON.parse(raw) as PharmacyStoreState;
-  } catch {
-    // ignore
-  }
-  return SEED;
+  return EMPTY_STATE;
 }
 
 function saveState(state: PharmacyStoreState) {
-  if (typeof window === "undefined") return;
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  } catch {
-    // ignore
-  }
+  void state;
 }
 
 let _state: PharmacyStoreState | null = null;
@@ -272,12 +266,9 @@ export async function syncPharmacyFromSupabase() {
       fetchPharmacyRestockRequests(),
       fetchPharmacyBills(),
     ]);
-    if (prescriptions.length || nurseRequests.length || restockRequests.length || bills.length) {
-      _state = { prescriptions, nurseRequests, restockRequests, bills };
-      saveState(_state);
-      listeners.forEach((l) => l());
-      _synced = true;
-    }
+    _state = { prescriptions, nurseRequests, restockRequests, bills };
+    listeners.forEach((l) => l());
+    _synced = true;
   } catch { /* keep localStorage/seed */ }
 }
 
@@ -433,7 +424,6 @@ export function getPharmacyDrugList(): PharmacyDrugItem[] {
 
 // ─── Reset (for dev/testing) ──────────────────────────────────────────────────
 export function resetPharmacyStore() {
-  _state = SEED;
-  saveState(SEED);
+  _state = EMPTY_STATE;
   listeners.forEach((l) => l());
 }

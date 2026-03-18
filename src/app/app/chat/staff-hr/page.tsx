@@ -1,7 +1,6 @@
 import { redirect } from "next/navigation";
-import { INTERNAL_PREFIX } from "@/lib/constants/navigation";
 
-/** Legacy route — staff HR chat now lives at /app/profile/chat. */
+/** Legacy route — staff HR chat now lives at /staff/chat. */
 export default function StaffHRChatLegacyRedirect() {
-  redirect(`${INTERNAL_PREFIX}/profile/chat`);
+  redirect("/staff/chat");
 }

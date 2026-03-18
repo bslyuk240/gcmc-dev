@@ -43,3 +43,7 @@ next-env.d.ts
 # local scratch / generated docs
 /.tmp/
 /docs/
+
+# Claude Code worktrees & Supabase temp files
+.claude/worktrees/
+supabase/.temp/

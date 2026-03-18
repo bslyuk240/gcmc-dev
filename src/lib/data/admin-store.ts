@@ -210,19 +210,22 @@ const SEED: AdminStoreState = {
 // ─── Internal state ───────────────────────────────────────────────────────────
 
 const STORAGE_KEY = "hms_admin_store";
+const EMPTY_STATE: AdminStoreState = {
+  approvals: [],
+  alerts: [],
+  itTickets: [],
+  storeItems: [],
+  storePOs: [],
+  hrStaff: [],
+  hrLeaveRequests: [],
+};
 
 function loadState(): AdminStoreState {
-  if (typeof window === "undefined") return SEED;
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) return JSON.parse(raw) as AdminStoreState;
-  } catch { /* ignore */ }
-  return SEED;
+  return EMPTY_STATE;
 }
 
 function saveState(s: AdminStoreState) {
-  if (typeof window === "undefined") return;
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(s)); } catch { /* ignore */ }
+  void s;
 }
 
 let _state: AdminStoreState | null = null;
@@ -250,18 +253,58 @@ let _synced = false;
 export async function syncAdminFromSupabase() {
   if (typeof window === "undefined" || _synced) return;
   try {
-    const { fetchAdminApprovals, fetchDeptAlerts, fetchITTickets, fetchStoreItems, fetchStorePOs } = await import("@/lib/supabase/db");
-    const [approvals, alerts, itTickets, storeItems, storePOs] = await Promise.all([
-      fetchAdminApprovals(), fetchDeptAlerts(), fetchITTickets(), fetchStoreItems(), fetchStorePOs(),
+    const {
+      fetchAdminApprovals,
+      fetchDeptAlerts,
+      fetchITTickets,
+      fetchStoreItems,
+      fetchStorePOs,
+      fetchStaffMembers,
+      fetchLeaveRequests,
+    } = await import("@/lib/supabase/db");
+    const [approvals, alerts, itTickets, storeItems, storePOs, staff, leaveRequests] = await Promise.all([
+      fetchAdminApprovals(),
+      fetchDeptAlerts(),
+      fetchITTickets(),
+      fetchStoreItems(),
+      fetchStorePOs(),
+      fetchStaffMembers(),
+      fetchLeaveRequests(),
     ]);
-    if (approvals.length || alerts.length || itTickets.length || storeItems.length) {
-      const current = getState();
-      _state = { ...current, approvals, alerts, itTickets, storeItems, storePOs };
-      saveState(_state);
-      listeners.forEach((l) => l());
-      _synced = true;
-    }
-  } catch { /* keep localStorage/seed */ }
+    _state = {
+      approvals,
+      alerts,
+      itTickets,
+      storeItems,
+      storePOs,
+      hrStaff: staff.map((member) => ({
+        id: member.id,
+        name: member.name,
+        department: member.department,
+        role: member.role,
+        status:
+          member.status === "Terminated"
+            ? "Inactive"
+            : member.status === "Probation"
+              ? "Active"
+              : member.status,
+        joinDate: member.joinDate,
+      })),
+      hrLeaveRequests: leaveRequests.map((request) => ({
+        id: request.id,
+        staffName: request.staffName,
+        department: request.department,
+        leaveType: request.leaveType === "Study" ? "Personal" : request.leaveType,
+        startDate: request.startDate,
+        endDate: request.endDate,
+        days: request.days,
+        status: request.status === "Cancelled" ? "Rejected" : request.status,
+        submittedAt: request.submittedAt,
+      })),
+    };
+    listeners.forEach((l) => l());
+    _synced = true;
+  } catch { /* keep empty Supabase-backed state */ }
 }
 
 // ─── Approvals ────────────────────────────────────────────────────────────────

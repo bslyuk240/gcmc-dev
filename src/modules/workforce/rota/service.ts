@@ -69,11 +69,7 @@ export async function getRotaByDepartment(
     }
   }
 
-  // Fallback
-  const assignments = MOCK_ROTA.filter(
-    (r) => r.department === department && r.shift_date >= weekStart && r.shift_date <= weekEnd,
-  );
-  return { weekStarting: weekStart, department, assignments };
+  return { weekStarting: weekStart, department, assignments: [] };
 }
 
 /**
@@ -102,7 +98,7 @@ export async function getMyRota(staffId: string, weekOf: string): Promise<RotaAs
     if (!error && data) return data as RotaAssignment[];
   }
 
-  return MOCK_ROTA.filter((r) => r.staff_id === staffId);
+  return [];
 }
 
 /**
@@ -127,7 +123,7 @@ export async function getUpcomingRota(staffId: string): Promise<RotaAssignment[]
     if (!error && data) return data as RotaAssignment[];
   }
 
-  return MOCK_ROTA.filter((r) => r.staff_id === staffId && r.shift_date >= today);
+  return [];
 }
 
 /**

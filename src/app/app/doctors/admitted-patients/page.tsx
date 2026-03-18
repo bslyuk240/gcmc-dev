@@ -31,7 +31,7 @@ const UNIT_STYLES: Record<string, string> = {
   Outpatient: "bg-slate-100 text-slate-600",
 };
 
-const DOCTORS = ["Dr. Amaka Osei", "Dr. Kwame Mensah", "Dr. Chen Lin", "Dr. Robert Smith", "Dr. Kofi Osei"];
+// Doctor names derived from store
 const FREQ_OPTIONS = ["Once daily", "Twice daily (BD)", "3×/day (TDS)", "4×/day (QDS)", "Every 8 hrs", "Every 12 hrs", "Once nightly", "As needed (PRN)"];
 const DURATION_OPTIONS = ["3 days", "5 days", "7 days", "10 days", "14 days", "30 days", "Ongoing"];
 const QTY_PRESETS = ["6 tabs", "10 tabs", "14 tabs", "21 caps", "30 tabs", "42 tabs", "1 vial", "1 bag"];
@@ -45,7 +45,8 @@ const inputCls = "w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5
 
 export default function DoctorAdmittedPatientsPage() {
   const { allPatients } = useNursesStore();
-  const { admissionOrders } = useDoctorsStore();
+  const { admissionOrders, doctors } = useDoctorsStore();
+  const DOCTORS = doctors.map((d) => d.name);
   const [toast, setToast] = useState<ToastData | null>(null);
   const [showAdmit, setShowAdmit] = useState(false);
   const [viewPatient, setViewPatient] = useState<typeof allPatients[0] | null>(null);

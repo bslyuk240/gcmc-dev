@@ -29,13 +29,6 @@ type Consultation = {
   date: string; status: ConsultStatus; rxWritten?: boolean; labOrdered?: boolean; billed?: boolean;
 };
 
-const INITIAL: Consultation[] = [
-  { id: "CON-001", patient: "Alice Thompson",  patientId: "PT-8234", doctor: "Dr. Chen Lin",   date: "Mar 15, 2026", status: "in_progress" },
-  { id: "CON-002", patient: "Kofi Mensah",     patientId: "PT-8236", doctor: "Dr. Kwame Mensah",date: "Mar 15, 2026", status: "in_progress" },
-  { id: "CON-003", patient: "Mary Ibrahim",    patientId: "PT-8233", doctor: "Dr. Amaka Osei", date: "Mar 15, 2026", status: "completed", rxWritten: true },
-  { id: "CON-004", patient: "Joseph James",    patientId: "PT-8240", doctor: "Dr. Chen Lin",   date: "Mar 14, 2026", status: "completed" },
-  { id: "CON-005", patient: "Ruth Cole",       patientId: "PT-8241", doctor: "Dr. Kofi Osei",  date: "Mar 14, 2026", status: "completed", rxWritten: true },
-];
 
 const FREQ_OPTIONS = [
   "Once daily", "Twice daily (BD)", "3×/day (TDS)", "4×/day (QDS)",
@@ -54,7 +47,19 @@ const inputCls = "w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5
 
 export default function DoctorsConsultationsPage() {
   const { consultations: storeConsults } = useDoctorsStore();
-  const [consultations, setConsultations] = useState<Consultation[]>(INITIAL);
+  const [consultations, setConsultations] = useState<Consultation[]>(() =>
+    storeConsults.map((c) => ({
+      id: c.id,
+      patient: c.patientName,
+      patientId: c.patientId,
+      doctor: c.doctorName,
+      date: c.date,
+      status: c.status === "Completed" || c.status === "Admitted" ? "completed" : "in_progress",
+      rxWritten: c.rxWritten,
+      labOrdered: c.labOrdered,
+      billed: c.feePaid,
+    }))
+  );
   const [toast, setToast] = useState<ToastData | null>(null);
 
   // ── Rx modal ──────────────────────────────────────────────────────────────

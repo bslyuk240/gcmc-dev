@@ -253,19 +253,19 @@ const SEED: NursesStoreState = {
 // ─── Internal state ───────────────────────────────────────────────────────────
 
 const STORAGE_KEY = "hms_nurses_store";
+const EMPTY_STATE: NursesStoreState = {
+  wardPatients: [],
+  procedures: [],
+  sampleRequests: [],
+  icuVitals: [],
+};
 
 function loadState(): NursesStoreState {
-  if (typeof window === "undefined") return SEED;
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) return JSON.parse(raw) as NursesStoreState;
-  } catch { /* ignore */ }
-  return SEED;
+  return EMPTY_STATE;
 }
 
 function saveState(s: NursesStoreState) {
-  if (typeof window === "undefined") return;
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(s)); } catch { /* ignore */ }
+  void s;
 }
 
 let _state: NursesStoreState | null = null;
@@ -298,12 +298,9 @@ export async function syncNursesFromSupabase() {
     const [wardPatients, procedures, sampleRequests, icuVitals] = await Promise.all([
       fetchWardPatients(), fetchNursingProcedures(), fetchNurseSampleRequests(), fetchICUVitals(),
     ]);
-    if (wardPatients.length || procedures.length || sampleRequests.length || icuVitals.length) {
-      _state = { wardPatients, procedures, sampleRequests, icuVitals };
-      saveState(_state);
-      listeners.forEach((l) => l());
-      _synced = true;
-    }
+    _state = { wardPatients, procedures, sampleRequests, icuVitals };
+    listeners.forEach((l) => l());
+    _synced = true;
   } catch { /* keep localStorage/seed */ }
 }
 
@@ -371,7 +368,6 @@ export function getNursesMetrics() {
 }
 
 export function resetNursesStore() {
-  _state = SEED;
-  saveState(SEED);
+  _state = EMPTY_STATE;
   listeners.forEach((l) => l());
 }

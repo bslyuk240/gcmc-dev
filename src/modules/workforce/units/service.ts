@@ -48,10 +48,7 @@ export async function getUnits(department?: DepartmentKey): Promise<Unit[]> {
     if (!error && data) return data as Unit[];
   }
 
-  // Fallback to mock
-  return department
-    ? MOCK_UNITS.filter((u) => u.department === department)
-    : MOCK_UNITS;
+  return [];
 }
 
 /**
@@ -69,7 +66,7 @@ export async function getUnit(unitId: string): Promise<Unit | null> {
     if (!error && data) return data as Unit;
   }
 
-  return MOCK_UNITS.find((u) => u.id === unitId) ?? null;
+  return null;
 }
 
 /**

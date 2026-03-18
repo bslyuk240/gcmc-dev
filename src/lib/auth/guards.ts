@@ -54,9 +54,16 @@ export function getSessionDepartment(request: NextRequest): string | null {
  * True when the request carries a valid management portal session.
  */
 export function hasManagementSession(request: NextRequest): boolean {
-  return (
-    request.cookies.has(hmsSessionV2CookieName) ||
-    request.cookies.has(sessionCookieName)
+  const session = getHMSSession(request);
+  if (session) return true;
+
+  const legacyDepartment = request.cookies.get(sessionDepartmentCookieName)?.value;
+  return Boolean(
+    legacyDepartment &&
+    (
+      request.cookies.has(hmsSessionV2CookieName) ||
+      request.cookies.has(sessionCookieName)
+    ),
   );
 }
 
@@ -64,7 +71,7 @@ export function hasManagementSession(request: NextRequest): boolean {
  * True when the request carries a valid staff portal session.
  */
 export function hasStaffPortalSession(request: NextRequest): boolean {
-  return request.cookies.has(hmsStaffPortalSessionCookieName);
+  return getStaffPortalHMSSession(request) !== null;
 }
 
 /**

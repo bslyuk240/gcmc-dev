@@ -1,20 +1,33 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { ChatWindow } from "@/components/chat/chat-window";
+import {
+  fetchChatInboxThreads,
+  fetchChatMessages,
+  formatChatListTime,
+  sendChatMessage,
+  subscribeToChatInbox,
+  subscribeToChatThread,
+} from "@/lib/chat/db";
+import {
+  formatDepartmentLabel,
+  formatRoleLabel,
+  type ChatMessage,
+  type ChatTargetDepartment,
+  type ChatThread,
+} from "@/lib/chat/types";
+import { useHMSSession } from "@/modules/rbac/hooks";
 import { cn } from "@/lib/utils/cn";
-import { ChatWindow, type ChatMessage } from "./chat-window";
 
-export type Conversation = {
-  id: string;
-  name: string;
-  role?: string;
-  department?: string;
-  lastMessage: string;
-  lastTime: string;
-  unread?: number;
-  status?: "online" | "away" | "offline";
-  messages: ChatMessage[];
-};
+function getInitials(name: string) {
+  return name
+    .split(" ")
+    .map((word) => word[0])
+    .join("")
+    .toUpperCase()
+    .slice(0, 2);
+}
 
 const AVATAR_COLORS = [
   "bg-violet-500",
@@ -29,25 +42,18 @@ const AVATAR_COLORS = [
 
 function avatarColor(name: string) {
   let hash = 0;
-  for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
+  for (let index = 0; index < name.length; index += 1) {
+    hash = name.charCodeAt(index) + ((hash << 5) - hash);
+  }
   return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
 }
 
-function getInitials(name: string) {
-  return name
-    .split(" ")
-    .map((w) => w[0])
-    .join("")
-    .toUpperCase()
-    .slice(0, 2);
-}
-
 function ConversationItem({
-  conv,
+  thread,
   active,
   onClick,
 }: {
-  conv: Conversation;
+  thread: ChatThread;
   active: boolean;
   onClick: () => void;
 }) {
@@ -62,94 +68,167 @@ function ConversationItem({
     >
       <div
         className={cn(
-          "relative flex h-12 w-12 shrink-0 items-center justify-center rounded-full text-sm font-bold text-white",
-          avatarColor(conv.name),
+          "flex h-12 w-12 shrink-0 items-center justify-center rounded-full text-sm font-bold text-white",
+          avatarColor(thread.requesterName),
         )}
       >
-        {getInitials(conv.name)}
-        {conv.status === "online" && (
-          <span className="absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-white bg-emerald-400" />
+        {thread.requesterAvatarUrl ? (
+          <img
+            src={thread.requesterAvatarUrl}
+            alt=""
+            className="h-full w-full rounded-full object-cover"
+          />
+        ) : (
+          getInitials(thread.requesterName)
         )}
       </div>
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline justify-between gap-2">
-          <p className="truncate font-semibold text-slate-900">{conv.name}</p>
-          <span className="shrink-0 text-xs text-slate-400">{conv.lastTime}</span>
+          <p className="truncate font-semibold text-slate-900">{thread.requesterName}</p>
+          <span className="shrink-0 text-xs text-slate-400">
+            {formatChatListTime(thread.lastMessageAt)}
+          </span>
         </div>
-        <div className="flex items-center justify-between gap-2">
-          <p className="truncate text-sm text-slate-500">{conv.lastMessage}</p>
-          {conv.unread ? (
-            <span className="shrink-0 flex h-5 w-5 items-center justify-center rounded-full bg-[var(--accent)] text-[10px] font-bold text-white">
-              {conv.unread}
-            </span>
-          ) : null}
-        </div>
-        {conv.department && (
-          <p className="mt-0.5 text-[10px] uppercase tracking-wide text-slate-400">
-            {conv.department}
-          </p>
-        )}
+        <p className="truncate text-sm text-slate-500">
+          {thread.lastMessagePreview || "No messages yet"}
+        </p>
+        <p className="mt-0.5 text-[10px] uppercase tracking-wide text-slate-400">
+          {formatDepartmentLabel(thread.requesterDepartment)} · {thread.requesterRole}
+        </p>
       </div>
     </button>
   );
 }
 
 export function ChatManagement({
+  targetDepartment,
   title,
   subtitle,
-  conversations: initialConversations,
-  myName,
-  myRole,
 }: {
+  targetDepartment: ChatTargetDepartment;
   title: string;
   subtitle?: string;
-  conversations: Conversation[];
-  myName: string;
-  myRole?: string;
 }) {
-  const [conversations, setConversations] = useState(initialConversations);
-  const [activeId, setActiveId] = useState<string | null>(
-    initialConversations[0]?.id ?? null,
-  );
+  const session = useHMSSession();
+  const [threads, setThreads] = useState<ChatThread[]>([]);
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [search, setSearch] = useState("");
+  const [loadingThreads, setLoadingThreads] = useState(true);
+  const [loadingMessages, setLoadingMessages] = useState(false);
+  const [sending, setSending] = useState(false);
 
-  const filtered = conversations.filter(
-    (c) =>
-      c.name.toLowerCase().includes(search.toLowerCase()) ||
-      c.department?.toLowerCase().includes(search.toLowerCase()),
+  const loadThreads = useCallback(async () => {
+    setLoadingThreads(true);
+    try {
+      const nextThreads = await fetchChatInboxThreads(targetDepartment);
+      setThreads(nextThreads);
+      setActiveId((currentId) => {
+        if (currentId && nextThreads.some((thread) => thread.id === currentId)) {
+          return currentId;
+        }
+        return nextThreads[0]?.id ?? null;
+      });
+    } finally {
+      setLoadingThreads(false);
+    }
+  }, [targetDepartment]);
+
+  const loadMessages = useCallback(
+    async (threadId: string) => {
+      if (!session) return;
+      setLoadingMessages(true);
+      try {
+        const nextMessages = await fetchChatMessages(threadId, session.staff_id);
+        setMessages(nextMessages);
+      } finally {
+        setLoadingMessages(false);
+      }
+    },
+    [session],
   );
 
-  const active = conversations.find((c) => c.id === activeId) ?? null;
+  useEffect(() => {
+    void loadThreads();
+  }, [loadThreads]);
 
-  function handleSelectConversation(id: string) {
-    setActiveId(id);
-    // Mark as read
-    setConversations((prev) =>
-      prev.map((c) => (c.id === id ? { ...c, unread: 0 } : c)),
-    );
+  useEffect(() => subscribeToChatInbox(targetDepartment, () => {
+    void loadThreads();
+  }), [loadThreads, targetDepartment]);
+
+  useEffect(() => {
+    if (!activeId) {
+      setMessages([]);
+      return;
+    }
+
+    void loadMessages(activeId);
+  }, [activeId, loadMessages]);
+
+  useEffect(() => {
+    if (!activeId) return;
+    return subscribeToChatThread(activeId, () => {
+      void loadThreads();
+      void loadMessages(activeId);
+    });
+  }, [activeId, loadMessages, loadThreads]);
+
+  const filteredThreads = useMemo(
+    () =>
+      threads.filter((thread) => {
+        const value = search.toLowerCase();
+        return (
+          thread.requesterName.toLowerCase().includes(value) ||
+          thread.requesterEmail.toLowerCase().includes(value) ||
+          thread.requesterRole.toLowerCase().includes(value) ||
+          formatDepartmentLabel(thread.requesterDepartment).toLowerCase().includes(value)
+        );
+      }),
+    [search, threads],
+  );
+
+  const activeThread = useMemo(
+    () => threads.find((thread) => thread.id === activeId) ?? null,
+    [activeId, threads],
+  );
+
+  async function handleSend(body: string) {
+    if (!session || !activeThread) return;
+
+    setSending(true);
+    try {
+      await sendChatMessage({
+        threadId: activeThread.id,
+        senderId: session.staff_id,
+        senderName: session.full_name,
+        senderRole: formatRoleLabel(session.role),
+        senderPortal: "management",
+        body,
+      });
+      await Promise.all([loadThreads(), loadMessages(activeThread.id)]);
+    } finally {
+      setSending(false);
+    }
   }
+
+  const myInitials = session
+    ? getInitials(session.full_name)
+    : targetDepartment.toUpperCase();
 
   return (
     <div className="flex h-[calc(100vh-8rem)] min-h-[400px] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm xl:h-[calc(100vh-9rem)]">
-      {/* Left: conversation list */}
       <div className="flex w-[320px] shrink-0 flex-col border-r border-slate-200 bg-white">
-        {/* Header */}
         <div className="flex items-center justify-between border-b border-slate-100 px-4 py-4">
           <div>
             <h2 className="font-bold text-slate-900">{title}</h2>
-            {subtitle && <p className="text-xs text-slate-500">{subtitle}</p>}
+            {subtitle ? <p className="text-xs text-slate-500">{subtitle}</p> : null}
           </div>
           <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[var(--accent)]/10 text-xs font-bold text-[var(--accent)]">
-            {myName
-              .split(" ")
-              .map((w) => w[0])
-              .join("")
-              .toUpperCase()
-              .slice(0, 2)}
+            {myInitials}
           </div>
         </div>
-        {/* Search */}
-        <div className="px-3 py-2 border-b border-slate-100">
+
+        <div className="border-b border-slate-100 px-3 py-2">
           <div className="flex items-center gap-2 rounded-lg bg-slate-100 px-3 py-2">
             <svg
               className="h-4 w-4 shrink-0 text-slate-400"
@@ -167,39 +246,50 @@ export function ChatManagement({
             <input
               type="text"
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={(event) => setSearch(event.target.value)}
               placeholder="Search conversations..."
               className="min-w-0 flex-1 bg-transparent text-sm text-slate-700 outline-none placeholder:text-slate-400"
             />
           </div>
         </div>
-        {/* Conversation list */}
+
         <div className="min-h-0 flex-1 overflow-y-auto divide-y divide-slate-100">
-          {filtered.length === 0 && (
-            <p className="px-4 py-8 text-center text-sm text-slate-400">No conversations found.</p>
-          )}
-          {filtered.map((conv) => (
-            <ConversationItem
-              key={conv.id}
-              conv={conv}
-              active={conv.id === activeId}
-              onClick={() => handleSelectConversation(conv.id)}
-            />
-          ))}
+          {loadingThreads ? (
+            <p className="px-4 py-8 text-center text-sm text-slate-400">Loading conversations...</p>
+          ) : null}
+
+          {!loadingThreads && filteredThreads.length === 0 ? (
+            <p className="px-4 py-8 text-center text-sm text-slate-400">
+              No conversations found in Supabase.
+            </p>
+          ) : null}
+
+          {!loadingThreads &&
+            filteredThreads.map((thread) => (
+              <ConversationItem
+                key={thread.id}
+                thread={thread}
+                active={thread.id === activeId}
+                onClick={() => setActiveId(thread.id)}
+              />
+            ))}
         </div>
       </div>
 
-      {/* Right: chat window */}
       <div className="min-w-0 flex-1">
-        {active ? (
+        {activeThread ? (
           <ChatWindow
-            contactName={active.name}
-            contactRole={active.role ?? active.department}
-            contactStatus={active.status ?? "online"}
-            initialMessages={active.messages}
-            channelId={active.id}
-            placeholder={`Message ${active.name}...`}
-            myName={`${myName}${myRole ? ` (${myRole})` : ""}`}
+            contactName={activeThread.requesterName}
+            contactRole={`${activeThread.requesterRole} · ${formatDepartmentLabel(activeThread.requesterDepartment)}`}
+            contactAvatarUrl={activeThread.requesterAvatarUrl}
+            messages={messages}
+            placeholder={`Message ${activeThread.requesterName}...`}
+            myName={session?.full_name ?? title}
+            onSend={handleSend}
+            isLoading={loadingMessages}
+            isSending={sending}
+            emptyStateTitle="No messages in this thread yet"
+            emptyStateDescription="The conversation has been created, but nobody has sent a message yet."
           />
         ) : (
           <div className="flex h-full items-center justify-center bg-[#f0f2f5]">
@@ -217,8 +307,10 @@ export function ChatManagement({
                   d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
                 />
               </svg>
-              <p className="mt-3 text-sm font-medium text-slate-500">Select a conversation</p>
-              <p className="mt-1 text-xs text-slate-400">Choose from your inbox on the left</p>
+              <p className="mt-3 text-sm font-medium text-slate-500">No live conversations yet</p>
+              <p className="mt-1 text-xs text-slate-400">
+                Threads will appear here once staff or departments send a message.
+              </p>
             </div>
           </div>
         )}

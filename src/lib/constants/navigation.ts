@@ -484,7 +484,7 @@ export const sidebarNavigationByDepartment: Record<
     {
       section: "Support",
       items: [
-        { label: "Chat to HR", href: `${INTERNAL_PREFIX}/profile/chat`, icon: "support" },
+        { label: "Chat to HR", href: "/staff/chat", icon: "support" },
       ],
     },
   ],

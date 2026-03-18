@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils/cn";
-import { Icon } from "@/components/ui/icon";
 import {
   INTERNAL_PREFIX,
   getDepartmentFromPath,
@@ -11,29 +10,58 @@ import {
 } from "@/lib/constants/navigation";
 import type { DepartmentKey } from "@/lib/constants/navigation";
 
-/**
- * Returns the correct chat href for the current department.
- * - profile pages → HR chat
- * - IT → IT chat inbox
- * - HR → HR chat inbox
- * - all other departments → /app/{dept}/chat
- */
+function getHomeHref(dept: DepartmentKey): string {
+  return departmentHomePaths[dept] ?? `${INTERNAL_PREFIX}/profile`;
+}
+
 function getChatHref(dept: DepartmentKey): string {
-  if (dept === "profile" || dept === "notifications") return `${INTERNAL_PREFIX}/profile/chat`;
+  if (
+    dept === "profile" ||
+    dept === "notifications" ||
+    dept === "dashboard" ||
+    dept === "support"
+  )
+    return "/staff/chat";
   if (dept === "it") return `${INTERNAL_PREFIX}/it/chat`;
   if (dept === "hr") return `${INTERNAL_PREFIX}/hr/chat`;
-  if (dept === "dashboard") return `${INTERNAL_PREFIX}/profile/chat`;
-  if (dept === "support") return `${INTERNAL_PREFIX}/profile/chat`;
-  // Every real department has its own /app/{dept}/chat page
   return `${INTERNAL_PREFIX}/${dept}/chat`;
 }
 
-/**
- * Returns the home href for the current department.
- * Falls back to /app/profile if the dept is unknown.
- */
-function getHomeHref(dept: DepartmentKey): string {
-  return departmentHomePaths[dept] ?? `${INTERNAL_PREFIX}/profile`;
+// ── Inline SVG icons — consistent with staff portal style ──────────────────
+function HomeIcon({ active }: { active: boolean }) {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      strokeWidth={active ? 2.5 : 2} strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+      <polyline points="9 22 9 12 15 12 15 22" />
+    </svg>
+  );
+}
+function BellIcon({ active }: { active: boolean }) {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      strokeWidth={active ? 2.5 : 2} strokeLinecap="round" strokeLinejoin="round">
+      <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+      <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+    </svg>
+  );
+}
+function ChatIcon({ active }: { active: boolean }) {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      strokeWidth={active ? 2.5 : 2} strokeLinecap="round" strokeLinejoin="round">
+      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+    </svg>
+  );
+}
+function UserIcon({ active }: { active: boolean }) {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      strokeWidth={active ? 2.5 : 2} strokeLinecap="round" strokeLinejoin="round">
+      <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+      <circle cx="12" cy="7" r="4" />
+    </svg>
+  );
 }
 
 export function BottomNav() {
@@ -42,72 +70,63 @@ export function BottomNav() {
 
   const homeHref = getHomeHref(dept);
   const chatHref = getChatHref(dept);
+  const notifHref = `${INTERNAL_PREFIX}/notifications`;
 
   const navItems = [
     {
       href: homeHref,
       label: "Home",
-      icon: "dashboard" as const,
-      // active if on the dept root or any sub-page (but not chat/notifications/profile)
+      Icon: HomeIcon,
       activeTest: (p: string) =>
         p === homeHref ||
-        (p.startsWith(homeHref + "/") &&
-          !p.startsWith(`${INTERNAL_PREFIX}/profile`) &&
-          !p.startsWith(`${INTERNAL_PREFIX}/notifications`)),
+        (p.startsWith(`${homeHref}/`) && !p.startsWith(notifHref)),
+    },
+    {
+      href: notifHref,
+      label: "Alerts",
+      Icon: BellIcon,
+      activeTest: (p: string) => p === notifHref || p.startsWith(`${notifHref}/`),
     },
     {
       href: chatHref,
       label: "Chat",
-      icon: "support" as const,
-      activeTest: (p: string) => p === chatHref || p.startsWith(chatHref + "/"),
+      Icon: ChatIcon,
+      activeTest: (p: string) => p === chatHref || p.startsWith(`${chatHref}/`),
     },
     {
-      href: `${INTERNAL_PREFIX}/notifications`,
-      label: "Alerts",
-      icon: "bell" as const,
-      activeTest: (p: string) =>
-        p === `${INTERNAL_PREFIX}/notifications` ||
-        p.startsWith(`${INTERNAL_PREFIX}/notifications/`) ||
-        p === `${INTERNAL_PREFIX}/profile/notifications`,
-    },
-    {
-      href: `${INTERNAL_PREFIX}/profile`,
+      href: "/staff/profile",
       label: "Profile",
-      icon: "settings" as const,
-      activeTest: (p: string) =>
-        p === `${INTERNAL_PREFIX}/profile` ||
-        p.startsWith(`${INTERNAL_PREFIX}/profile/`),
+      Icon: UserIcon,
+      activeTest: (p: string) => p === "/staff/profile" || p.startsWith("/staff/profile/"),
     },
   ];
 
   return (
     <nav
-      className="fixed bottom-0 left-0 right-0 z-40 border-t border-border bg-card xl:hidden"
+      className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white xl:hidden"
       aria-label="Mobile navigation"
       style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
     >
-      <div className="flex items-center justify-around py-1.5">
+      <div className="flex">
         {navItems.map((item) => {
           const isActive = item.activeTest(pathname);
+          const NavIcon = item.Icon;
           return (
             <Link
               key={item.href}
               href={item.href}
               className={cn(
-                "flex flex-col items-center gap-0.5 rounded-lg px-4 py-1.5 text-[10px] font-semibold transition",
-                isActive
-                  ? "text-accent-foreground"
-                  : "text-slate-400 hover:text-slate-600",
+                "flex flex-1 flex-col items-center gap-0.5 py-2.5 text-center transition",
+                isActive ? "text-blue-600" : "text-slate-400 hover:text-slate-600",
               )}
             >
-              <Icon
-                name={item.icon}
-                className={cn(
-                  "h-5 w-5 transition",
-                  isActive ? "text-accent-foreground" : "text-slate-400",
-                )}
-              />
-              <span>{item.label}</span>
+              <NavIcon active={isActive} />
+              <span className={cn(
+                "text-[10px] font-semibold",
+                isActive ? "text-blue-600" : "",
+              )}>
+                {item.label}
+              </span>
             </Link>
           );
         })}

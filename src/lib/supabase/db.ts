@@ -49,6 +49,11 @@ import type {
   OffboardingRecord,
   PayrollPrep,
 } from "@/lib/data/hr-store";
+import {
+  DB_TO_STAFF_DEPT as dbToStaffDeptMap,
+  ROLE_KEY_LABELS,
+  STAFF_DEPT_TO_DB,
+} from "@/lib/data/hr-store";
 import type {
   AdminApproval,
   DeptAlert,
@@ -244,7 +249,7 @@ function mapPharmacyBill(r: Record<string, unknown>): PharmacyBill {
     prescriptionId: (r.prescription_id as string) ?? "",
     patientName: r.patient_name as string,
     patientId: (r.patient_id as string) ?? "",
-    drugs: [],
+    drugs: (r.drugs as string) ?? "",
     totalCost: (r.total_cost as number) ?? 0,
     dispensedAt: (r.dispensed_at as string) ?? "",
     billStatus: r.bill_status as PharmacyBill["billStatus"],
@@ -357,7 +362,7 @@ function mapLabTest(r: Record<string, unknown>): LabTest {
     resultValue: r.result_value as string | undefined,
     resultUnit: r.result_unit as string | undefined,
     referenceRange: r.reference_range as string | undefined,
-    interpretation: r.interpretation as string | undefined,
+    interpretation: r.interpretation as LabTest["interpretation"],
     resultNotes: r.result_notes as string | undefined,
     resultEnteredBy: r.result_entered_by as string | undefined,
     completedAt: r.completed_at as string | undefined,
@@ -438,12 +443,19 @@ function mapWardPatient(r: Record<string, unknown>): WardPatient {
     assignedNurse: (r.assigned_nurse as string) ?? "",
     priority: r.priority as WardPatient["priority"],
     status: r.status as WardPatient["status"],
-    vitals: { bp: r.bp as string, pulse: r.pulse as string, temp: r.temp as string, spo2: r.spo2 as string, gcs: r.gcs as string },
+    vitals: {
+      bp: (r.bp as string) ?? "",
+      pulse: (r.pulse as string) ?? "",
+      temp: (r.temp as string) ?? "",
+      spo2: (r.spo2 as string) ?? "",
+      recordedAt: (r.last_vitals_at as string) ?? "",
+      recordedBy: (r.assigned_nurse as string) ?? "",
+    },
     doctorInCharge: (r.doctor_in_charge as string) ?? "",
     notes: (r.notes as string) ?? "",
     lastVitalsAt: r.last_vitals_at as string | undefined,
-    labTestsOrdered: [],
-    medsScheduled: [],
+    labTestsOrdered: (r.lab_tests_ordered as number) ?? 0,
+    medsScheduled: (r.meds_scheduled as number) ?? 0,
   };
 }
 
@@ -452,8 +464,8 @@ function mapNursingProcedure(r: Record<string, unknown>): NursingProcedure {
     id: r.id as string,
     patientName: r.patient_name as string,
     patientId: (r.patient_id as string) ?? "",
-    unit: (r.unit as string) ?? "",
-    procedureType: r.procedure_type as string,
+    unit: r.unit as NursingProcedure["unit"],
+    procedureType: r.procedure_type as NursingProcedure["procedureType"],
     description: (r.description as string) ?? "",
     performedBy: (r.performed_by as string) ?? "",
     performedAt: (r.performed_at as string) ?? "",
@@ -467,7 +479,7 @@ function mapNurseSampleRequest(r: Record<string, unknown>): NurseSampleRequest {
     id: r.id as string,
     patientName: r.patient_name as string,
     patientId: (r.patient_id as string) ?? "",
-    unit: (r.unit as string) ?? "",
+    unit: r.unit as NurseSampleRequest["unit"],
     testName: r.test_name as string,
     testCode: (r.test_code as string) ?? "",
     sampleType: (r.sample_type as string) ?? "",
@@ -534,7 +546,7 @@ export async function insertWardPatient(p: WardPatient): Promise<void> {
     unit: p.unit, bed: p.bed, diagnosis: p.diagnosis, admitted_at: p.admittedAt,
     assigned_nurse: p.assignedNurse, priority: p.priority, status: p.status,
     bp: p.vitals?.bp, pulse: p.vitals?.pulse, temp: p.vitals?.temp,
-    spo2: p.vitals?.spo2, gcs: p.vitals?.gcs,
+    spo2: p.vitals?.spo2,
     doctor_in_charge: p.doctorInCharge, notes: p.notes, last_vitals_at: p.lastVitalsAt,
   });
 }
@@ -568,7 +580,7 @@ function mapFrontDeskCharge(r: Record<string, unknown>): FrontDeskCharge {
     id: r.id as string,
     patientName: r.patient_name as string,
     patientId: (r.patient_id as string) ?? "",
-    chargeType: r.charge_type as string,
+    chargeType: r.charge_type as FrontDeskCharge["chargeType"],
     amount: (r.amount as number) ?? 0,
     description: (r.description as string) ?? "",
     createdAt: (r.created_at as string) ?? "",
@@ -584,7 +596,7 @@ function mapConsultationFee(r: Record<string, unknown>): ConsultationFee {
     patientName: r.patient_name as string,
     patientId: (r.patient_id as string) ?? "",
     doctorName: (r.doctor_name as string) ?? "",
-    consultationType: (r.consultation_type as string) ?? "",
+    consultationType: r.consultation_type as ConsultationFee["consultationType"],
     fee: (r.fee as number) ?? 0,
     consultedAt: (r.consulted_at as string) ?? "",
     status: r.status as ConsultationFee["status"],
@@ -720,23 +732,28 @@ export async function insertFrontDeskCharge(c: FrontDeskCharge): Promise<void> {
 // ─── HR ───────────────────────────────────────────────────────────────────────
 
 function mapStaffMember(r: Record<string, unknown>): StaffMember {
+  const departmentKey = String(r.department ?? "");
+  const roleKey = r.role as StaffMember["roleKey"];
+  const fullName = (r.full_name as string) ?? (r.name as string) ?? "";
+  const createdAt = (r.created_at as string) ?? "";
+
   return {
     id: r.id as string,
-    name: r.name as string,
-    department: r.department as StaffMember["department"],
+    name: fullName,
+    department: dbToStaffDeptMap[departmentKey] ?? "Administration",
     unit: r.unit as string | undefined,
-    role: r.role as string,
-    roleKey: r.role_key as StaffMember["roleKey"],
-    contractType: r.contract_type as StaffMember["contractType"],
+    role: ROLE_KEY_LABELS[roleKey ?? "viewer"] ?? "Staff Member",
+    roleKey,
+    contractType: (r.contract_type as StaffMember["contractType"]) ?? "Permanent",
     email: (r.email as string) ?? "",
     phone: (r.phone as string) ?? "",
-    joinDate: (r.join_date as string) ?? "",
+    joinDate: createdAt ? new Date(createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "",
     contractEndDate: r.contract_end_date as string | undefined,
-    status: r.status as StaffMember["status"],
+    status: typeof r.is_active === "boolean" ? (r.is_active ? "Active" : "Terminated") : ((r.status as StaffMember["status"]) ?? "Active"),
     licenseNumber: r.license_number as string | undefined,
     licenseExpiry: r.license_expiry as string | undefined,
     salary: (r.salary as number) ?? 0,
-    systemAccessCreated: Boolean(r.system_access_created),
+    systemAccessCreated: typeof r.system_access_created === "boolean" ? Boolean(r.system_access_created) : true,
     notes: r.notes as string | undefined,
   };
 }
@@ -763,25 +780,30 @@ function mapLeaveRequest(r: Record<string, unknown>): LeaveRequest {
 
 export async function fetchStaffMembers(): Promise<StaffMember[]> {
   const sb = getSupabase(); if (!sb) return [];
-  const { data } = await sb.from("staff_members").select("*").order("name");
+  const { data } = await sb.from("staff_profiles").select("*").order("full_name");
   return (data ?? []).map(mapStaffMember);
 }
 
 export async function fetchLeaveRequests(): Promise<LeaveRequest[]> {
   const sb = getSupabase(); if (!sb) return [];
-  const { data } = await sb.from("leave_requests").select("*").order("submitted_at", { ascending: false });
-  return (data ?? []).map(mapLeaveRequest);
+  try {
+    const { data } = await sb.from("leave_requests").select("*").order("submitted_at", { ascending: false });
+    return (data ?? []).map(mapLeaveRequest);
+  } catch {
+    return [];
+  }
 }
 
 export async function insertStaffMember(s: StaffMember): Promise<void> {
   const sb = getSupabase(); if (!sb) return;
-  await sb.from("staff_members").upsert({
-    id: s.id, name: s.name, department: s.department, unit: s.unit,
-    role: s.role, role_key: s.roleKey, contract_type: s.contractType,
-    email: s.email, phone: s.phone, join_date: s.joinDate,
-    contract_end_date: s.contractEndDate, status: s.status,
-    license_number: s.licenseNumber, license_expiry: s.licenseExpiry,
-    salary: s.salary, system_access_created: s.systemAccessCreated, notes: s.notes,
+  if (!/^[0-9a-fA-F-]{36}$/.test(s.id)) return;
+  await sb.from("staff_profiles").upsert({
+    id: s.id,
+    full_name: s.name,
+    email: s.email,
+    department: STAFF_DEPT_TO_DB[s.department],
+    role: s.roleKey ?? "viewer",
+    is_active: s.status === "Active" || s.status === "On Leave" || s.status === "Probation",
   });
 }
 
@@ -801,7 +823,7 @@ function mapAdminApproval(r: Record<string, unknown>): AdminApproval {
   return {
     id: r.id as string,
     department: r.department as AdminApproval["department"],
-    category: r.category as string,
+    category: r.category as AdminApproval["category"],
     title: r.title as string,
     description: (r.description as string) ?? "",
     requestedBy: (r.requested_by as string) ?? "",
@@ -913,7 +935,7 @@ function mapNotification(r: Record<string, unknown>): AppNotification {
     severity: r.severity as AppNotification["severity"],
     title: r.title as string,
     body: (r.body as string) ?? "",
-    href: r.href as string | undefined,
+    href: (r.href as string) ?? "",
     createdAt: (r.created_at as string) ?? "",
     isRead: Boolean(r.is_read),
     targetDepartments: (r.target_departments as AppNotification["targetDepartments"]) ?? [],
@@ -938,4 +960,201 @@ export async function insertNotification(n: AppNotification): Promise<void> {
 export async function markNotificationRead(id: string): Promise<void> {
   const sb = getSupabase(); if (!sb) return;
   await sb.from("notifications").update({ is_read: true }).eq("id", id);
+}
+
+// ─── Pharmacy Inventory ───────────────────────────────────────────────────────
+
+export type PharmacyInventoryItem = {
+  id: string;
+  product: string;
+  category: string;
+  form: string;
+  stock: number;
+  reorderLevel: number;
+  unitPrice: number;
+  expiry: string;
+  supplier: string;
+  status: "ok" | "low" | "critical" | "out";
+};
+
+function mapPharmacyInventoryItem(r: Record<string, unknown>): PharmacyInventoryItem {
+  return {
+    id: r.id as string,
+    product: r.product as string,
+    category: (r.category as string) ?? "",
+    form: (r.form as string) ?? "Tablet",
+    stock: (r.stock as number) ?? 0,
+    reorderLevel: (r.reorder_level as number) ?? 0,
+    unitPrice: (r.unit_price as number) ?? 0,
+    expiry: (r.expiry as string) ?? "",
+    supplier: (r.supplier as string) ?? "",
+    status: (r.status as PharmacyInventoryItem["status"]) ?? "ok",
+  };
+}
+
+export async function fetchPharmacyInventory(): Promise<PharmacyInventoryItem[]> {
+  const sb = getSupabase();
+  if (!sb) return [];
+  const { data } = await sb.from("pharmacy_inventory").select("*").order("product");
+  return (data ?? []).map(mapPharmacyInventoryItem);
+}
+
+export async function upsertPharmacyInventoryItem(item: PharmacyInventoryItem): Promise<void> {
+  const sb = getSupabase();
+  if (!sb) return;
+  await sb.from("pharmacy_inventory").upsert({
+    id: item.id, product: item.product, category: item.category, form: item.form,
+    stock: item.stock, reorder_level: item.reorderLevel, unit_price: item.unitPrice,
+    expiry: item.expiry, supplier: item.supplier, status: item.status,
+  });
+}
+
+// ─── Invoices ─────────────────────────────────────────────────────────────────
+
+export type InvoiceRecord = {
+  id: string;
+  patient: string;
+  amount: number;
+  dueDate: string;
+  status: "paid" | "pending" | "overdue" | "draft";
+  items: string;
+};
+
+function mapInvoice(r: Record<string, unknown>): InvoiceRecord {
+  return {
+    id: r.id as string,
+    patient: r.patient as string,
+    amount: (r.amount as number) ?? 0,
+    dueDate: (r.due_date as string) ?? "",
+    status: (r.status as InvoiceRecord["status"]) ?? "draft",
+    items: (r.items as string) ?? "",
+  };
+}
+
+export async function fetchInvoices(): Promise<InvoiceRecord[]> {
+  const sb = getSupabase();
+  if (!sb) return [];
+  const { data } = await sb.from("invoices").select("*").order("created_at", { ascending: false });
+  return (data ?? []).map(mapInvoice);
+}
+
+export async function insertInvoice(inv: InvoiceRecord): Promise<void> {
+  const sb = getSupabase();
+  if (!sb) return;
+  await sb.from("invoices").upsert({
+    id: inv.id, patient: inv.patient, amount: inv.amount,
+    due_date: inv.dueDate, status: inv.status, items: inv.items,
+  });
+}
+
+export async function updateInvoiceStatus(id: string, status: InvoiceRecord["status"]): Promise<void> {
+  const sb = getSupabase();
+  if (!sb) return;
+  await sb.from("invoices").update({ status }).eq("id", id);
+}
+
+// ─── Staff Shifts ─────────────────────────────────────────────────────────────
+
+export type StaffShift = {
+  id: string;
+  staffId: string;
+  shiftDate: string;
+  shiftType: "morning" | "afternoon" | "evening" | "night" | "on_call";
+  shiftStart: string;
+  shiftEnd: string;
+  unit: string;
+  status: "scheduled" | "confirmed" | "completed" | "absent" | "swapped";
+  department: string;
+};
+
+function mapStaffShift(r: Record<string, unknown>): StaffShift {
+  return {
+    id: r.id as string,
+    staffId: (r.staff_id as string) ?? "",
+    shiftDate: (r.shift_date as string) ?? "",
+    shiftType: (r.shift_type as StaffShift["shiftType"]) ?? "morning",
+    shiftStart: (r.shift_start as string) ?? "07:00",
+    shiftEnd: (r.shift_end as string) ?? "14:00",
+    unit: (r.unit as string) ?? "",
+    status: (r.status as StaffShift["status"]) ?? "scheduled",
+    department: (r.department as string) ?? "",
+  };
+}
+
+export async function fetchStaffShifts(staffId: string): Promise<StaffShift[]> {
+  const sb = getSupabase();
+  if (!sb) return [];
+  const { data } = await sb.from("staff_shifts").select("*")
+    .eq("staff_id", staffId)
+    .order("shift_date");
+  return (data ?? []).map(mapStaffShift);
+}
+
+// ─── Patient Registrations ────────────────────────────────────────────────────
+
+export type PatientRegistration = {
+  id: string;
+  patientName: string;
+  patientId: string;
+  registeredAt: string;
+  contact: string;
+  initials: string;
+  status: "Waiting" | "In Consultation" | "Discharged" | "Referred";
+  registeredBy: string;
+};
+
+function mapPatientRegistration(r: Record<string, unknown>): PatientRegistration {
+  return {
+    id: r.id as string,
+    patientName: r.patient_name as string,
+    patientId: (r.patient_id as string) ?? "",
+    registeredAt: (r.registered_at as string) ?? "",
+    contact: (r.contact as string) ?? "",
+    initials: (r.initials as string) ?? "",
+    status: (r.status as PatientRegistration["status"]) ?? "Waiting",
+    registeredBy: (r.registered_by as string) ?? "",
+  };
+}
+
+export async function fetchPatientRegistrations(): Promise<PatientRegistration[]> {
+  const sb = getSupabase();
+  if (!sb) return [];
+  const { data } = await sb.from("patient_registrations").select("*")
+    .order("created_at", { ascending: false }).limit(20);
+  return (data ?? []).map(mapPatientRegistration);
+}
+
+export async function insertPatientRegistration(reg: PatientRegistration): Promise<void> {
+  const sb = getSupabase();
+  if (!sb) return;
+  await sb.from("patient_registrations").upsert({
+    id: reg.id, patient_name: reg.patientName, patient_id: reg.patientId,
+    registered_at: reg.registeredAt, contact: reg.contact, initials: reg.initials,
+    status: reg.status, registered_by: reg.registeredBy,
+  });
+}
+
+// ─── IT System Status ─────────────────────────────────────────────────────────
+
+export type ITSystemStatus = {
+  id: string;
+  name: string;
+  status: "Operational" | "Degraded" | "Outage" | "Maintenance";
+  uptime: string;
+};
+
+function mapITSystemStatus(r: Record<string, unknown>): ITSystemStatus {
+  return {
+    id: r.id as string,
+    name: r.name as string,
+    status: (r.status as ITSystemStatus["status"]) ?? "Operational",
+    uptime: (r.uptime as string) ?? "100%",
+  };
+}
+
+export async function fetchITSystemStatus(): Promise<ITSystemStatus[]> {
+  const sb = getSupabase();
+  if (!sb) return [];
+  const { data } = await sb.from("it_system_status").select("*").order("name");
+  return (data ?? []).map(mapITSystemStatus);
 }

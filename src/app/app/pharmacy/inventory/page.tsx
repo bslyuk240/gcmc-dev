@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -8,6 +8,7 @@ import { StatusBadge } from "@/components/ui/status-badge";
 import { Modal, ModalFooter } from "@/components/ui/modal";
 import { Toast, type ToastData } from "@/components/ui/toast";
 import { usePharmacyStore } from "@/lib/hooks/use-pharmacy-store";
+import { fetchPharmacyInventory, upsertPharmacyInventoryItem } from "@/lib/supabase/db";
 import {
   addRestockRequest,
   getRestockRequests,
@@ -39,24 +40,6 @@ const DOSAGE_FORMS = [
   "Suppository", "Powder", "Granules", "Other",
 ];
 
-const INITIAL: InventoryItem[] = [
-  { id: "INV-001", product: "Paracetamol 500mg",  category: "Analgesic",        form: "Tablet",       stock: 120, reorderLevel: 50, price: "₦ 0.50", unitPrice: 0.5, expiry: "2026-06", supplier: "PharmaCorp",    status: "ok" },
-  { id: "INV-002", product: "Amoxicillin 500mg",  category: "Antibiotic",       form: "Capsule",      stock: 8,   reorderLevel: 30, price: "₦ 1.80", unitPrice: 1.8, expiry: "2026-03", supplier: "MedSupply Ltd", status: "low" },
-  { id: "INV-003", product: "Metformin 850mg",    category: "Antidiabetic",     form: "Tablet",       stock: 55,  reorderLevel: 40, price: "₦ 1.20", unitPrice: 1.2, expiry: "2026-12", supplier: "PharmaCorp",    status: "ok" },
-  { id: "INV-004", product: "Lisinopril 10mg",    category: "Antihypertensive", form: "Tablet",       stock: 3,   reorderLevel: 25, price: "₦ 2.50", unitPrice: 2.5, expiry: "2026-09", supplier: "Lifeline Pharma",status: "critical" },
-  { id: "INV-005", product: "Atorvastatin 20mg",  category: "Lipid-lowering",   form: "Tablet",       stock: 0,   reorderLevel: 20, price: "₦ 3.00", unitPrice: 3.0, expiry: "2026-11", supplier: "MedSupply Ltd", status: "out" },
-  { id: "INV-006", product: "Amlodipine 5mg",     category: "Antihypertensive", form: "Tablet",       stock: 78,  reorderLevel: 30, price: "₦ 1.60", unitPrice: 1.6, expiry: "2027-01", supplier: "PharmaCorp",    status: "ok" },
-  { id: "INV-007", product: "Aspirin 75mg",       category: "Analgesic",        form: "Tablet",       stock: 14,  reorderLevel: 40, price: "₦ 0.50", unitPrice: 0.5, expiry: "2026-08", supplier: "PharmaCorp",    status: "low" },
-  { id: "INV-008", product: "Metronidazole 400mg",category: "Antibiotic",       form: "Tablet",       stock: 62,  reorderLevel: 30, price: "₦ 1.50", unitPrice: 1.5, expiry: "2027-02", supplier: "MedSupply Ltd", status: "ok" },
-  { id: "INV-009", product: "Ciprofloxacin 500mg",category: "Antibiotic",       form: "Tablet",       stock: 40,  reorderLevel: 25, price: "₦ 3.50", unitPrice: 3.5, expiry: "2026-10", supplier: "PharmaCorp",    status: "ok" },
-  { id: "INV-010", product: "Omeprazole 20mg",    category: "Antacid / PPI",    form: "Capsule",      stock: 70,  reorderLevel: 30, price: "₦ 2.20", unitPrice: 2.2, expiry: "2026-12", supplier: "MedSupply Ltd", status: "ok" },
-  { id: "INV-015", product: "IV Amoxicillin 1g",  category: "IV Antibiotic",    form: "Vial",         stock: 25,  reorderLevel: 20, price: "₦ 8.50", unitPrice: 8.5, expiry: "2026-08", supplier: "Lifeline Pharma",status: "ok" },
-  { id: "INV-016", product: "IV Metronidazole 500mg",category:"IV Antibiotic",  form: "Infusion Bag", stock: 18,  reorderLevel: 15, price: "₦ 6.00", unitPrice: 6.0, expiry: "2026-07", supplier: "Lifeline Pharma",status: "ok" },
-  { id: "INV-020", product: "Salbutamol Inhaler", category: "Bronchodilator",   form: "Inhaler",      stock: 12,  reorderLevel: 10, price: "₦ 15.00",unitPrice:15.0, expiry: "2027-03", supplier: "MedEquip Ltd",  status: "ok" },
-  { id: "INV-025", product: "Ceftriaxone 1g IV",  category: "IV Antibiotic",    form: "Vial",         stock: 10,  reorderLevel: 15, price: "₦ 12.00",unitPrice:12.0, expiry: "2026-06", supplier: "Lifeline Pharma",status: "low" },
-  { id: "INV-026", product: "IV Normal Saline 500ml",category:"IV Fluid",       form: "Infusion Bag", stock: 80,  reorderLevel: 40, price: "₦ 5.00", unitPrice: 5.0, expiry: "2027-01", supplier: "PharmaCorp",    status: "ok" },
-  { id: "INV-027", product: "IV Dextrose 5% 500ml",  category:"IV Fluid",       form: "Infusion Bag", stock: 50,  reorderLevel: 30, price: "₦ 5.50", unitPrice: 5.5, expiry: "2027-01", supplier: "PharmaCorp",    status: "ok" },
-];
 
 const CATEGORIES = ["All categories", "Analgesic", "Antibiotic", "Antidiabetic", "Antihypertensive", "Lipid-lowering", "Antihistamine", "Other"];
 const STATUS_BADGE: Record<StockStatus, "success" | "warning" | "destructive" | "neutral"> = {
@@ -74,7 +57,27 @@ function calcStockStatus(stock: number, reorder: number): StockStatus {
 }
 
 export default function PharmacyInventoryPage() {
-  const [items, setItems] = useState<InventoryItem[]>(INITIAL);
+  const [items, setItems] = useState<InventoryItem[]>([]);
+  const [loadingItems, setLoadingItems] = useState(true);
+
+  useEffect(() => {
+    fetchPharmacyInventory().then((data) => {
+      setItems(data.map((d) => ({
+        id: d.id,
+        product: d.product,
+        category: d.category,
+        form: d.form,
+        stock: d.stock,
+        reorderLevel: d.reorderLevel,
+        price: `₦ ${d.unitPrice.toFixed(2)}`,
+        unitPrice: d.unitPrice,
+        expiry: d.expiry,
+        supplier: d.supplier,
+        status: d.status,
+      })));
+      setLoadingItems(false);
+    }).catch(() => setLoadingItems(false));
+  }, []);
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("All categories");
   const [page, setPage] = useState(0);
@@ -136,6 +139,7 @@ export default function PharmacyInventoryPage() {
       status: calcStockStatus(stock, reorder),
     };
     setItems((prev) => [newItem, ...prev]);
+    upsertPharmacyInventoryItem({ id: newItem.id, product: newItem.product, category: newItem.category, form: newItem.form, stock: newItem.stock, reorderLevel: newItem.reorderLevel, unitPrice: newItem.unitPrice, expiry: newItem.expiry, supplier: newItem.supplier, status: newItem.status }).catch(() => {});
     setToast({ message: `${aProduct} added to inventory.`, type: "success" });
     setShowAdd(false);
     setAProduct(""); setACategory("Analgesic"); setAForm("Tablet");
@@ -156,7 +160,9 @@ export default function PharmacyInventoryPage() {
     if (!editItem) return;
     const newStock = parseInt(editStock) || 0;
     const status = calcStockStatus(newStock, editItem.reorderLevel);
-    setItems((prev) => prev.map((i) => i.id === editItem.id ? { ...i, stock: newStock, price: editPrice, expiry: editExpiry, supplier: editSupplier, form: editForm, status } : i));
+    const updatedItem = { ...editItem, stock: newStock, price: editPrice, expiry: editExpiry, supplier: editSupplier, form: editForm, status };
+    setItems((prev) => prev.map((i) => i.id === editItem.id ? updatedItem : i));
+    upsertPharmacyInventoryItem({ id: updatedItem.id, product: updatedItem.product, category: updatedItem.category, form: updatedItem.form, stock: updatedItem.stock, reorderLevel: updatedItem.reorderLevel, unitPrice: updatedItem.unitPrice, expiry: updatedItem.expiry, supplier: updatedItem.supplier, status: updatedItem.status }).catch(() => {});
     setToast({ message: `${editItem.product} updated.`, type: "success" });
     setEditItem(null);
   }
@@ -250,6 +256,8 @@ export default function PharmacyInventoryPage() {
         description="Stock levels, expiry tracking, nurse requests, and Store restock."
         action={<Button size="md" onClick={() => setShowAdd(true)}>+ Add Medication</Button>}
       />
+
+      {loadingItems && <p className="text-sm text-slate-400">Loading inventory…</p>}
 
       {/* Low stock alert banner */}
       {lowItems.length > 0 && (
