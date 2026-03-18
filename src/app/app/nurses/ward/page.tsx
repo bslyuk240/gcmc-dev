@@ -23,8 +23,6 @@ const PROCEDURE_PRICES: Record<string, number> = {
   Injection: 25, Dressing: 20, "IV Access": 30, Catheter: 60, Observation: 15,
   "Wound Care": 40, "Blood Draw": 15, Procedure: 50, Other: 20,
 };
-const NURSES: string[] = [];
-
 export default function NursesWardPage() {
   const { getByUnit, procedures } = useNursesStore();
   const wardPatients = getByUnit("Ward").filter((p) => p.status === "Active");
@@ -38,12 +36,12 @@ export default function NursesWardPage() {
   // Vitals form
   const [bp, setBp] = useState(""); const [pulse, setPulse] = useState("");
   const [temp, setTemp] = useState(""); const [spo2, setSpo2] = useState("");
-  const [vitalsNurse, setVitalsNurse] = useState(NURSES[0]);
+  const [vitalsNurse, setVitalsNurse] = useState("");
 
   // Procedure form
   const [procType, setProcType] = useState<typeof PROCEDURE_TYPES[number]>("Injection");
   const [procDesc, setProcDesc] = useState("");
-  const [procNurse, setProcNurse] = useState(NURSES[0]);
+  const [procNurse, setProcNurse] = useState("");
 
   function handleRecordVitals() {
     if (!vitalsTarget || !bp || !pulse) return;
@@ -146,10 +144,10 @@ export default function NursesWardPage() {
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex flex-wrap gap-1.5">
-                      <Button size="sm" onClick={() => { setVitalsTarget(p); setBp(""); setPulse(""); setTemp(""); setSpo2(""); setVitalsNurse(NURSES[0]); }}>
+                      <Button size="sm" onClick={() => { setVitalsTarget(p); setBp(""); setPulse(""); setTemp(""); setSpo2(""); setVitalsNurse(""); }}>
                         Vitals
                       </Button>
-                      <Button size="sm" variant="outline" onClick={() => { setProcTarget(p); setProcDesc(""); setProcType("Injection"); setProcNurse(NURSES[0]); }}>
+                      <Button size="sm" variant="outline" onClick={() => { setProcTarget(p); setProcDesc(""); setProcType("Injection"); setProcNurse(""); }}>
                         Procedure
                       </Button>
                       <Button size="sm" variant="ghost" onClick={() => setDischargeTarget(p)}>Discharge</Button>
@@ -207,9 +205,7 @@ export default function NursesWardPage() {
                 <input value={spo2} onChange={(e) => setSpo2(e.target.value)} placeholder="e.g. 98%" className={inputCls} /></div>
             </div>
             <div><label className="block text-xs font-semibold text-slate-600 mb-1">Recorded By</label>
-              <select value={vitalsNurse} onChange={(e) => setVitalsNurse(e.target.value)} className={inputCls}>
-                {NURSES.map((n) => <option key={n}>{n}</option>)}
-              </select>
+              <input value={vitalsNurse} onChange={(e) => setVitalsNurse(e.target.value)} placeholder="Your name" className={inputCls} />
             </div>
           </div>
         )}
@@ -238,9 +234,7 @@ export default function NursesWardPage() {
             </div>
             <div>
               <label className="block text-xs font-semibold text-slate-600 mb-1">Performed By</label>
-              <select value={procNurse} onChange={(e) => setProcNurse(e.target.value)} className={inputCls}>
-                {NURSES.map((n) => <option key={n}>{n}</option>)}
-              </select>
+              <input value={procNurse} onChange={(e) => setProcNurse(e.target.value)} placeholder="Your name" className={inputCls} />
             </div>
             <div className="rounded-lg bg-emerald-50 border border-emerald-200 px-3 py-2 text-xs text-emerald-800">
               ✓ A charge of <strong>₦{PROCEDURE_PRICES[procType]}</strong> will be sent to Accounts automatically.

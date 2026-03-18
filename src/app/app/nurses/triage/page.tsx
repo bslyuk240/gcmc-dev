@@ -8,22 +8,14 @@ import { Toast, type ToastData } from "@/components/ui/toast";
 type Urgency = "CRITICAL" | "HIGH" | "ROUTINE";
 type Entry = { id: string; urgency: Urgency; patient: string; complaint: string; doctor: string; bp: string; pulse: string; temp: string; spo2: string; time: string; status: "Waiting" | "In Progress" | "Done" };
 
-const INITIAL: Entry[] = [
-  { id: "TRG-001", urgency: "CRITICAL", patient: "Kofi Mensah", complaint: "Severe chest pain, short of breath", doctor: "Dr. Kwame Mensah", bp: "160/100", pulse: "110", temp: "37.8", spo2: "92%", time: "10:05", status: "In Progress" },
-  { id: "TRG-002", urgency: "HIGH", patient: "Yaw Darko", complaint: "Compound fracture – right arm", doctor: "Dr. Amaka Osei", bp: "120/80", pulse: "88", temp: "37.1", spo2: "98%", time: "10:20", status: "Waiting" },
-  { id: "TRG-003", urgency: "ROUTINE", patient: "Ama Owusu", complaint: "Persistent migraine and dizziness", doctor: "Dr. Chen", bp: "118/76", pulse: "72", temp: "36.9", spo2: "99%", time: "10:40", status: "Waiting" },
-];
-
 const URGENCY_STYLES: Record<Urgency, string> = {
   CRITICAL: "bg-red-100 text-red-700",
   HIGH: "bg-amber-100 text-amber-700",
   ROUTINE: "bg-slate-100 text-slate-700",
 };
 
-const DOCTORS = ["Dr. Amaka Osei", "Dr. Kwame Mensah", "Dr. Chen", "Dr. Robert Smith", "Dr. Emily White"];
-
 export default function NursesTriagePage() {
-  const [entries, setEntries] = useState<Entry[]>(INITIAL);
+  const [entries, setEntries] = useState<Entry[]>([]);
   const [filterUrgency, setFilterUrgency] = useState<Urgency | "ALL">("ALL");
   const [showNewModal, setShowNewModal] = useState(false);
   const [vitalsTarget, setVitalsTarget] = useState<Entry | null>(null);
@@ -169,10 +161,7 @@ export default function NursesTriagePage() {
           </div>
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">Assign Doctor <span className="text-red-500">*</span></label>
-            <select required value={newDoctor} onChange={(e) => setNewDoctor(e.target.value)} className={inputCls}>
-              <option value="">Select doctor…</option>
-              {DOCTORS.map((d) => <option key={d}>{d}</option>)}
-            </select>
+            <input required value={newDoctor} onChange={(e) => setNewDoctor(e.target.value)} placeholder="e.g. Dr. Smith" className={inputCls} />
           </div>
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
             {[{ label: "BP (mmHg)", val: newBP, set: setNewBP, ph: "120/80" }, { label: "Pulse (bpm)", val: newPulse, set: setNewPulse, ph: "72" }, { label: "Temp (°C)", val: newTemp, set: setNewTemp, ph: "37.0" }, { label: "SpO2 (%)", val: newSpo2, set: setNewSpo2, ph: "99%" }].map(({ label, val, set, ph }) => (
