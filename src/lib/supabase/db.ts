@@ -1643,3 +1643,69 @@ export async function deleteShiftPreset(id: string): Promise<void> {
   if (!sb) return;
   await sb.from("shift_presets").delete().eq("id", id);
 }
+
+// ─── Front Desk live stats ────────────────────────────────────────────────────
+
+export type VisitRow = {
+  id: string;
+  patientId: string;
+  patientName: string;
+  visitDate: string;
+  visitType: string;
+  department: string;
+  assignedTo: string;
+  status: string;
+  checkedInAt: string | null;
+};
+
+function mapVisit(r: Record<string, unknown>): VisitRow {
+  return {
+    id: r.id as string,
+    patientId: (r.patient_id as string) ?? "",
+    patientName: (r.patient_name as string) ?? "",
+    visitDate: (r.visit_date as string) ?? "",
+    visitType: (r.visit_type as string) ?? "",
+    department: (r.department as string) ?? "",
+    assignedTo: (r.assigned_to as string) ?? "",
+    status: (r.status as string) ?? "",
+    checkedInAt: (r.checked_in_at as string) ?? null,
+  };
+}
+
+export async function fetchTodayVisits(): Promise<VisitRow[]> {
+  const sb = getSupabase();
+  if (!sb) return [];
+  const today = new Date().toISOString().slice(0, 10);
+  const { data } = await sb
+    .from("visits")
+    .select("*")
+    .gte("visit_date", today + "T00:00:00")
+    .lte("visit_date", today + "T23:59:59")
+    .order("visit_date", { ascending: false });
+  return (data ?? []).map(mapVisit);
+}
+
+export async function fetchMyShiftToday(staffId: string): Promise<NcShift | null> {
+  const sb = getSupabase();
+  if (!sb) return null;
+  const today = new Date().toISOString().slice(0, 10);
+  const { data } = await sb
+    .from("staff_shifts")
+    .select("*")
+    .eq("staff_id", staffId)
+    .eq("shift_date", today)
+    .maybeSingle();
+  if (!data) return null;
+  return {
+    id: data.id as string,
+    staffId: data.staff_id as string,
+    department: data.department as string,
+    unit: data.unit as string,
+    shiftDate: data.shift_date as string,
+    shiftType: data.shift_type as NcShift["shiftType"],
+    shiftStart: data.shift_start as string,
+    shiftEnd: data.shift_end as string,
+    status: data.status as NcShift["status"],
+    createdAt: data.created_at as string,
+  };
+}
