@@ -13,14 +13,7 @@ type HRDocument = {
   status: "Valid" | "Expiring Soon" | "Expired";
 };
 
-const MOCK_DOCS: HRDocument[] = [
-  { id: "DOC-001", title: "Employment Contract",           category: "Contract",    issuedOn: "2023-01-15", status: "Valid" },
-  { id: "DOC-002", title: "Professional License",          category: "Certificate", issuedOn: "2024-06-01", expiryDate: "2026-06-01", status: "Expiring Soon" },
-  { id: "DOC-003", title: "Offer Letter",                  category: "Letter",      issuedOn: "2022-12-20", status: "Valid" },
-  { id: "DOC-004", title: "Hospital Staff Policy 2025",    category: "Policy",      issuedOn: "2025-01-01", status: "Valid" },
-  { id: "DOC-005", title: "Fire Safety Training",          category: "Training",    issuedOn: "2025-03-10", expiryDate: "2026-03-10", status: "Expiring Soon" },
-  { id: "DOC-006", title: "Infection Control Certificate", category: "Certificate", issuedOn: "2024-09-15", status: "Valid" },
-];
+const MOCK_DOCS: HRDocument[] = [];
 
 const CAT_STYLES: Record<DocCategory, string> = {
   Contract:    "bg-indigo-50 text-indigo-700",

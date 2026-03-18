@@ -68,65 +68,9 @@ type DoctorsStoreState = {
 // ─── Seed Data ────────────────────────────────────────────────────────────────
 
 const SEED: DoctorsStoreState = {
-  doctors: [
-    { id: "DR-001", name: "Dr. Amaka Osei", specialty: "Obstetrics & Gynaecology", qualifications: "MBChB, FWACS", status: "On Duty", consultationsToday: 8, avgConsultMins: 14 },
-    { id: "DR-002", name: "Dr. Kwame Mensah", specialty: "Cardiology", qualifications: "MBChB, FWACP", status: "On Duty", consultationsToday: 6, avgConsultMins: 18 },
-    { id: "DR-003", name: "Dr. Chen Lin", specialty: "General Medicine", qualifications: "MBChB", status: "On Duty", consultationsToday: 9, avgConsultMins: 12 },
-    { id: "DR-004", name: "Dr. Robert Smith", specialty: "General Surgery", qualifications: "MBChB, FWACS", status: "On Duty", consultationsToday: 5, avgConsultMins: 20 },
-    { id: "DR-005", name: "Dr. Kofi Osei", specialty: "Paediatrics", qualifications: "MBChB, FWACP", status: "Off Duty", consultationsToday: 0, avgConsultMins: 15 },
-  ],
-  consultations: [
-    {
-      id: "CON-001", patientName: "Alice Thompson", patientId: "PT-8234", doctorName: "Dr. Chen Lin",
-      consultType: "General", date: "Mar 15, 2026", time: "10:20", status: "Awaiting Results",
-      chiefComplaint: "Fever and headache for 3 days.", diagnosis: "Suspected malaria — await lab",
-      notes: "Ordered malaria RDT and FBC. Review results before prescribing.",
-      rxWritten: false, labOrdered: true, admissionOrdered: false, consultFee: 100, feePaid: true,
-    },
-    {
-      id: "CON-002", patientName: "Kofi Mensah", patientId: "PT-8236", doctorName: "Dr. Kwame Mensah",
-      consultType: "Specialist", date: "Mar 15, 2026", time: "10:05", status: "In Progress",
-      chiefComplaint: "Chest pain and shortness of breath.",
-      notes: "ECG ordered. BP: 150/95. Possible hypertensive crisis.",
-      rxWritten: false, labOrdered: true, admissionOrdered: false, consultFee: 250, feePaid: false,
-    },
-    {
-      id: "CON-003", patientName: "Mary Ibrahim", patientId: "PT-8233", doctorName: "Dr. Amaka Osei",
-      consultType: "Antenatal", date: "Mar 15, 2026", time: "09:50", status: "Completed",
-      chiefComplaint: "28-week antenatal visit.",
-      diagnosis: "Normal pregnancy — 28 weeks.",
-      notes: "BP normal. Foetal heart rate good. Ferrous sulphate + folic acid prescribed.",
-      rxWritten: true, labOrdered: false, admissionOrdered: false, consultFee: 120, feePaid: true,
-    },
-    {
-      id: "CON-004", patientName: "Joseph James", patientId: "PT-8240", doctorName: "Dr. Chen Lin",
-      consultType: "General", date: "Mar 15, 2026", time: "09:30", status: "Completed",
-      chiefComplaint: "Abdominal pain.",
-      diagnosis: "Peptic ulcer disease.",
-      notes: "Omeprazole + antacids prescribed. Lifestyle advice given. Review in 2 weeks.",
-      rxWritten: true, labOrdered: false, admissionOrdered: false, consultFee: 100, feePaid: true,
-    },
-    {
-      id: "CON-005", patientName: "Emma Wilson", patientId: "PT-8250", doctorName: "Dr. Robert Smith",
-      consultType: "Emergency", date: "Mar 15, 2026", time: "09:10", status: "Admitted",
-      chiefComplaint: "Acute appendicitis — severe RIF pain.",
-      diagnosis: "Acute appendicitis.",
-      notes: "IV antibiotics started. Referred to surgery. Admitted to ward.",
-      rxWritten: true, labOrdered: true, admissionOrdered: true, admissionUnit: "Ward", consultFee: 200, feePaid: false,
-    },
-    {
-      id: "CON-006", patientName: "David Miller", patientId: "PT-8252", doctorName: "Dr. Kwame Mensah",
-      consultType: "Follow-up", date: "Mar 14, 2026", time: "14:30", status: "Completed",
-      chiefComplaint: "Hypertension follow-up.",
-      diagnosis: "Hypertension — stable on medication.",
-      rxWritten: true, labOrdered: false, admissionOrdered: false, consultFee: 60, feePaid: true,
-    },
-  ],
-  admissionOrders: [
-    { id: "ADM-001", patientName: "Emma Wilson", patientId: "PT-8250", orderedBy: "Dr. Robert Smith", unit: "Ward", reason: "Acute appendicitis — surgical prep.", orderedAt: "09:15 AM · Mar 15, 2026", status: "Admitted" },
-    { id: "ADM-002", patientName: "Kofi Asante", patientId: "PT-8199", orderedBy: "Dr. Kwame Mensah", unit: "ICU", reason: "Hypertensive emergency with cardiac signs.", orderedAt: "Mar 14, 2026", status: "Admitted" },
-    { id: "ADM-003", patientName: "Grace Owusu", patientId: "PT-8201", orderedBy: "Dr. Chen Lin", unit: "Ward", reason: "Severe anaemia — transfusion required.", orderedAt: "Mar 13, 2026", status: "Discharged" },
-  ],
+  doctors: [],
+  consultations: [],
+  admissionOrders: [],
 };
 
 // ─── Internal state ───────────────────────────────────────────────────────────

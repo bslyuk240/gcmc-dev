@@ -14,15 +14,15 @@ const ALL_MODULES: Module[] = ["Patients", "Billing", "Consultations", "Pharmacy
 type Role = { role: string; permissions: string; count: number; modules: Module[] };
 
 const INITIAL: Role[] = [
-  { role: "Admin", permissions: "Full access", count: 2, modules: [...ALL_MODULES] },
-  { role: "Front Desk Staff", permissions: "Patients, Billing, Reports", count: 5, modules: ["Patients", "Billing", "Reports"] },
-  { role: "Doctor", permissions: "Patients, Consultations, Pharmacy, Lab", count: 12, modules: ["Patients", "Consultations", "Pharmacy", "Lab"] },
-  { role: "Nurse", permissions: "Patients, Consultations, Pharmacy", count: 8, modules: ["Patients", "Consultations", "Pharmacy"] },
-  { role: "Pharmacist", permissions: "Pharmacy, Inventory", count: 3, modules: ["Pharmacy", "Inventory"] },
-  { role: "Accountant", permissions: "Billing, Reports, Approvals", count: 4, modules: ["Billing", "Reports", "Approvals"] },
-  { role: "Store Keeper", permissions: "Inventory, Reports", count: 2, modules: ["Inventory", "Reports"] },
-  { role: "IT Officer", permissions: "IT System, Reports, Audit Logs", count: 2, modules: ["IT System", "Reports", "Audit Logs"] },
-  { role: "HR Officer", permissions: "HR, Reports", count: 2, modules: ["HR", "Reports"] },
+  { role: "Admin", permissions: "Full access", count: 0, modules: [...ALL_MODULES] },
+  { role: "Front Desk Staff", permissions: "Patients, Billing, Reports", count: 0, modules: ["Patients", "Billing", "Reports"] },
+  { role: "Doctor", permissions: "Patients, Consultations, Pharmacy, Lab", count: 0, modules: ["Patients", "Consultations", "Pharmacy", "Lab"] },
+  { role: "Nurse", permissions: "Patients, Consultations, Pharmacy", count: 0, modules: ["Patients", "Consultations", "Pharmacy"] },
+  { role: "Pharmacist", permissions: "Pharmacy, Inventory", count: 0, modules: ["Pharmacy", "Inventory"] },
+  { role: "Accountant", permissions: "Billing, Reports, Approvals", count: 0, modules: ["Billing", "Reports", "Approvals"] },
+  { role: "Store Keeper", permissions: "Inventory, Reports", count: 0, modules: ["Inventory", "Reports"] },
+  { role: "IT Officer", permissions: "IT System, Reports, Audit Logs", count: 0, modules: ["IT System", "Reports", "Audit Logs"] },
+  { role: "HR Officer", permissions: "HR, Reports", count: 0, modules: ["HR", "Reports"] },
 ];
 
 export default function HRRolesPermissionsPage() {

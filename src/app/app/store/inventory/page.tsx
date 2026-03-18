@@ -17,23 +17,7 @@ const DOSAGE_FORMS = [
   "Suppository", "Powder", "Granules", "Other",
 ];
 
-const INITIAL: StoreItem[] = [
-  { id: "ITM-001", name: "Surgical Gloves (Medium)",    category: "PPE",            unit: "Box",   qty: 240, reorder: 50,  unitCost: 12.5, supplier: "MedSupply Co.",   status: "In Stock" },
-  { id: "ITM-002", name: "N95 Respirators",             category: "PPE",            unit: "Pack",  qty: 35,  reorder: 40,  unitCost: 28.0, supplier: "SafeGuard Ltd.", status: "Low Stock" },
-  { id: "ITM-003", name: "IV Cannula 18G",              category: "Medical",        unit: "Box",   qty: 120, reorder: 30,  unitCost: 18.0, supplier: "ClinTech",       status: "In Stock" },
-  { id: "ITM-004", name: "Gauze Bandages 10cm",         category: "Wound Care",     unit: "Roll",  qty: 8,   reorder: 20,  unitCost: 3.5,  supplier: "MedSupply Co.",   status: "Critical" },
-  { id: "ITM-005", name: "Disposable Syringes 5ml",     category: "Medical",        unit: "Box",   qty: 300, reorder: 100, unitCost: 9.0,  supplier: "ClinTech",       status: "In Stock" },
-  { id: "ITM-006", name: "Alcohol Swabs",               category: "Sterilization",  unit: "Pack",  qty: 60,  reorder: 50,  unitCost: 4.0,  supplier: "SafeGuard Ltd.", status: "In Stock" },
-  { id: "ITM-007", name: "Oxygen Masks (Adult)",        category: "Respiratory",    unit: "Piece", qty: 18,  reorder: 25,  unitCost: 6.0,  supplier: "MedEquip Co.",   status: "Low Stock" },
-  { id: "ITM-008", name: "Patient Wristbands",          category: "Admin",          unit: "Roll",  qty: 0,   reorder: 10,  unitCost: 7.5,  supplier: "PrintPro",       status: "Out of Stock" },
-  { id: "ITM-009", name: "Examination Table Paper",     category: "Admin",          unit: "Roll",  qty: 45,  reorder: 20,  unitCost: 5.0,  supplier: "PrintPro",       status: "In Stock" },
-  { id: "ITM-010", name: "Latex-Free Gloves (Large)",   category: "PPE",            unit: "Box",   qty: 88,  reorder: 40,  unitCost: 14.0, supplier: "SafeGuard Ltd.", status: "In Stock" },
-  { id: "ITM-011", name: "Paracetamol 500mg",           category: "Pharmaceutical", form: "Tablet",       unit: "Pack", qty: 500, reorder: 200, unitCost: 0.5,  supplier: "PharmaCorp",     status: "In Stock" },
-  { id: "ITM-012", name: "Amoxicillin 500mg",           category: "Pharmaceutical", form: "Capsule",      unit: "Pack", qty: 120, reorder: 100, unitCost: 1.8,  supplier: "MedSupply Ltd.", status: "In Stock" },
-  { id: "ITM-013", name: "IV Normal Saline 500ml",      category: "Pharmaceutical", form: "Infusion Bag", unit: "Box",  qty: 80,  reorder: 40,  unitCost: 5.0,  supplier: "PharmaCorp",     status: "In Stock" },
-  { id: "ITM-014", name: "Ceftriaxone 1g",              category: "Pharmaceutical", form: "Vial",         unit: "Box",  qty: 30,  reorder: 20,  unitCost: 12.0, supplier: "Lifeline Pharma",status: "In Stock" },
-  { id: "ITM-015", name: "Salbutamol Inhaler",          category: "Pharmaceutical", form: "Inhaler",      unit: "Piece",qty: 20,  reorder: 10,  unitCost: 15.0, supplier: "MedEquip Ltd.",  status: "In Stock" },
-];
+const INITIAL: StoreItem[] = [];
 
 const STATUS_STYLES: Record<string, string> = {
   "In Stock": "bg-emerald-50 text-emerald-700",

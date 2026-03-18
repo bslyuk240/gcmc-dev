@@ -24,20 +24,7 @@ const STATUS_STYLES: Record<AttendanceStatus, string> = {
   Holiday:  "bg-slate-100 text-slate-600",
 };
 
-const MOCK_HISTORY: AttendanceRecord[] = [
-  { id: "att-01", date: "2026-03-14", clockIn: "06:58", clockOut: "14:05", hours: 7.1,  status: "Present",  unit: "ICU"        },
-  { id: "att-02", date: "2026-03-13", clockIn: "07:12", clockOut: "14:02", hours: 6.8,  status: "Late",     unit: "ICU"        },
-  { id: "att-03", date: "2026-03-12", clockIn: "07:00", clockOut: "14:00", hours: 7.0,  status: "Present",  unit: "Ward A"     },
-  { id: "att-04", date: "2026-03-11", clockIn: "—",     clockOut: "—",     hours: 0,    status: "Leave",    unit: "—"          },
-  { id: "att-05", date: "2026-03-10", clockIn: "14:02", clockOut: "21:00", hours: 7.0,  status: "Present",  unit: "Ward A"     },
-  { id: "att-06", date: "2026-03-09", clockIn: "06:55", clockOut: "14:10", hours: 7.2,  status: "Present",  unit: "Emergency"  },
-  { id: "att-07", date: "2026-03-08", clockIn: "07:45", clockOut: "14:00", hours: 6.2,  status: "Late",     unit: "ICU"        },
-  { id: "att-08", date: "2026-03-07", clockIn: "07:01", clockOut: "14:05", hours: 7.1,  status: "Present",  unit: "ICU"        },
-  { id: "att-09", date: "2026-03-06", clockIn: "—",     clockOut: "—",     hours: 0,    status: "Absent",   unit: "—"          },
-  { id: "att-10", date: "2026-03-05", clockIn: "07:00", clockOut: "14:00", hours: 7.0,  status: "Present",  unit: "Outpatient" },
-  { id: "att-11", date: "2026-03-04", clockIn: "07:00", clockOut: "14:00", hours: 7.0,  status: "Present",  unit: "Ward A"     },
-  { id: "att-12", date: "2026-03-03", clockIn: "—",     clockOut: "—",     hours: 0,    status: "Holiday",  unit: "—"          },
-];
+const MOCK_HISTORY: AttendanceRecord[] = [];
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
