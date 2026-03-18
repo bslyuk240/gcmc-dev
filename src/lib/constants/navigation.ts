@@ -448,6 +448,7 @@ export const sidebarNavigationByDepartment: Record<
       items: [
         { label: "Dashboard", href: `${INTERNAL_PREFIX}/it`, icon: "dashboard" },
         { label: "Chat Inbox", href: `${INTERNAL_PREFIX}/it/chat`, icon: "support" },
+        { label: "Onboarding Queue", href: `${INTERNAL_PREFIX}/it/onboarding-queue`, icon: "queue" },
         { label: "Tickets", href: `${INTERNAL_PREFIX}/it/tickets`, icon: "queue" },
         { label: "User Access", href: `${INTERNAL_PREFIX}/it/user-access`, icon: "patients" },
         { label: "System Logs", href: `${INTERNAL_PREFIX}/it/system-logs`, icon: "reports" },

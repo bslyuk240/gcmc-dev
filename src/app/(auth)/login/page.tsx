@@ -10,15 +10,20 @@ const errorMessages: Record<string, string> = {
   configuration: "Authentication service is not configured. Contact the system administrator.",
 };
 
+const successMessages: Record<string, string> = {
+  "password-reset": "Password reset successfully. You can now log in with your new password.",
+};
+
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ next?: string; error?: string }>;
+  searchParams: Promise<{ next?: string; error?: string; message?: string }>;
 }) {
-  const { next, error } = await searchParams;
+  const { next, error, message } = await searchParams;
   await redirectToSessionHome();
 
-  const errorMsg = error ? (errorMessages[error] ?? "Something went wrong. Please try again.") : null;
+  const errorMsg   = error   ? (errorMessages[error]     ?? "Something went wrong. Please try again.") : null;
+  const successMsg = message ? (successMessages[message] ?? null) : null;
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-[var(--background)] p-4">
@@ -28,6 +33,11 @@ export default async function LoginPage({
           <p className="mt-1 text-sm text-slate-500">
             Sign in with the credentials assigned by HR. Your role and department are linked to your account.
           </p>
+          {successMsg && (
+            <div className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-700">
+              {successMsg}
+            </div>
+          )}
           {errorMsg && (
             <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
               {errorMsg}
