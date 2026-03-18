@@ -1158,3 +1158,213 @@ export async function fetchITSystemStatus(): Promise<ITSystemStatus[]> {
   const { data } = await sb.from("it_system_status").select("*").order("name");
   return (data ?? []).map(mapITSystemStatus);
 }
+
+// ─── Non-Clinical Units ───────────────────────────────────────────────────────
+
+export type NcUnit = {
+  id: string;
+  name: string;
+  createdAt: string;
+};
+
+export type NcShift = {
+  id: string;
+  staffId: string;
+  department: string;
+  unit: string;
+  shiftDate: string;   // "YYYY-MM-DD"
+  shiftType: "morning" | "afternoon" | "night" | "on_call";
+  shiftStart: string;  // "HH:MM"
+  shiftEnd: string;    // "HH:MM"
+  status: "scheduled" | "confirmed" | "swapped" | "cancelled" | "completed";
+  createdAt: string;
+};
+
+export type NcUnitHOD = {
+  unitName: string;
+  staffId: string;
+  staffName: string;
+  assignedOn: string;
+};
+
+export async function fetchNonClinicalUnits(): Promise<NcUnit[]> {
+  const sb = getSupabase();
+  if (!sb) return [];
+  const { data } = await sb
+    .from("nc_units")
+    .select("id, name, created_at")
+    .order("created_at", { ascending: true });
+  return (data ?? []).map((r) => ({
+    id: r.id as string,
+    name: r.name as string,
+    createdAt: r.created_at as string,
+  }));
+}
+
+export async function addNonClinicalUnit(
+  name: string,
+  createdBy?: string,
+): Promise<NcUnit | null> {
+  const sb = getSupabase();
+  if (!sb) return null;
+  const { data, error } = await sb
+    .from("nc_units")
+    .insert({ name: name.trim(), created_by: createdBy ?? null })
+    .select("id, name, created_at")
+    .single();
+  if (error || !data) return null;
+  return {
+    id: data.id as string,
+    name: data.name as string,
+    createdAt: data.created_at as string,
+  };
+}
+
+export async function deleteNonClinicalUnit(id: string): Promise<void> {
+  const sb = getSupabase();
+  if (!sb) return;
+  await sb.from("nc_units").delete().eq("id", id);
+}
+
+/** Fetch all shifts for a unit across a date range */
+export async function fetchShiftsForUnit(
+  unitName: string,
+  weekStart: string, // YYYY-MM-DD
+  weekEnd: string,   // YYYY-MM-DD
+): Promise<NcShift[]> {
+  const sb = getSupabase();
+  if (!sb) return [];
+  const { data } = await sb
+    .from("staff_shifts")
+    .select("*")
+    .eq("unit", unitName)
+    .eq("department", "non_clinical")
+    .gte("shift_date", weekStart)
+    .lte("shift_date", weekEnd)
+    .order("shift_date", { ascending: true });
+  return (data ?? []).map((r) => ({
+    id: r.id as string,
+    staffId: r.staff_id as string,
+    department: r.department as string,
+    unit: r.unit as string,
+    shiftDate: r.shift_date as string,
+    shiftType: (r.shift_type as NcShift["shiftType"]) ?? "morning",
+    shiftStart: (r.shift_start as string) ?? "07:00",
+    shiftEnd: (r.shift_end as string) ?? "15:00",
+    status: (r.status as NcShift["status"]) ?? "scheduled",
+    createdAt: r.created_at as string,
+  }));
+}
+
+const SHIFT_TIMES: Record<NcShift["shiftType"], { start: string; end: string }> = {
+  morning:   { start: "07:00", end: "15:00" },
+  afternoon: { start: "15:00", end: "23:00" },
+  night:     { start: "23:00", end: "07:00" },
+  on_call:   { start: "00:00", end: "23:59" },
+};
+
+export async function createNcShift(params: {
+  staffId: string;
+  unitName: string;
+  shiftDate: string;
+  shiftType: NcShift["shiftType"];
+}): Promise<NcShift | null> {
+  const sb = getSupabase();
+  if (!sb) return null;
+  const times = SHIFT_TIMES[params.shiftType];
+  const { data, error } = await sb
+    .from("staff_shifts")
+    .insert({
+      staff_id:    params.staffId,
+      department:  "non_clinical",
+      unit:        params.unitName,
+      shift_date:  params.shiftDate,
+      shift_type:  params.shiftType,
+      shift_start: times.start,
+      shift_end:   times.end,
+      status:      "scheduled",
+    })
+    .select("*")
+    .single();
+  if (error || !data) return null;
+  return {
+    id: data.id as string,
+    staffId: data.staff_id as string,
+    department: data.department as string,
+    unit: data.unit as string,
+    shiftDate: data.shift_date as string,
+    shiftType: data.shift_type as NcShift["shiftType"],
+    shiftStart: data.shift_start as string,
+    shiftEnd: data.shift_end as string,
+    status: data.status as NcShift["status"],
+    createdAt: data.created_at as string,
+  };
+}
+
+export async function deleteNcShift(id: string): Promise<void> {
+  const sb = getSupabase();
+  if (!sb) return;
+  await sb.from("staff_shifts").delete().eq("id", id);
+}
+
+/** Fetch all unit HODs for the non_clinical department */
+export async function fetchNcUnitHODs(): Promise<NcUnitHOD[]> {
+  const sb = getSupabase();
+  if (!sb) return [];
+  const { data } = await sb
+    .from("department_heads")
+    .select("unit_name, staff_id, staff_name, assigned_on")
+    .eq("department", "non_clinical")
+    .not("unit_name", "is", null);
+  return (data ?? [])
+    .filter((r) => r.unit_name)
+    .map((r) => ({
+      unitName:   r.unit_name as string,
+      staffId:    r.staff_id as string,
+      staffName:  r.staff_name as string,
+      assignedOn: r.assigned_on as string,
+    }));
+}
+
+/** Get the unit this staff member heads (null if not an NC HOD) */
+export async function fetchMyNcUnit(staffId: string): Promise<string | null> {
+  const sb = getSupabase();
+  if (!sb) return null;
+  const { data } = await sb
+    .from("department_heads")
+    .select("unit_name")
+    .eq("department", "non_clinical")
+    .eq("staff_id", staffId)
+    .not("unit_name", "is", null)
+    .limit(1)
+    .maybeSingle();
+  return (data?.unit_name as string) ?? null;
+}
+
+/** Assign (or replace) the HOD for a non-clinical unit */
+export async function setNcUnitHOD(params: {
+  unitName: string;
+  staffId: string;
+  staffName: string;
+  assignedBy: string;
+}): Promise<void> {
+  const sb = getSupabase();
+  if (!sb) return;
+  // Clear existing HOD for this unit
+  await sb
+    .from("department_heads")
+    .delete()
+    .eq("department", "non_clinical")
+    .eq("unit_name", params.unitName);
+  // Assign the new one
+  await sb.from("department_heads").insert({
+    id:          crypto.randomUUID(),
+    department:  "non_clinical",
+    staff_id:    params.staffId,
+    staff_name:  params.staffName,
+    role_label:  "Unit Head",
+    unit_name:   params.unitName,
+    assigned_on: new Date().toISOString().slice(0, 10),
+    assigned_by: params.assignedBy,
+  });
+}

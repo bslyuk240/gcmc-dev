@@ -113,6 +113,8 @@ export const DEPT_UNITS: Partial<Record<StaffDepartment, string[]>> = {
 export type DepartmentHead = {
   id: string;
   department: StaffDepartment;
+  /** Set for non-clinical unit HODs; null/undefined for clinical department HODs */
+  unitName?: string;
   staffId: string;
   staffName: string;
   roleLabel: string; // job title of the HOD

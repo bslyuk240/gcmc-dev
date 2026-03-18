@@ -462,10 +462,17 @@ export const sidebarNavigationByDepartment: Record<
   ],
   non_clinical: [
     {
+      section: "Overview",
+      items: [
+        { label: "Overview", href: `${INTERNAL_PREFIX}/non_clinical`, icon: "dashboard" },
+        { label: "Unit Rota", href: `${INTERNAL_PREFIX}/non_clinical/rota`, icon: "calendar" },
+        { label: "Chat to IT", href: `${INTERNAL_PREFIX}/non_clinical/chat`, icon: "support" },
+      ],
+    },
+    {
       section: "Staff Portal",
       items: [
-        { label: "Go to Staff Portal", href: "/staff/dashboard", icon: "dashboard" },
-        { label: "Chat to IT", href: `${INTERNAL_PREFIX}/non_clinical/chat`, icon: "support" },
+        { label: "Go to Staff Portal", href: "/staff/dashboard", icon: "view" },
       ],
     },
   ],
