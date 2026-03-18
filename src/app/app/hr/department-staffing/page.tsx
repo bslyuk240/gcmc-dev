@@ -25,8 +25,8 @@ import {
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const DEPT_ORDER: StaffDepartment[] = [
-  "Doctors", "Nurses", "Pharmacy", "Lab", "Front Desk",
-  "Accounts", "Store", "IT", "HR", "Administration",
+  "Doctors", "Nurses", "Pharmacy", "Lab", "Front Desk", "Accounts",
+  "Store", "IT", "HR", "Administration", "Non-Clinical Staff",
 ];
 
 const DEPT_META: Record<StaffDepartment, { icon: string; color: string; description: string }> = {
@@ -39,7 +39,8 @@ const DEPT_META: Record<StaffDepartment, { icon: string; color: string; descript
   Store:          { icon: "M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4", color: "text-orange-600 bg-orange-50", description: "Store managers and keepers managing supplies." },
   IT:             { icon: "M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17H3a2 2 0 01-2-2V5a2 2 0 012-2h14a2 2 0 012 2v10a2 2 0 01-2 2h-2", color: "text-cyan-600 bg-cyan-50", description: "IT support, systems admins, and network engineers." },
   HR:             { icon: "M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z", color: "text-indigo-600 bg-indigo-50", description: "HR officers managing hospital workforce records." },
-  Administration: { icon: "M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2", color: "text-slate-600 bg-slate-50", description: "Administrative staff and department heads." },
+  Administration:       { icon: "M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2", color: "text-slate-600 bg-slate-50", description: "Administrative staff and department heads." },
+  "Non-Clinical Staff": { icon: "M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4", color: "text-lime-600 bg-lime-50", description: "Support staff — security, maintenance, catering, housekeeping, and porters." },
 };
 
 const STATUS_STYLES: Record<string, string> = {
@@ -76,7 +77,7 @@ export default function DepartmentStaffingPage() {
   const deptStaff  = staff.filter((s) => s.department === activeDept);
   const meta       = DEPT_META[activeDept];
   const currentHod = getDeptHead(activeDept);
-  const departmentRows = [DEPT_ORDER.slice(0, 5), DEPT_ORDER.slice(5, 10)];
+  const departmentRows = [DEPT_ORDER.slice(0, 6), DEPT_ORDER.slice(6)];
 
   function getInitials(name: string) {
     return name
@@ -140,7 +141,7 @@ export default function DepartmentStaffingPage() {
       {/* Department picker */}
       <div className="space-y-3">
         {departmentRows.map((row, rowIndex) => (
-          <div key={`dept-row-${rowIndex}`} className="grid grid-cols-2 gap-3 md:grid-cols-5">
+          <div key={`dept-row-${rowIndex}`} className="grid grid-cols-2 gap-3 md:grid-cols-6">
             {row.map((dept) => {
               const members = staff.filter((s) => s.department === dept);
               const active  = members.filter((s) => s.status === "Active").length;

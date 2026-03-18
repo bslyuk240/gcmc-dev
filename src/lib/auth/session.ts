@@ -34,6 +34,7 @@ export type RoleKey =
   | "front_desk_staff"
   | "store_keeper"
   | "it_staff"
+  | "non_clinical_staff"
   | "viewer";
 
 /**
@@ -212,6 +213,7 @@ export const loginDepartmentOptions: Array<{
   { value: "admin", label: "Admin" },
   { value: "hr", label: "HR" },
   { value: "it", label: "IT" },
+  { value: "non_clinical", label: "Non-Clinical Staff" },
 ];
 
 export function isDepartmentKey(value: string): value is DepartmentKey {

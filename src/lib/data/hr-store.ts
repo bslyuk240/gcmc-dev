@@ -22,34 +22,36 @@
 export type StaffDepartment =
   | "Doctors" | "Nurses" | "Pharmacy" | "Lab"
   | "Front Desk" | "Accounts" | "Store" | "IT"
-  | "HR" | "Administration";
+  | "HR" | "Administration" | "Non-Clinical Staff";
 
 /** Map HR display labels to DB department_key values */
 export const STAFF_DEPT_TO_DB: Record<StaffDepartment, string> = {
-  "Doctors":       "doctors",
-  "Nurses":        "nurses",
-  "Pharmacy":      "pharmacy",
-  "Lab":           "lab",
-  "Front Desk":    "frontdesk",
-  "Accounts":      "accounts",
-  "Store":         "store",
-  "IT":            "it",
-  "HR":            "hr",
-  "Administration":"admin",
+  "Doctors":            "doctors",
+  "Nurses":             "nurses",
+  "Pharmacy":           "pharmacy",
+  "Lab":                "lab",
+  "Front Desk":         "frontdesk",
+  "Accounts":           "accounts",
+  "Store":              "store",
+  "IT":                 "it",
+  "HR":                 "hr",
+  "Administration":     "admin",
+  "Non-Clinical Staff": "non_clinical",
 };
 
 /** Map DB department_key values to HR display labels */
 export const DB_TO_STAFF_DEPT: Record<string, StaffDepartment> = {
-  doctors:    "Doctors",
-  nurses:     "Nurses",
-  pharmacy:   "Pharmacy",
-  lab:        "Lab",
-  frontdesk:  "Front Desk",
-  accounts:   "Accounts",
-  store:      "Store",
-  it:         "IT",
-  hr:         "HR",
-  admin:      "Administration",
+  doctors:      "Doctors",
+  nurses:       "Nurses",
+  pharmacy:     "Pharmacy",
+  lab:          "Lab",
+  frontdesk:    "Front Desk",
+  accounts:     "Accounts",
+  store:        "Store",
+  it:           "IT",
+  hr:           "HR",
+  admin:        "Administration",
+  non_clinical: "Non-Clinical Staff",
 };
 
 // ─── RBAC Role Keys ───────────────────────────────────────────────────────────
@@ -62,7 +64,7 @@ export type RoleKeyValue =
   | "admin" | "hod" | "hr_manager" | "hr_staff"
   | "doctor" | "nurse" | "pharmacist" | "pharmacy_assistant"
   | "lab_scientist" | "accountant" | "front_desk_staff"
-  | "store_keeper" | "it_staff" | "viewer";
+  | "store_keeper" | "it_staff" | "non_clinical_staff" | "viewer";
 
 /** Human-readable labels for each RBAC role key */
 export const ROLE_KEY_LABELS: Record<RoleKeyValue, string> = {
@@ -79,6 +81,7 @@ export const ROLE_KEY_LABELS: Record<RoleKeyValue, string> = {
   front_desk_staff:     "Front Desk Staff",
   store_keeper:         "Store Keeper",
   it_staff:             "IT Staff",
+  non_clinical_staff:   "Non-Clinical Staff",
   viewer:               "Viewer (Read-only)",
 };
 
@@ -93,7 +96,8 @@ export const DEPT_ROLE_KEYS: Record<StaffDepartment, RoleKeyValue[]> = {
   "Store":          ["store_keeper",      "hod", "viewer"],
   "IT":             ["it_staff",          "hod", "viewer"],
   "HR":             ["hr_manager", "hr_staff", "hod", "viewer"],
-  "Administration": ["admin",             "hod", "viewer"],
+  "Administration":     ["admin",             "hod", "viewer"],
+  "Non-Clinical Staff": ["non_clinical_staff", "hod", "viewer"],
 };
 
 /** Units available per department (absent = no units) */

@@ -10,6 +10,8 @@ const DEPARTMENT_ID_CODES: Record<string, string> = {
   administration: "ADM",
   hr: "HRS",
   it: "ITS",
+  non_clinical: "NCS",
+  nonclinical: "NCS",
 };
 
 const NAME_PREFIX_TOKENS = new Set([

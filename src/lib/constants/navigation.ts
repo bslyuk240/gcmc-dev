@@ -17,6 +17,7 @@ export type DepartmentKey =
   | "admin"
   | "hr"
   | "it"
+  | "non_clinical"
   | "support"
   | "notifications"
   | "profile";
@@ -39,12 +40,13 @@ export type DBDepartmentKey =
   | "store"
   | "admin"
   | "hr"
-  | "it";
+  | "it"
+  | "non_clinical";
 
 /** All valid DB department key values as a runtime array for validation */
 export const DB_DEPARTMENT_KEYS: DBDepartmentKey[] = [
   "frontdesk", "doctors", "nurses", "pharmacy", "lab",
-  "accounts", "store", "admin", "hr", "it",
+  "accounts", "store", "admin", "hr", "it", "non_clinical",
 ];
 
 export function isDBDepartmentKey(value: string): value is DBDepartmentKey {
@@ -223,6 +225,7 @@ export const departmentThemes: Record<
   admin: { label: "Admin", chipClass: "bg-slate-100 text-slate-700" },
   hr: { label: "HR", chipClass: "bg-violet-50 text-violet-700" },
   it: { label: "IT", chipClass: "bg-cyan-50 text-cyan-800" },
+  non_clinical: { label: "Non-Clinical", chipClass: "bg-lime-50 text-lime-700" },
   support: { label: "Support", chipClass: "bg-blue-50 text-blue-700" },
   notifications: {
     label: "Notifications",
@@ -457,6 +460,15 @@ export const sidebarNavigationByDepartment: Record<
       ],
     },
   ],
+  non_clinical: [
+    {
+      section: "Staff Portal",
+      items: [
+        { label: "Go to Staff Portal", href: "/staff/dashboard", icon: "dashboard" },
+        { label: "Chat to IT", href: `${INTERNAL_PREFIX}/non_clinical/chat`, icon: "support" },
+      ],
+    },
+  ],
   support: [],
   notifications: [],
   profile: [
@@ -581,6 +593,7 @@ export const workspaceBoards: Record<DepartmentKey, WorkspaceBoard> = {
   admin: makeBoard("Admin Workspace", "Approval routing, metrics, compliance checks, and supervision.", [["APR-0042", "Accounts", "Refund request", "Pending"], ["APR-0043", "Pharmacy", "Inventory override", "Escalated"], ["APR-0044", "HR", "Role activation", "Approved"], ["APR-0045", "IT", "Audit export", "Review"]], [{ title: "Control points", copy: "High-risk actions should be dual-layered with service checks and database policies." }, { title: "Audit visibility", copy: "Approvals need a full actor trail, timestamps, and supporting reason notes." }, { title: "Executive view", copy: "KPIs should summarize queue pressure, revenue, stock risk, and support issues together." }]),
   hr: makeBoard("HR Workspace", "Staff records, roles, department postings, and document controls.", [["EMP-0042", "Doctors", "Medical Officer", "Active"], ["EMP-0043", "Nurses", "Charge Nurse", "Credential review"], ["EMP-0044", "Accounts", "Cashier", "Onboarding"], ["EMP-0045", "IT", "Support Analyst", "Role update"]], [{ title: "Profile separation", copy: "Staff profile data should stay distinct from operational department workspace state." }, { title: "Document security", copy: "Sensitive files belong in private storage with signed access links only." }, { title: "Access hygiene", copy: "Role changes should trigger approval and downstream permission refresh." }]),
   it: makeBoard("IT Workspace", "User support, access management, incidents, and diagnostics.", [["IT-1021", "Front Desk", "Access reset", "In progress"], ["IT-1022", "Pharmacy", "Printer", "Queued"], ["IT-1023", "HR", "Role provisioning", "Awaiting approval"], ["IT-1024", "Admin", "Audit export", "Review"]], [{ title: "Least privilege", copy: "IT can support access and devices without broad read access to clinical notes." }, { title: "Device awareness", copy: "Suspicious auth events should combine IP, user agent, and failed-attempt context." }, { title: "Support channels", copy: "Realtime ticket threads must stay scoped by department or ticket identifier only." }]),
+  non_clinical: makeBoard("Non-Clinical Staff", "Staff portal access for non-clinical hospital personnel.", [["NCS-001", "Maintenance", "Equipment check", "Scheduled"], ["NCS-002", "Security", "Access patrol", "Active"], ["NCS-003", "Catering", "Ward round delivery", "Completed"], ["NCS-004", "Housekeeping", "Ward A cleaning", "In progress"]], [{ title: "Staff portal access", copy: "Non-clinical staff manage their rota, leave, and payslips through the staff self-service portal." }, { title: "No clinical access", copy: "This category has no access to patient records, clinical notes, or dispensing systems." }, { title: "HR visibility", copy: "HR manages payroll, leave, and onboarding for non-clinical staff through the HR department module." }]),
   support: makeBoard("Support Board", "Internal support intake spanning helpdesk updates and ownership.", [["IT-1021", "Daniel Cole", "Access issue", "In progress"], ["IT-1022", "Unassigned", "Printer", "New"], ["IT-1023", "Grace Adebayo", "Provisioning", "Awaiting approval"], ["IT-1024", "Daniel Cole", "Export request", "Escalated"]], [{ title: "Ownership", copy: "Every ticket should show creator, assignee, timestamps, and status history." }, { title: "Realtime safety", copy: "Ticket conversations must stay scoped to authorized users and departments." }, { title: "Escalation clarity", copy: "Tickets affecting patient flow should surface directly on the dashboard." }]),
   notifications: makeBoard("Notifications", "Operational feed for approvals, stock risk, and internal updates.", [["09:14", "Pharmacy", "Amoxicillin low stock", "Critical"], ["09:27", "Accounts", "Refund approval needed", "Pending"], ["09:42", "Support", "Ticket IT-1022 assigned", "New"], ["10:05", "Public", "Appointment request submitted", "Info"]], [{ title: "Signal quality", copy: "Notifications should stay concise and action-oriented instead of duplicating full records." }, { title: "Routing", copy: "Department-specific alerts should use the user's assignment and permissions." }, { title: "Audit support", copy: "Important delivery and read events should be attributable when required." }]),
   profile: makeBoard("Staff Profile", "Personal profile, security settings, and session visibility.", [["08:21", "Login", "Chrome / London", "Success"], ["08:34", "Dashboard", "Global board", "Allowed"], ["09:12", "Ticket update", "IT-1021", "Logged"], ["09:38", "Profile", "Security tab", "Allowed"]], [{ title: "Separation of concerns", copy: "Profile management should never be confused with departmental workspace permissions." }, { title: "Session control", copy: "The user should be able to see and revoke active devices later in the auth flow." }, { title: "Security readiness", copy: "The structure already anticipates MFA, device fingerprinting, and breach monitoring." }]),
@@ -620,6 +633,7 @@ export const departmentHomePaths: Record<DepartmentKey, string> = {
   admin: `${INTERNAL_PREFIX}/admin`,
   hr: `${INTERNAL_PREFIX}/hr`,
   it: `${INTERNAL_PREFIX}/it`,
+  non_clinical: `${INTERNAL_PREFIX}/non_clinical`,
   support: `${INTERNAL_PREFIX}/chat`,
   notifications: `${INTERNAL_PREFIX}/notifications`,
   profile: `${INTERNAL_PREFIX}/profile`,

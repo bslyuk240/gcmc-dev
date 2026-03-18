@@ -25,7 +25,7 @@ import { formatStaffDisplayId } from "@/lib/staff-id";
 
 const DEPARTMENTS: StaffDepartment[] = [
   "Doctors", "Nurses", "Pharmacy", "Lab", "Front Desk",
-  "Accounts", "Store", "IT", "HR", "Administration",
+  "Accounts", "Store", "IT", "HR", "Administration", "Non-Clinical Staff",
 ];
 
 const DEPT_COLORS: Record<string, string> = {
@@ -34,6 +34,7 @@ const DEPT_COLORS: Record<string, string> = {
   "Front Desk": "bg-amber-50 text-amber-700", Accounts: "bg-teal-50 text-teal-700",
   Store: "bg-orange-50 text-orange-700", IT: "bg-cyan-50 text-cyan-700",
   HR: "bg-indigo-50 text-indigo-700", Administration: "bg-slate-100 text-slate-700",
+  "Non-Clinical Staff": "bg-lime-50 text-lime-700",
 };
 
 const ROLE_KEY_COLORS: Partial<Record<RoleKeyValue, string>> = {
