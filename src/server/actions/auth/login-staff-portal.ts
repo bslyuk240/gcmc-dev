@@ -8,16 +8,10 @@
  * logging into one portal does not grant access to the other.
  */
 
-import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import {
-  hmsStaffPortalSessionCookieName,
-  sessionCookieOptions,
-} from "@/lib/auth/constants";
 import {
   isDepartmentKey,
   writeStaffPortalSessionCookie,
-  serialiseSession,
   type HMSSession,
   type RoleKey,
 } from "@/lib/auth/session";
@@ -96,30 +90,6 @@ export async function loginStaffPortalAction(formData: FormData) {
     redirect(isAllowedStaffNext(nextUrl) ? nextUrl : STAFF_PORTAL_HOME);
   }
 
-  // ── Demo / development fallback ────────────────────────────────────────────
-  const store = await cookies();
-  const opts = {
-    httpOnly: true,
-    sameSite: "lax" as const,
-    secure: process.env.NODE_ENV === "production",
-    path: "/",
-    maxAge: sessionCookieOptions.maxAge,
-  };
-
-  const emailPrefix = email.split("@")[0].split(".")[0].toLowerCase();
-  const demoDept    = isDepartmentKey(emailPrefix) ? emailPrefix : "frontdesk";
-  const demoName    = email.split("@")[0].replace(/[._]/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
-
-  const demoSession: HMSSession = {
-    staff_id:    `demo-${demoDept}`,
-    full_name:   demoName,
-    email,
-    department:  demoDept,
-    role:        "front_desk_staff" as RoleKey,
-    permissions: [],
-    issued_at:   new Date().toISOString(),
-  };
-  store.set(hmsStaffPortalSessionCookieName, serialiseSession(demoSession), opts);
-
-  redirect(isAllowedStaffNext(nextUrl) ? nextUrl : STAFF_PORTAL_HOME);
+  // Supabase is not configured — reject login
+  redirect("/staff/login?error=configuration");
 }

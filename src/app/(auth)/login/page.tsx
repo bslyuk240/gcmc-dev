@@ -2,13 +2,23 @@ import Link from "next/link";
 import { redirectToSessionHome } from "@/lib/auth/session";
 import { loginStaffAction } from "@/server/actions/auth/login";
 
+const errorMessages: Record<string, string> = {
+  invalid:       "Invalid email or password.",
+  credentials:   "Incorrect email or password. Please try again.",
+  profile:       "Your staff profile could not be found. Contact HR.",
+  inactive:      "Your account has been deactivated. Contact HR.",
+  configuration: "Authentication service is not configured. Contact the system administrator.",
+};
+
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ next?: string }>;
+  searchParams: Promise<{ next?: string; error?: string }>;
 }) {
-  const { next } = await searchParams;
+  const { next, error } = await searchParams;
   await redirectToSessionHome();
+
+  const errorMsg = error ? (errorMessages[error] ?? "Something went wrong. Please try again.") : null;
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-[var(--background)] p-4">
@@ -18,8 +28,12 @@ export default async function LoginPage({
           <p className="mt-1 text-sm text-slate-500">
             Sign in with the credentials assigned by HR. Your role and department are linked to your account.
           </p>
+          {errorMsg && (
+            <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
+              {errorMsg}
+            </div>
+          )}
           <form action={loginStaffAction} className="mt-6 space-y-4">
-            <input type="hidden" name="staff_name" value="Staff User" />
             {next ? <input type="hidden" name="next" value={next} /> : null}
             <div>
               <label htmlFor="email" className="block text-sm font-medium text-slate-700">
@@ -30,7 +44,6 @@ export default async function LoginPage({
                 name="email"
                 type="email"
                 required
-                defaultValue="sarah.jenkins@gcmc.local"
                 className="mt-1 w-full rounded-lg border border-[var(--border)] bg-white px-3 py-2.5 text-sm text-slate-900 outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/20"
                 placeholder="you@hospital.local"
               />
@@ -44,7 +57,6 @@ export default async function LoginPage({
                 name="password"
                 type="password"
                 required
-                defaultValue="password"
                 className="mt-1 w-full rounded-lg border border-[var(--border)] bg-white px-3 py-2.5 text-sm text-slate-900 outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/20"
               />
             </div>

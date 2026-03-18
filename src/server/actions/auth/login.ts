@@ -109,28 +109,6 @@ export async function loginStaffAction(formData: FormData) {
     redirect(getDepartmentHomePath(profile.department));
   }
 
-  // ── Legacy fallback (no Supabase env vars — development / demo mode) ──────
-  // Allows the system to run without a live Supabase instance.
-  const store = await cookies();
-  const opts = {
-    httpOnly: true,
-    sameSite: "lax" as const,
-    secure: process.env.NODE_ENV === "production",
-    path: "/",
-  };
-
-  // In demo mode, derive department from email prefix convention:
-  // e.g. pharmacy.user@gcmc.local → pharmacy
-  const emailPrefix = email.split("@")[0].split(".")[0].toLowerCase();
-  const demoDepartment = isDepartmentKey(emailPrefix) ? emailPrefix : "frontdesk";
-  const demoName = email.split("@")[0].replace(".", " ").replace(/\b\w/g, (c) => c.toUpperCase());
-
-  store.set(sessionCookieName, "demo-session", opts);
-  store.set(sessionDepartmentCookieName, demoDepartment, opts);
-  store.set(sessionStaffNameCookieName, demoName, opts);
-
-  if (nextUrl && isAllowedNext(nextUrl)) {
-    redirect(nextUrl);
-  }
-  redirect(getDepartmentHomePath(demoDepartment));
+  // Supabase is not configured — reject login
+  redirect("/login?error=configuration");
 }

@@ -20,10 +20,11 @@ export default async function StaffLoginPage({
   const isLoggedIn = await alreadyLoggedIn();
 
   const errorMessages: Record<string, string> = {
-    invalid:     "Invalid email or password.",
-    credentials: "Incorrect email or password. Please try again.",
-    profile:     "Your staff profile could not be found. Contact HR.",
-    inactive:    "Your account has been deactivated. Contact HR.",
+    invalid:       "Invalid email or password.",
+    credentials:   "Incorrect email or password. Please try again.",
+    profile:       "Your staff profile could not be found. Contact HR.",
+    inactive:      "Your account has been deactivated. Contact HR.",
+    configuration: "Authentication service is not configured. Contact the system administrator.",
   };
   const errorMsg = error ? (errorMessages[error] ?? "Something went wrong. Please try again.") : null;
 
@@ -80,7 +81,6 @@ export default async function StaffLoginPage({
                 type="email"
                 required
                 autoComplete="email"
-                defaultValue="sarah.jenkins@gcmc.local"
                 placeholder="you@gcmc.local"
                 className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-indigo-400 focus:bg-white focus:ring-2 focus:ring-indigo-100"
               />
@@ -101,7 +101,6 @@ export default async function StaffLoginPage({
                 type="password"
                 required
                 autoComplete="current-password"
-                defaultValue="password"
                 className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-indigo-400 focus:bg-white focus:ring-2 focus:ring-indigo-100"
               />
             </div>
