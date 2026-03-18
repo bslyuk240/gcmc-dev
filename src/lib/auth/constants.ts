@@ -11,6 +11,11 @@ export const hmsSessionV2CookieName = "hms-session-v2";
 // grant access to the staff portal — each portal requires its own login.
 export const hmsStaffPortalSessionCookieName = "hms-staff-session";
 
+// Temporary session cookie written after login when must_change_password = true.
+// The user is held on /change-password until they set a new password, at which
+// point this cookie is deleted and the real hms-session-v2 is written.
+export const hmsPendingSessionCookieName = "hms-pending-session";
+
 // Cookie options shared across all session cookies
 export const sessionCookieOptions = {
   httpOnly: true,

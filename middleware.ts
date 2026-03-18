@@ -15,6 +15,7 @@ import {
 } from "@/lib/auth/guards";
 import { updateSession } from "@/lib/supabase/middleware";
 import { securityHeaders } from "@/lib/security/headers";
+import { hmsPendingSessionCookieName } from "@/lib/auth/constants";
 
 function applySecurityHeaders(response: NextResponse): NextResponse {
   Object.entries(securityHeaders).forEach(([key, value]) => {
@@ -33,6 +34,30 @@ export async function middleware(request: NextRequest) {
   const mgmtSession       = getHMSSession(request);
   const staffSession      = getStaffPortalHMSSession(request);
   const sessionDepartment = getSessionDepartment(request);
+
+  // ── Step 3: Handle first-login forced password change ────────────────────
+  const hasPendingSession = request.cookies.has(hmsPendingSessionCookieName);
+
+  if (hasPendingSession && pathname !== "/change-password") {
+    // User must set a new password before doing anything else
+    return applySecurityHeaders(
+      NextResponse.redirect(new URL("/change-password", request.url)),
+    );
+  }
+
+  if (pathname === "/change-password" && !hasPendingSession) {
+    // No pending session — either already changed or came here directly
+    if (hasManagementSession(request) && sessionDepartment && sessionDepartment in departmentHomePaths) {
+      return applySecurityHeaders(
+        NextResponse.redirect(
+          new URL(departmentHomePaths[sessionDepartment as keyof typeof departmentHomePaths], request.url),
+        ),
+      );
+    }
+    return applySecurityHeaders(NextResponse.redirect(new URL("/login", request.url)));
+  }
+
+  // If on /change-password with a valid pending session → fall through and serve the page
 
   // ── Step 3a: Redirect authenticated management users away from /login ─────
   if (pathname === "/login" && hasManagementSession(request) && sessionDepartment) {

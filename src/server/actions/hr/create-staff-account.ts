@@ -65,6 +65,8 @@ export async function createStaffAccountAction(
       department,
       role,
       is_active: true,
+      must_change_password: true,  // force password change on first login
+      system_setup_done: false,    // IT must confirm workstation setup
     });
 
   if (profileError) {

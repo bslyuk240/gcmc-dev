@@ -6,6 +6,7 @@ import {
   sessionStaffNameCookieName,
   hmsSessionV2CookieName,
   hmsStaffPortalSessionCookieName,
+  hmsPendingSessionCookieName,
   sessionCookieOptions,
 } from "@/lib/auth/constants";
 import {
@@ -134,6 +135,35 @@ export async function requireStaffPortalSession(): Promise<HMSSession> {
     redirect("/staff/login");
   }
   return session;
+}
+
+// ─── Pending password-change session (/change-password) ──────────────────────
+
+/**
+ * Write a short-lived pending session cookie.
+ * Set after login when must_change_password = true.
+ * The user is held on /change-password; the real hms-session-v2 is only
+ * written after they successfully set a new password.
+ */
+export async function writePendingSessionCookie(session: HMSSession): Promise<void> {
+  const store = await cookies();
+  store.set(hmsPendingSessionCookieName, serialiseSession(session), {
+    ...sessionCookieOptions,
+    secure: process.env.NODE_ENV === "production",
+    maxAge: 60 * 15, // 15 minutes — enough time to change password
+  });
+}
+
+export async function readPendingSession(): Promise<HMSSession | null> {
+  const store = await cookies();
+  const raw = store.get(hmsPendingSessionCookieName)?.value;
+  if (!raw) return null;
+  return deserialiseSession(raw);
+}
+
+export async function clearPendingSessionCookie(): Promise<void> {
+  const store = await cookies();
+  store.delete(hmsPendingSessionCookieName);
 }
 
 // ─── Shared cookie clearing ───────────────────────────────────────────────────

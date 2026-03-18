@@ -12,6 +12,7 @@ import {
   isDepartmentKey,
   getDepartmentHomePath,
   writeSessionCookie,
+  writePendingSessionCookie,
   type HMSSession,
   type RoleKey,
 } from "@/lib/auth/session";
@@ -56,7 +57,7 @@ export async function loginStaffAction(formData: FormData) {
     // Fetch staff profile
     const { data: profile, error: profileError } = await supabase
       .from("staff_profiles")
-      .select("full_name, email, department, role, is_active")
+      .select("full_name, email, department, role, is_active, must_change_password")
       .eq("id", userId)
       .single();
 
@@ -93,6 +94,14 @@ export async function loginStaffAction(formData: FormData) {
       permissions,
       issued_at:   new Date().toISOString(),
     };
+
+    // If the user must change their password on first login, hold them on
+    // /change-password with a short-lived pending session cookie.
+    // The real hms-session-v2 is only written after they set a new password.
+    if (profile.must_change_password) {
+      await writePendingSessionCookie(session);
+      redirect("/change-password");
+    }
 
     await writeSessionCookie(session);
 

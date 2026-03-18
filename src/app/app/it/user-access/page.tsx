@@ -6,6 +6,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Modal, ModalFooter } from "@/components/ui/modal";
 import { Toast, type ToastData } from "@/components/ui/toast";
+import { sendPasswordResetAction } from "@/server/actions/it/send-password-reset";
 
 type UserStatus = "Active" | "Suspended" | "Inactive";
 
@@ -73,9 +74,14 @@ export default function ITUserAccessPage() {
     setManageUser(null);
   }
 
-  function handleResetPassword() {
+  async function handleResetPassword() {
     if (!manageUser) return;
-    setToast({ message: `Password reset link sent to ${manageUser.email}.`, type: "info" });
+    const result = await sendPasswordResetAction(manageUser.email);
+    if (result.success) {
+      setToast({ message: `Password reset link sent to ${manageUser.email}.`, type: "success" });
+    } else {
+      setToast({ message: result.error ?? "Failed to send reset link.", type: "error" });
+    }
   }
 
   function handleDeactivate() {
