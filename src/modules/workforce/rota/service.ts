@@ -11,29 +11,7 @@ import type { RotaAssignment, CreateRotaPayload, WeekRota } from "@/modules/work
 
 // ─── Static mock (fallback when Supabase is not configured) ──────────────────
 
-const MOCK_ROTA: RotaAssignment[] = [
-  {
-    id: "rot-01", staff_id: "demo-staff-1", department: "nurses", unit_id: "u-01",
-    shift_date: "2026-03-17", shift_type: "morning", shift_start: "07:00", shift_end: "14:00",
-    status: "confirmed", notes: null, created_at: "2026-03-10", created_by: null,
-    staff: { full_name: "Nurse Patricia Osei", email: "patricia@gcmc.local", department: "nurses" },
-    unit:  { id: "u-01", department: "nurses", name: "ICU", description: null, is_active: true, created_at: "" },
-  },
-  {
-    id: "rot-02", staff_id: "demo-staff-2", department: "nurses", unit_id: "u-02",
-    shift_date: "2026-03-17", shift_type: "afternoon", shift_start: "14:00", shift_end: "21:00",
-    status: "confirmed", notes: null, created_at: "2026-03-10", created_by: null,
-    staff: { full_name: "Nurse Ruth Agyei", email: "ruth@gcmc.local", department: "nurses" },
-    unit:  { id: "u-02", department: "nurses", name: "Ward A", description: null, is_active: true, created_at: "" },
-  },
-  {
-    id: "rot-03", staff_id: "demo-staff-3", department: "doctors", unit_id: "u-06",
-    shift_date: "2026-03-17", shift_type: "morning", shift_start: "08:00", shift_end: "16:00",
-    status: "scheduled", notes: null, created_at: "2026-03-10", created_by: null,
-    staff: { full_name: "Dr. Kwame Mensah", email: "k.mensah@gcmc.local", department: "doctors" },
-    unit:  { id: "u-06", department: "doctors", name: "Outpatient", description: null, is_active: true, created_at: "" },
-  },
-];
+const MOCK_ROTA: RotaAssignment[] = [];
 
 // ─── Queries ─────────────────────────────────────────────────────────────────
 

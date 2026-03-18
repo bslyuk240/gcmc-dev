@@ -257,46 +257,12 @@ type HRStoreState = {
 
 const SEED: HRStoreState = {
   staff: [],
-
-  leaveRequests: [
-    { id: "LV-001", staffId: "EMP-001", staffName: "Dr. Amaka Osei", department: "Doctors", role: "Senior Medical Officer", leaveType: "Annual", startDate: "Dec 20, 2026", endDate: "Dec 31, 2026", days: 8, reason: "Year-end family holiday.", status: "Pending", submittedAt: "Mar 10, 2026" },
-    { id: "LV-002", staffId: "EMP-004", staffName: "Nurse Patricia Ama", department: "Nurses", role: "Charge Nurse", leaveType: "Sick", startDate: "Mar 16, 2026", endDate: "Mar 17, 2026", days: 2, reason: "Doctor advised rest — respiratory infection.", status: "Approved", submittedAt: "Mar 15, 2026", reviewedBy: "HR Manager", reviewedAt: "Mar 15, 2026" },
-    { id: "LV-003", staffId: "EMP-007", staffName: "James Adu", department: "Pharmacy", role: "Pharmacist", leaveType: "Annual", startDate: "Apr 1, 2026", endDate: "Apr 5, 2026", days: 4, reason: "Personal travel.", status: "Pending", submittedAt: "Mar 12, 2026" },
-    { id: "LV-004", staffId: "EMP-011", staffName: "Tom Kwesi", department: "Front Desk", role: "Senior Receptionist", leaveType: "Personal", startDate: "Mar 20, 2026", endDate: "Mar 20, 2026", days: 1, reason: "Family event.", status: "Approved", submittedAt: "Mar 14, 2026", reviewedBy: "HR Manager", reviewedAt: "Mar 14, 2026" },
-    { id: "LV-005", staffId: "EMP-013", staffName: "Sarah Mensah", department: "Accounts", role: "Senior Accountant", leaveType: "Maternity", startDate: "Feb 1, 2026", endDate: "Apr 30, 2026", days: 60, reason: "Maternity leave.", status: "Approved", submittedAt: "Jan 20, 2026", reviewedBy: "HR Manager", reviewedAt: "Jan 21, 2026" },
-    { id: "LV-006", staffId: "EMP-009", staffName: "Grace Asante", department: "Lab", role: "Senior Lab Technician", leaveType: "Study", startDate: "Apr 10, 2026", endDate: "Apr 14, 2026", days: 5, reason: "Attending lab certification workshop.", status: "Pending", submittedAt: "Mar 14, 2026" },
-    { id: "LV-007", staffId: "EMP-003", staffName: "Dr. Chen Lin", department: "Doctors", role: "General Practitioner", leaveType: "Emergency", startDate: "Mar 18, 2026", endDate: "Mar 19, 2026", days: 2, reason: "Family emergency.", status: "Pending", submittedAt: "Mar 15, 2026" },
-  ],
-
-  onboarding: [
-    { id: "ONB-001", staffId: "EMP-017", staffName: "Dr. Mensah Okeke (New)", department: "Lab", role: "Lab Technician", startDate: "Mar 15, 2026", status: "IT Pending", itRequestId: "IT-1023", itAccountCreated: false, orientationCompleted: false, credentialsVerified: true, contractSigned: true, initiatedBy: "HR Manager", initiatedAt: "Mar 14, 2026" },
-    { id: "ONB-002", staffId: "EMP-012", staffName: "Mary Osei", department: "Front Desk", role: "Receptionist", startDate: "Jan 10, 2026", status: "Completed", itAccountCreated: true, orientationCompleted: true, credentialsVerified: true, contractSigned: true, initiatedBy: "HR Manager", initiatedAt: "Jan 8, 2026" },
-    { id: "ONB-003", staffId: "EMP-008", staffName: "Abena Darko", department: "Pharmacy", role: "Pharmacy Technician", startDate: "Jan 15, 2026", status: "Completed", itAccountCreated: true, orientationCompleted: true, credentialsVerified: true, contractSigned: true, initiatedBy: "HR Manager", initiatedAt: "Jan 12, 2026" },
-  ],
-
-  offboarding: [
-    { id: "OFF-001", staffId: "EMP-PREV-091", staffName: "Dr. Raj Patel", department: "Doctors", role: "Consultant", exitDate: "Feb 28, 2026", reason: "Resignation", status: "Completed", itAccessRevoked: true, equipmentReturned: true, exitInterviewDone: true, initiatedBy: "HR Manager", initiatedAt: "Feb 10, 2026" },
-  ],
-
-  payrollPreps: [
-    { id: "PP-MAR-2026", period: "March 2026", department: "Doctors", staffCount: 18, grossTotal: 158000, deductions: 23700, netTotal: 134300, status: "Ready", preparedBy: "HR Manager", preparedAt: "Mar 14, 2026" },
-    { id: "PP-MAR-2026-N", period: "March 2026", department: "Nurses", staffCount: 34, grossTotal: 136000, deductions: 20400, netTotal: 115600, status: "Ready", preparedBy: "HR Manager", preparedAt: "Mar 14, 2026" },
-    { id: "PP-MAR-2026-P", period: "March 2026", department: "Pharmacy", staffCount: 12, grossTotal: 55000, deductions: 8250, netTotal: 46750, status: "Draft", preparedBy: "HR Officer", preparedAt: "Mar 15, 2026" },
-    { id: "PP-MAR-2026-L", period: "March 2026", department: "Lab", staffCount: 8, grossTotal: 52000, deductions: 7800, netTotal: 44200, status: "Draft", preparedBy: "HR Officer", preparedAt: "Mar 15, 2026" },
-    { id: "PP-MAR-2026-FD", period: "March 2026", department: "Front Desk", staffCount: 8, grossTotal: 22000, deductions: 3300, netTotal: 18700, status: "Submitted to Accounts", preparedBy: "HR Manager", preparedAt: "Mar 13, 2026" },
-    { id: "PP-MAR-2026-AC", period: "March 2026", department: "Accounts", staffCount: 9, grossTotal: 46000, deductions: 6900, netTotal: 39100, status: "Submitted to Accounts", preparedBy: "HR Manager", preparedAt: "Mar 13, 2026" },
-  ],
+  leaveRequests: [],
+  onboarding: [],
+  offboarding: [],
+  payrollPreps: [],
   generatedPayslips: [],
-
-  departmentHeads: [
-    { id: "HOD-001", department: "Doctors",    staffId: "EMP-001", staffName: "Dr. Amaka Osei",    roleLabel: "Senior Medical Officer", assignedOn: "Jan 2022",  assignedBy: "HR Manager" },
-    { id: "HOD-002", department: "Nurses",     staffId: "EMP-004", staffName: "Nurse Patricia Ama",roleLabel: "Charge Nurse",            assignedOn: "Mar 2021",  assignedBy: "HR Manager" },
-    { id: "HOD-003", department: "Pharmacy",   staffId: "EMP-007", staffName: "James Adu",          roleLabel: "Pharmacist",              assignedOn: "Jun 2023",  assignedBy: "HR Manager" },
-    { id: "HOD-004", department: "Lab",        staffId: "EMP-010", staffName: "Dr. Kofi Agyeman",   roleLabel: "Lab Scientist",           assignedOn: "Mar 2020",  assignedBy: "HR Manager" },
-    { id: "HOD-005", department: "Front Desk", staffId: "EMP-011", staffName: "Tom Kwesi",          roleLabel: "Senior Receptionist",     assignedOn: "Sep 2022",  assignedBy: "HR Manager" },
-    { id: "HOD-006", department: "Accounts",   staffId: "EMP-013", staffName: "Sarah Mensah",       roleLabel: "Senior Accountant",       assignedOn: "Apr 2020",  assignedBy: "HR Manager" },
-    { id: "HOD-007", department: "IT",         staffId: "EMP-015", staffName: "John Darko",         roleLabel: "IT Support Lead",         assignedOn: "Jan 2023",  assignedBy: "HR Manager" },
-  ],
+  departmentHeads: [],
 };
 
 function buildPayrollPrepsFromPayslips(payslips: GeneratedPayslip[]): PayrollPrep[] {

@@ -8,8 +8,8 @@ import { Toast, type ToastData } from "@/components/ui/toast";
 import { addFrontDeskCharge } from "@/lib/data/accounts-store";
 import { addWardPatient } from "@/lib/data/nurses-store";
 
-const PATIENTS = ["Kwame Asante (P-10491)", "Ama Owusu (P-10382)", "Kofi Mensah (P-10271)", "Efua Boateng (P-10155)", "Yaw Darko (P-10133)"];
-const DOCTORS = ["Dr. Amaka Osei", "Dr. Kwame Mensah", "Dr. Chen", "Dr. Robert Smith", "Dr. Emily White"];
+const PATIENTS: string[] = [];
+const DOCTORS: string[] = [];
 const VISIT_TYPES = ["Outpatient Consultation", "Emergency", "Follow-up", "Routine Check-up", "Specialist Referral", "Antenatal", "Lab/Diagnostics"];
 
 type Visit = {
@@ -27,11 +27,7 @@ export default function FrontdeskVisitsPage() {
   const [visitType, setVisitType] = useState("");
   const [complaint, setComplaint] = useState("");
   const [assignedTo, setAssignedTo] = useState("");
-  const [visits, setVisits] = useState<Visit[]>([
-    { id: "V-5825", patient: "Abena Kyei (P-10122)", type: "Antenatal", complaint: "Routine antenatal visit, week 28", assignedTo: "Dr. Amaka Osei", time: "10:20", status: "With Doctor" },
-    { id: "V-5824", patient: "Yaw Darko (P-10133)", type: "Emergency", complaint: "High fever and difficulty breathing", assignedTo: "Dr. Kwame Mensah", time: "10:05", status: "With Doctor" },
-    { id: "V-5823", patient: "Efua Boateng (P-10155)", type: "Follow-up", complaint: "Blood pressure review", assignedTo: "Dr. Chen", time: "09:50", status: "In Queue" },
-  ]);
+  const [visits, setVisits] = useState<Visit[]>([]);
   const [toast, setToast] = useState<ToastData | null>(null);
   const [submitting, setSubmitting] = useState(false);
 

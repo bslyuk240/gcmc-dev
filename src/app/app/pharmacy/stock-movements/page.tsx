@@ -28,16 +28,7 @@ type StockMove = {
   performedBy: string;
 };
 
-const SEED_MOVES: StockMove[] = [
-  { id: "M001", date: "Mar 15, 2026", item: "Paracetamol 500mg", type: "dispense", qty: -21, source: "Rx RX-2026-001 – Alice Thompson", ref: "RX-2026-001", performedBy: "Pharmacist" },
-  { id: "M002", date: "Mar 15, 2026", item: "Amoxicillin 500mg", type: "in", qty: 200, source: "Store Restock – PRX-1001", ref: "PRX-1001", performedBy: "Store Keeper" },
-  { id: "M003", date: "Mar 14, 2026", item: "Metformin 850mg", type: "dispense", qty: -60, source: "Rx RX-2026-003 – Ama Owusu", ref: "RX-2026-003", performedBy: "Pharmacist" },
-  { id: "M004", date: "Mar 14, 2026", item: "IV Normal Saline 500ml", type: "in", qty: 50, source: "Store Supply – ST-004", ref: "ST-004", performedBy: "Store Keeper" },
-  { id: "M005", date: "Mar 13, 2026", item: "Ceftriaxone 1g IV", type: "dispense", qty: -5, source: "Nurse Request – NR-2026-001", ref: "NR-2026-001", performedBy: "Pharmacist" },
-  { id: "M006", date: "Mar 13, 2026", item: "Lisinopril 10mg", type: "adjustment", qty: -3, source: "Stock count variance – expired units removed", ref: "ADJ-001", performedBy: "Senior Pharmacist" },
-  { id: "M007", date: "Mar 12, 2026", item: "Artemether-Lumefantrine", type: "in", qty: 100, source: "Store Restock", ref: "PRX-1002", performedBy: "Store Keeper" },
-  { id: "M008", date: "Mar 12, 2026", item: "Aspirin 75mg", type: "dispense", qty: -30, source: "Rx RX-2026-002 – Kofi Mensah", ref: "RX-2026-002", performedBy: "Pharmacist" },
-];
+const SEED_MOVES: StockMove[] = [];
 
 const TYPE_STYLE: Record<string, string> = {
   in: "bg-emerald-100 text-emerald-700",

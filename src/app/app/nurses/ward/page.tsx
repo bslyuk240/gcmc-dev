@@ -23,7 +23,7 @@ const PROCEDURE_PRICES: Record<string, number> = {
   Injection: 25, Dressing: 20, "IV Access": 30, Catheter: 60, Observation: 15,
   "Wound Care": 40, "Blood Draw": 15, Procedure: 50, Other: 20,
 };
-const NURSES = ["Nurse Patricia", "Nurse Grace", "Nurse Sandra", "Nurse Tom", "Nurse Ama"];
+const NURSES: string[] = [];
 
 export default function NursesWardPage() {
   const { getByUnit, procedures } = useNursesStore();

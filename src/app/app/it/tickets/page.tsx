@@ -20,16 +20,9 @@ type Ticket = {
   status: TicketStatus;
 };
 
-const INITIAL: Ticket[] = [
-  { id: "#TK-4022", category: "Network", priority: "Critical", title: "VPN connection failing for remote staff", dept: "IT", assignee: "Kwame IT", age: "2h", status: "Open" },
-  { id: "#TK-4021", category: "Access", priority: "High", title: "New hire onboarding: Emily Johnson", dept: "HR", assignee: "Kwame IT", age: "5h", status: "In Progress" },
-  { id: "#TK-4020", category: "Software", priority: "Medium", title: "Adobe Creative Cloud license renewal", dept: "Admin", assignee: "Unassigned", age: "1d", status: "Open" },
-  { id: "#TK-4019", category: "Hardware", priority: "Low", title: "Nurse station scanner not printing labels", dept: "Nurses", assignee: "Grace IT", age: "2d", status: "Open" },
-  { id: "#TK-4018", category: "Email", priority: "Medium", title: "Email signature not showing logo", dept: "Admin", assignee: "Grace IT", age: "1d", status: "Resolved" },
-  { id: "#TK-4017", category: "System", priority: "Critical", title: "HMIS login portal timing out", dept: "Front Desk", assignee: "Kwame IT", age: "3h", status: "In Progress" },
-];
+const INITIAL: Ticket[] = [];
 
-const TEAM = ["Kwame IT", "Grace IT", "Unassigned"];
+const TEAM = ["Unassigned"];
 const DEPARTMENTS = ["IT", "HR", "Admin", "Nurses", "Doctors", "Front Desk", "Pharmacy", "Accounts", "Store"];
 
 const PRIORITY_STYLES: Record<Priority, string> = {

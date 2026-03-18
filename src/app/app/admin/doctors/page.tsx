@@ -5,22 +5,9 @@ import { PageHeader } from "@/components/layout/page-header";
 import { Card } from "@/components/ui/card";
 import { INTERNAL_PREFIX } from "@/lib/constants/navigation";
 
-const CONSULTATIONS = [
-  { id: "C-0091", patient: "Abena Kyei", doctor: "Dr. Amaka Osei", type: "Antenatal", time: "10:25", status: "in_progress", rxWritten: false },
-  { id: "C-0090", patient: "Yaw Darko", doctor: "Dr. Kwame Mensah", type: "Emergency", time: "10:10", status: "in_progress", rxWritten: false },
-  { id: "C-0089", patient: "Grace Owusu", doctor: "Dr. Chen", type: "General", time: "09:50", status: "completed", rxWritten: true },
-  { id: "C-0088", patient: "Kofi Asante", doctor: "Dr. Smith", type: "Specialist", time: "09:30", status: "completed", rxWritten: true },
-  { id: "C-0087", patient: "Mary Ibrahim", doctor: "Dr. Osei", type: "Follow-up", time: "09:10", status: "completed", rxWritten: false },
-  { id: "C-0086", patient: "James Darko", doctor: "Dr. Amaka Osei", type: "General", time: "08:55", status: "completed", rxWritten: true },
-];
+const CONSULTATIONS: { id: string; patient: string; doctor: string; type: string; time: string; status: string; rxWritten: boolean }[] = [];
 
-const DOCTORS = [
-  { name: "Dr. Amaka Osei", specialty: "Obstetrics", consultations: 8, active: 2, avgTime: "14 min", status: "Busy" },
-  { name: "Dr. Kwame Mensah", specialty: "Cardiology", consultations: 6, active: 1, avgTime: "18 min", status: "Busy" },
-  { name: "Dr. Chen", specialty: "General Medicine", consultations: 9, active: 0, avgTime: "12 min", status: "Available" },
-  { name: "Dr. Robert Smith", specialty: "Surgery", consultations: 5, active: 0, avgTime: "20 min", status: "Available" },
-  { name: "Dr. Osei", specialty: "Pediatrics", consultations: 7, active: 0, avgTime: "15 min", status: "Available" },
-];
+const DOCTORS: { name: string; specialty: string; consultations: number; active: number; avgTime: string; status: string }[] = [];
 
 const STATUS_STYLES: Record<string, string> = {
   in_progress: "bg-violet-50 text-violet-700",

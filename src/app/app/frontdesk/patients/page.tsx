@@ -11,14 +11,7 @@ type PatientStatus = "Active" | "New" | "Inactive";
 
 type Patient = { id: string; name: string; phone: string; age: string; sex: "Male" | "Female"; lastVisit: string; status: PatientStatus; type: "Returning" | "New" };
 
-const INITIAL: Patient[] = [
-  { id: "PT-8234", name: "Johnathan Smith", phone: "+233 20 012 3456", age: "42", sex: "Male", lastVisit: "Oct 12, 2023", status: "Active", type: "Returning" },
-  { id: "PT-8235", name: "Sarah Williams", phone: "+233 20 098 7654", age: "29", sex: "Female", lastVisit: "Oct 24, 2023", status: "New", type: "New" },
-  { id: "PT-8236", name: "Michael Chen", phone: "+233 20 443 2211", age: "51", sex: "Male", lastVisit: "Sep 15, 2023", status: "Inactive", type: "Returning" },
-  { id: "PT-8237", name: "Emily Rodriguez", phone: "+233 20 777 8899", age: "08", sex: "Female", lastVisit: "Oct 30, 2023", status: "Active", type: "Returning" },
-  { id: "PT-8238", name: "Kwame Asante", phone: "+233 24 111 2233", age: "36", sex: "Male", lastVisit: "Mar 14, 2026", status: "Active", type: "Returning" },
-  { id: "PT-8239", name: "Ama Owusu", phone: "+233 24 333 4455", age: "28", sex: "Female", lastVisit: "Mar 15, 2026", status: "New", type: "New" },
-];
+const INITIAL: Patient[] = [];
 
 const STATUS_STYLES: Record<PatientStatus, string> = {
   Active: "bg-emerald-50 text-emerald-700",
