@@ -1307,6 +1307,74 @@ export async function deleteNcShift(id: string): Promise<void> {
   await sb.from("staff_shifts").delete().eq("id", id);
 }
 
+/** Fetch all shifts for a clinical department across a date range */
+export async function fetchShiftsForDept(
+  department: string, // DB key e.g. "pharmacy"
+  weekStart: string,
+  weekEnd: string,
+): Promise<NcShift[]> {
+  const sb = getSupabase();
+  if (!sb) return [];
+  const { data } = await sb
+    .from("staff_shifts")
+    .select("*")
+    .eq("department", department)
+    .neq("department", "non_clinical")
+    .gte("shift_date", weekStart)
+    .lte("shift_date", weekEnd)
+    .order("shift_date", { ascending: true });
+  return (data ?? []).map((r) => ({
+    id: r.id as string,
+    staffId: r.staff_id as string,
+    department: r.department as string,
+    unit: r.unit as string,
+    shiftDate: r.shift_date as string,
+    shiftType: (r.shift_type as NcShift["shiftType"]) ?? "morning",
+    shiftStart: (r.shift_start as string) ?? "07:00",
+    shiftEnd: (r.shift_end as string) ?? "15:00",
+    status: (r.status as NcShift["status"]) ?? "scheduled",
+    createdAt: r.created_at as string,
+  }));
+}
+
+export async function createDeptShift(params: {
+  staffId: string;
+  department: string; // DB key e.g. "pharmacy"
+  shiftDate: string;
+  shiftType: NcShift["shiftType"];
+}): Promise<NcShift | null> {
+  const sb = getSupabase();
+  if (!sb) return null;
+  const times = SHIFT_TIMES[params.shiftType];
+  const { data, error } = await sb
+    .from("staff_shifts")
+    .insert({
+      staff_id:    params.staffId,
+      department:  params.department,
+      unit:        params.department, // for clinical depts, unit mirrors department
+      shift_date:  params.shiftDate,
+      shift_type:  params.shiftType,
+      shift_start: times.start,
+      shift_end:   times.end,
+      status:      "scheduled",
+    })
+    .select("*")
+    .single();
+  if (error || !data) return null;
+  return {
+    id: data.id as string,
+    staffId: data.staff_id as string,
+    department: data.department as string,
+    unit: data.unit as string,
+    shiftDate: data.shift_date as string,
+    shiftType: data.shift_type as NcShift["shiftType"],
+    shiftStart: data.shift_start as string,
+    shiftEnd: data.shift_end as string,
+    status: data.status as NcShift["status"],
+    createdAt: data.created_at as string,
+  };
+}
+
 /** Fetch all unit HODs for the non_clinical department */
 export async function fetchNcUnitHODs(): Promise<NcUnitHOD[]> {
   const sb = getSupabase();
