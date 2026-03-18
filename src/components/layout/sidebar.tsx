@@ -12,6 +12,11 @@ import {
 import { Icon } from "@/components/ui/icon";
 import { cn } from "@/lib/utils/cn";
 import { logoutStaffAction } from "@/server/actions/auth/logout";
+import { useHMSSession } from "@/modules/rbac/hooks";
+
+/** Labels that are only visible to HODs, HR, and Admin */
+const HOD_ONLY_LABELS = new Set(["Rota Management", "Leave Requests", "Staff Performance"]);
+const HOD_ALLOWED_ROLES = new Set(["hod", "hr_manager", "hr_staff", "admin"]);
 
 function SidebarInner({
   pathname,
@@ -21,9 +26,17 @@ function SidebarInner({
   onNavigate?: () => void;
 }) {
   const [isPending, startTransition] = useTransition();
+  const session = useHMSSession();
   const current = findNavigationItem(pathname);
   const department = getDepartmentFromPath(pathname);
-  const sections = getSidebarSections(department);
+  const rawSections = getSidebarSections(department);
+
+  // Hide HOD-only items from staff who are not HOD / HR / Admin
+  const isHodAllowed = HOD_ALLOWED_ROLES.has(session?.role ?? "");
+  const sections = rawSections.map((section) => ({
+    ...section,
+    items: section.items.filter((item) => isHodAllowed || !HOD_ONLY_LABELS.has(item.label)),
+  }));
 
   return (
     <>
