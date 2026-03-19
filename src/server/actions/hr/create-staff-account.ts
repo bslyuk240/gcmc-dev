@@ -27,6 +27,16 @@ function generateTempPassword(): string {
   return pass;
 }
 
+function isMissingColumnError(error: { message?: string } | null | undefined, column: string) {
+  return (error?.message ?? "").toLowerCase().includes(`column ${column.toLowerCase()} does not exist`);
+}
+
+function withoutSpecialty<T extends { specialty?: unknown }>(payload: T): Omit<T, "specialty"> {
+  const fallbackPayload = { ...payload };
+  delete fallbackPayload.specialty;
+  return fallbackPayload;
+}
+
 export async function createStaffAccountAction(
   input: CreateStaffAccountInput,
 ): Promise<CreateStaffAccountResult> {
@@ -61,20 +71,25 @@ export async function createStaffAccountAction(
   const userId = authData.user.id;
 
   // 2. Insert into staff_profiles
-  const { error: profileError } = await admin
+  const payload = {
+    id: userId,
+    full_name,
+    email,
+    department,
+    role,
+    is_active: true,
+    must_change_password: true,
+    system_setup_done: false,
+    ...(unit_name ? { unit_name } : {}),
+    ...(specialty?.trim() ? { specialty: specialty.trim() } : {}),
+  };
+  let { error: profileError } = await admin
     .from("staff_profiles")
-    .insert({
-      id: userId,
-      full_name,
-      email,
-      department,
-      role,
-      is_active: true,
-      must_change_password: true,  // force password change on first login
-      system_setup_done: false,    // IT must confirm workstation setup
-      ...(unit_name ? { unit_name } : {}),
-      ...(specialty?.trim() ? { specialty: specialty.trim() } : {}),
-    });
+    .insert(payload);
+
+  if (profileError && isMissingColumnError(profileError, "staff_profiles.specialty")) {
+    ({ error: profileError } = await admin.from("staff_profiles").insert(withoutSpecialty(payload)));
+  }
 
   if (profileError) {
     // Roll back the auth user to avoid orphans

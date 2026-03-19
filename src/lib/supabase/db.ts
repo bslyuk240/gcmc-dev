@@ -70,6 +70,16 @@ function getSupabase() {
   return createClient();
 }
 
+function isMissingColumnError(error: { message?: string } | null | undefined, column: string) {
+  return (error?.message ?? "").toLowerCase().includes(`column ${column.toLowerCase()} does not exist`);
+}
+
+function withoutSpecialty<T extends { specialty?: unknown }>(payload: T): Omit<T, "specialty"> {
+  const fallbackPayload = { ...payload };
+  delete fallbackPayload.specialty;
+  return fallbackPayload;
+}
+
 // ─── Doctors ─────────────────────────────────────────────────────────────────
 
 function mapDoctor(r: Record<string, unknown>): DoctorProfile {
@@ -122,7 +132,7 @@ function mapAdmissionOrder(r: Record<string, unknown>): AdmissionOrder {
 export async function fetchDoctors(): Promise<DoctorProfile[]> {
   const sb = getSupabase();
   if (!sb) return [];
-  const [{ data: profileRows, error: profileError }, { data: staffRows, error: staffError }] = await Promise.all([
+  const [{ data: profileRows, error: profileError }, staffResponse] = await Promise.all([
     sb.from("doctor_profiles").select("*"),
     sb
       .from("staff_profiles")
@@ -133,6 +143,20 @@ export async function fetchDoctors(): Promise<DoctorProfile[]> {
   ]);
 
   if (profileError) throw new Error(profileError.message);
+  let staffRows = staffResponse.data ?? [];
+  let staffError = staffResponse.error;
+
+  if (staffError && isMissingColumnError(staffError, "staff_profiles.specialty")) {
+    const fallbackResponse = await sb
+      .from("staff_profiles")
+      .select("id, full_name, role")
+      .eq("department", "doctors")
+      .eq("is_active", true)
+      .order("full_name");
+    staffRows = fallbackResponse.data ?? [];
+    staffError = fallbackResponse.error;
+  }
+
   if (staffError) throw new Error(staffError.message);
 
   const profiles = (profileRows ?? []).map(mapDoctor);
@@ -1249,7 +1273,7 @@ export async function fetchLeaveRequests(): Promise<LeaveRequest[]> {
 export async function insertStaffMember(s: StaffMember): Promise<void> {
   const sb = getSupabase(); if (!sb) return;
   if (!/^[0-9a-fA-F-]{36}$/.test(s.id)) return;
-  const { error } = await sb.from("staff_profiles").upsert({
+  const payload = {
     id: s.id,
     full_name: s.name,
     email: s.email,
@@ -1258,7 +1282,11 @@ export async function insertStaffMember(s: StaffMember): Promise<void> {
     unit_name: s.unit ?? null,
     specialty: s.specialty ?? null,
     is_active: s.status === "Active" || s.status === "On Leave" || s.status === "Probation",
-  });
+  };
+  let { error } = await sb.from("staff_profiles").upsert(payload);
+  if (error && isMissingColumnError(error, "staff_profiles.specialty")) {
+    ({ error } = await sb.from("staff_profiles").upsert(withoutSpecialty(payload)));
+  }
   if (error) throw new Error(error.message);
 }
 
