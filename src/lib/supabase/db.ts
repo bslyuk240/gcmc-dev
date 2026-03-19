@@ -1733,7 +1733,7 @@ export async function insertVisit(params: {
   if (!sb) return null;
   const id = `VIS-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
   const now = new Date();
-  const { data, error } = await sb.from("visits").insert({
+  const { error } = await sb.from("visits").insert({
     id,
     patient_id:   params.patientId,
     patient_name: params.patientName,
@@ -1743,9 +1743,12 @@ export async function insertVisit(params: {
     assigned_to:  params.assignedTo,
     status:       "Checked In",
     checked_in_at: now.toISOString(),
-  }).select("id").single();
-  if (error) { console.error("insertVisit:", error.message); return null; }
-  return (data as { id: string }).id;
+  });
+  if (error) {
+    console.error("[db] insertVisit:", error.code, error.message, error.details);
+    return null;
+  }
+  return id;
 }
 
 export async function fetchAllVisits(): Promise<VisitRow[]> {

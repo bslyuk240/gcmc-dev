@@ -67,21 +67,32 @@ export default function FrontdeskVisitsPage() {
   const [submitting,  setSubmitting]  = useState(false);
   const [toast,       setToast]       = useState<ToastData | null>(null);
 
-  useEffect(() => {
-    Promise.all([
-      fetchPatientRegistrations(),
-      fetchStaffMembers(),
-      fetchTodayVisits(),
-    ]).then(([pats, staff, visits]) => {
-      setPatients(pats);
-      setDoctors(staff.filter((s) => s.department === "Doctors" && s.status === "Active"));
-      setTodayVisits(visits);
-      setLoadingData(false);
-    }).catch((err) => {
-      console.error("[visits] load failed:", err);
-      setToast({ message: "Failed to load patient and visit data. Please refresh.", type: "error" });
-      setLoadingData(false);
+  async function loadVisits() {
+    const visits = await fetchTodayVisits().catch((err) => {
+      console.error("[visits] fetchTodayVisits failed:", err);
+      return null;
     });
+    if (visits !== null) setTodayVisits(visits);
+  }
+
+  useEffect(() => {
+    async function loadAll() {
+      setLoadingData(true);
+      const [pats, staff] = await Promise.all([
+        fetchPatientRegistrations().catch((err) => { console.error("[visits] fetchPatientRegistrations:", err); return []; }),
+        fetchStaffMembers().catch((err) => { console.error("[visits] fetchStaffMembers:", err); return []; }),
+      ]);
+      setPatients(pats);
+      setDoctors((staff as StaffMember[]).filter((s) => s.department === "Doctors" && s.status === "Active"));
+      await loadVisits();
+      setLoadingData(false);
+    }
+    void loadAll();
+
+    // Auto-refresh Today's Visits every 30 s
+    const timer = setInterval(() => { void loadVisits(); }, 30_000);
+    return () => clearInterval(timer);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Pre-select patient if coming from patient detail page
@@ -119,23 +130,27 @@ export default function FrontdeskVisitsPage() {
     const bed = `${prefix}-${bedNum}`;
 
     // ── Save to Supabase visits table ──────────────────────────────────────
-    const visitId = await insertVisit({
-      patientId:   patientRecord.patientId,
-      patientName: patientRecord.patientName,
-      visitType,
-      department:  dept,
-      assignedTo:  assigneeLabel,
-    });
+    let visitId: string | null = null;
+    try {
+      visitId = await insertVisit({
+        patientId:   patientRecord.patientId,
+        patientName: patientRecord.patientName,
+        visitType,
+        department:  dept,
+        assignedTo:  assigneeLabel,
+      });
+    } catch (err) {
+      console.error("[visits] insertVisit threw:", err);
+    }
 
     if (!visitId) {
-      setToast({ message: "Failed to save visit to database. Please try again.", type: "error" });
+      setToast({ message: "Database error: visit was not saved. Check console for details and try again.", type: "error" });
       setSubmitting(false);
       return;
     }
 
     // ── Reload today's visits ──────────────────────────────────────────────
-    const updated = await fetchTodayVisits().catch(() => todayVisits);
-    setTodayVisits(updated);
+    await loadVisits();
 
     // ── Push charge to Accounts ────────────────────────────────────────────
     const now = new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
