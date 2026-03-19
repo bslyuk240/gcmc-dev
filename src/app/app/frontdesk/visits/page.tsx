@@ -18,6 +18,8 @@ import type { StaffMember } from "@/lib/data/hr-store";
 import { addFrontDeskCharge } from "@/lib/data/accounts-store";
 import { addWardPatient } from "@/lib/data/nurses-store";
 import { useBillingPresets } from "@/lib/hooks/use-billing-presets";
+import { useHMSSession } from "@/modules/rbac/hooks";
+import { useNursesStore } from "@/lib/hooks/use-nurses-store";
 
 const STATUS_STYLES: Record<string, string> = {
   "Checked In": "bg-sky-50 text-sky-700",
@@ -41,7 +43,10 @@ const selCls =
 export default function FrontdeskVisitsPage() {
   const searchParams = useSearchParams();
   const preselectedId = searchParams.get("patient") ?? "";  // P-XXXXX from patient detail
+  const session = useHMSSession();
+  const staffName = session?.full_name ?? "Front Desk";
 
+  const { allPatients: wardPatients } = useNursesStore();
   const { getByCategory, getAmount } = useBillingPresets();
   const visitPresets = getByCategory("visit");
   const visitTypes   = visitPresets.length > 0
@@ -72,7 +77,11 @@ export default function FrontdeskVisitsPage() {
       setDoctors(staff.filter((s) => s.department === "Doctors" && s.status === "Active"));
       setTodayVisits(visits);
       setLoadingData(false);
-    }).catch(() => setLoadingData(false));
+    }).catch((err) => {
+      console.error("[visits] load failed:", err);
+      setToast({ message: "Failed to load patient and visit data. Please refresh.", type: "error" });
+      setLoadingData(false);
+    });
   }, []);
 
   // Pre-select patient if coming from patient detail page
@@ -97,10 +106,20 @@ export default function FrontdeskVisitsPage() {
       : (doctors.find((d) => d.id === assignedTo)?.name ?? assignedTo);
 
     const isEmergency = visitType === "Emergency";
+    const unit = isEmergency ? "Emergency" : "Outpatient";
     const dept = isEmergency ? "Emergency" : "Doctors";
 
-    // Save to Supabase visits table
-    await insertVisit({
+    // ── Derive a non-colliding bed number ──────────────────────────────────
+    const prefix = isEmergency ? "ER" : "OPD";
+    const usedBeds = wardPatients
+      .filter((p) => p.unit === unit && p.status === "Active")
+      .map((p) => p.bed);
+    let bedNum = 1;
+    while (usedBeds.includes(`${prefix}-${bedNum}`)) bedNum++;
+    const bed = `${prefix}-${bedNum}`;
+
+    // ── Save to Supabase visits table ──────────────────────────────────────
+    const visitId = await insertVisit({
       patientId:   patientRecord.patientId,
       patientName: patientRecord.patientName,
       visitType,
@@ -108,11 +127,17 @@ export default function FrontdeskVisitsPage() {
       assignedTo:  assigneeLabel,
     });
 
-    // Reload today's visits to show the new entry
-    const updated = await fetchTodayVisits();
+    if (!visitId) {
+      setToast({ message: "Failed to save visit to database. Please try again.", type: "error" });
+      setSubmitting(false);
+      return;
+    }
+
+    // ── Reload today's visits ──────────────────────────────────────────────
+    const updated = await fetchTodayVisits().catch(() => todayVisits);
     setTodayVisits(updated);
 
-    // Push charge to Accounts (localStorage store)
+    // ── Push charge to Accounts ────────────────────────────────────────────
     const now = new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
     const todayStr = new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
     const chargeType = isEmergency ? "Emergency"
@@ -128,28 +153,28 @@ export default function FrontdeskVisitsPage() {
       amount: getAmount("visit", visitType, 80),
       description: `${visitType}${complaint ? ` — ${complaint}` : ""}`,
       createdAt: `${now} · ${todayStr}`,
-      createdBy: "Front Desk (Auto)",
-      visitId: `V-${Date.now()}`,
+      createdBy: staffName,
+      visitId,
       status: "Pending",
     });
 
-    // Send patient to Nurses queue (localStorage store)
+    // ── Send patient to Nurses queue ───────────────────────────────────────
     addWardPatient({
       id: `WP-FD-${Date.now()}`,
       patientName: patientRecord.patientName,
       patientId:   patientRecord.patientId,
-      unit:        isEmergency ? "Emergency" : "Outpatient",
-      bed:         isEmergency ? `ER-${Date.now() % 10}` : `OPD-${Date.now() % 100}`,
+      unit,
+      bed,
       diagnosis:   `${visitType}${complaint ? ` — ${complaint}` : ""}`,
       admittedAt:  new Date().toISOString(),
-      assignedNurse: "Triage Nurse",
+      assignedNurse: "Triage",
       priority:    isEmergency ? "High" : "Stable",
       status:      "Active",
       doctorInCharge: assigneeLabel,
     });
 
     setToast({
-      message: `Visit created for ${patientRecord.patientName} → sent to Nurses ${isEmergency ? "Emergency" : "Outpatient"} queue.`,
+      message: `Visit created for ${patientRecord.patientName} (Bed ${bed}) → sent to Nurses ${unit} queue.`,
       type: "success",
     });
 

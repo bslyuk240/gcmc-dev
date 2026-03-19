@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { useHMSSession } from "@/modules/rbac/hooks";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -20,6 +21,8 @@ const PRIORITY_DOT: Record<string, string> = {
 
 export default function NursesICUPage() {
   const { getByUnit, icuVitals } = useNursesStore();
+  const session = useHMSSession();
+  const staffName = session?.full_name ?? "Nurse";
   const icuPatients = getByUnit("ICU").filter((p) => p.status === "Active");
 
   const [vitalsTarget, setVitalsTarget] = useState<WardPatient | null>(null);
@@ -31,24 +34,27 @@ export default function NursesICUPage() {
   const [temp, setTemp] = useState(""); const [spo2, setSpo2] = useState("");
   const [gcs, setGcs] = useState(""); const [urine, setUrine] = useState("");
   const [rrRate, setRrRate] = useState(""); const [vNotes, setVNotes] = useState("");
-  const [vNurse, setVNurse] = useState("Nurse Sandra (ICU)");
+  const [vNurse, setVNurse] = useState("");
 
   function handleRecordICUVitals() {
     if (!vitalsTarget || !bp || !pulse) return;
     const now = new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+    const dateStr = new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+    const shortDate = new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+    const nurseLabel = vNurse || staffName;
     const entry = {
       id: `IV-${Date.now()}`,
       patientId: vitalsTarget.patientId,
       patientName: vitalsTarget.patientName,
       bp, pulse, temp, spo2, gcs, urine, rrRate,
-      recordedBy: vNurse,
-      recordedAt: `${now} · Mar 15, 2026`,
+      recordedBy: nurseLabel,
+      recordedAt: `${now} · ${dateStr}`,
       notes: vNotes || undefined,
     };
     addICUVitals(entry);
     updateWardPatient(vitalsTarget.id, {
-      vitals: { bp, pulse, temp, spo2, recordedAt: now, recordedBy: vNurse },
-      lastVitalsAt: `${now} · Mar 15`,
+      vitals: { bp, pulse, temp, spo2, recordedAt: now, recordedBy: nurseLabel },
+      lastVitalsAt: `${now} · ${shortDate}`,
     });
     setToast({ message: `ICU vitals recorded for ${vitalsTarget.patientName}.`, type: "success" });
     setVitalsTarget(null);
@@ -134,7 +140,7 @@ export default function NursesICUPage() {
               )}
 
               <div className="flex gap-2 flex-wrap">
-                <Button size="sm" onClick={() => { setVitalsTarget(p); setBp(""); setPulse(""); setTemp(""); setSpo2(""); setGcs(""); setUrine(""); setRrRate(""); setVNotes(""); }}>
+                <Button size="sm" onClick={() => { setVitalsTarget(p); setBp(""); setPulse(""); setTemp(""); setSpo2(""); setGcs(""); setUrine(""); setRrRate(""); setVNotes(""); setVNurse(staffName); }}>
                   Record Vitals
                 </Button>
                 <Button size="sm" variant="outline" onClick={() => setViewVitals(p)}>Vitals History ({patientVitals.length})</Button>

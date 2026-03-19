@@ -16,6 +16,7 @@ import {
 } from "@/lib/data/accounts-store";
 import { fetchPatientRegistrations, type PatientRegistration } from "@/lib/supabase/db";
 import { useBillingPresets } from "@/lib/hooks/use-billing-presets";
+import { useHMSSession } from "@/modules/rbac/hooks";
 
 const FALLBACK_CHARGE_TYPES: FrontDeskCharge["chargeType"][] = [
   "Registration", "Consultation", "Emergency", "Follow-up",
@@ -31,6 +32,8 @@ const CHARGE_STATUS_STYLES: Record<string, string> = {
 
 export default function FrontDeskBillingPage() {
   const { frontDeskCharges, metrics } = useAccountsStore();
+  const session = useHMSSession();
+  const staffName = session?.full_name ?? "Front Desk";
 
   const { getByCategory, getAmount } = useBillingPresets();
   const chargePresets  = getByCategory("frontdesk");
@@ -55,7 +58,7 @@ export default function FrontDeskBillingPage() {
   useEffect(() => {
     fetchPatientRegistrations()
       .then((data) => { setPatients(data); setLoadingPatients(false); })
-      .catch(() => setLoadingPatients(false));
+      .catch((err) => { console.error("[billing] load patients failed:", err); setLoadingPatients(false); });
   }, []);
 
   function handleAddCharge(e: React.FormEvent) {
@@ -75,7 +78,7 @@ export default function FrontDeskBillingPage() {
         amount: parseFloat(newAmount) || 0,
         description: newDescription || `${newChargeType} fee`,
         createdAt: `${now} · ${todayStr}`,
-        createdBy: "Front Desk (You)",
+        createdBy: staffName,
         status: "Pending",
       });
       setToast({ message: `Charge of ₦${newAmount} added for ${patientRecord.patientName}. Sent to Accounts.`, type: "success" });

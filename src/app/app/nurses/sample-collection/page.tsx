@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Modal, ModalFooter } from "@/components/ui/modal";
 import { Toast, type ToastData } from "@/components/ui/toast";
 import { useNursesStore } from "@/lib/hooks/use-nurses-store";
+import { useHMSSession } from "@/modules/rbac/hooks";
 import { addNurseSampleRequest, updateNurseSampleRequest, type NurseSampleRequest } from "@/lib/data/nurses-store";
 import { addLabTest } from "@/lib/data/lab-store";
 
@@ -36,6 +37,8 @@ const SAMPLE_TESTS = [
 
 export default function NursesSampleCollectionPage() {
   const { sampleRequests, allPatients } = useNursesStore();
+  const session = useHMSSession();
+  const staffName = session?.full_name ?? "Nurse";
 
   const [newSampleModal, setNewSampleModal] = useState(false);
   const [collectTarget, setCollectTarget] = useState<NurseSampleRequest | null>(null);
@@ -167,7 +170,7 @@ export default function NursesSampleCollectionPage() {
                   <td className="px-4 py-3">
                     <div className="flex gap-1.5">
                       {r.status === "Ordered" && (
-                        <Button size="sm" onClick={() => { setCollectTarget(r); setCollectNurse(""); }}>Collect</Button>
+                        <Button size="sm" onClick={() => { setCollectTarget(r); setCollectNurse(staffName); }}>Collect</Button>
                       )}
                       {r.status === "Collected" && (
                         <Button size="sm" onClick={() => handleSendToLab(r)}>Send to Lab</Button>

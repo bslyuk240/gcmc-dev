@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef } from "react";
+import { useHMSSession } from "@/modules/rbac/hooks";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -53,6 +54,8 @@ const ROUTES = ["oral", "IV", "IV infusion", "IM", "SC", "sublingual", "topical"
 
 export default function NursesMedicationAdministrationPage() {
   const idCounterRef = useRef(0);
+  const session = useHMSSession();
+  const staffName = session?.full_name ?? "Nurse";
   const [activeTab, setActiveTab] = useState<Tab>("Doctor Prescriptions");
   const [entries, setEntries] = useState<MarEntry[]>([]);
   const [confirmTarget, setConfirmTarget] = useState<MarEntry | null>(null);
@@ -134,7 +137,7 @@ export default function NursesMedicationAdministrationPage() {
     setEntries((prev) =>
       prev.map((e) =>
         e.id === confirmTarget.id
-          ? { ...e, status: "administered", administeredAt: now, administeredBy: "Nurse (You)" }
+          ? { ...e, status: "administered", administeredAt: now, administeredBy: staffName }
           : e,
       ),
     );
@@ -191,7 +194,7 @@ export default function NursesMedicationAdministrationPage() {
         patientName: reqPatient,
         patientId: reqPatientId || `PT-${Math.floor(8000 + Math.random() * 1000)}`,
         ward: reqWard || "Ward",
-        requestedBy: "Nurse (You)",
+        requestedBy: staffName,
         drug: drug?.name ?? reqDrug,
         dosage: reqDosage,
         route: reqRoute,

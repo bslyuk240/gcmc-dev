@@ -1,13 +1,15 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Modal, ModalFooter } from "@/components/ui/modal";
 import { Toast, type ToastData } from "@/components/ui/toast";
 import { useLabStore } from "@/lib/hooks/use-lab-store";
+import { useHMSSession } from "@/modules/rbac/hooks";
 import { updateLabTest, type LabTest } from "@/lib/data/lab-store";
+import { fetchStaffMembers } from "@/lib/supabase/db";
 
 const PRIORITY_STYLES: Record<string, string> = {
   Routine: "bg-slate-100 text-slate-600",
@@ -15,7 +17,6 @@ const PRIORITY_STYLES: Record<string, string> = {
   STAT: "bg-red-100 text-red-700 font-bold",
 };
 
-const TECH_OPTIONS = ["Lab Tech James", "Lab Tech Abena", "Lab Tech Kofi"];
 const EQUIPMENT_OPTIONS = [
   "Sysmex XN-550 (Haematology Analyser)",
   "Mindray BS-240 (Chemistry Analyser)",
@@ -28,10 +29,28 @@ const EQUIPMENT_OPTIONS = [
 
 export default function LabProcessingPage() {
   const { tests } = useLabStore();
+  const session = useHMSSession();
+  const staffName = session?.full_name ?? "Lab Technician";
+  const [techOptions, setTechOptions] = useState<string[]>([]);
   const [processTarget, setProcessTarget] = useState<LabTest | null>(null);
-  const [techName, setTechName] = useState(TECH_OPTIONS[0]);
+  const [techName, setTechName] = useState("");
   const [equipment, setEquipment] = useState(EQUIPMENT_OPTIONS[0]);
   const [toast, setToast] = useState<ToastData | null>(null);
+
+  useEffect(() => {
+    fetchStaffMembers()
+      .then((staff) => {
+        const labStaff = staff.filter((s) => s.department === "Lab");
+        const names = labStaff.length > 0 ? labStaff.map((s) => s.name) : [staffName];
+        setTechOptions(names);
+        // Pre-select current user if in list, else first option
+        setTechName(names.includes(staffName) ? staffName : names[0]);
+      })
+      .catch(() => {
+        setTechOptions([staffName]);
+        setTechName(staffName);
+      });
+  }, [staffName]);
 
   const readyToProcess = tests.filter((t) => t.status === "Sample Collected");
   const inProgress = tests.filter((t) => t.status === "In Progress");
@@ -43,7 +62,7 @@ export default function LabProcessingPage() {
       status: "In Progress",
       technicianName: techName,
       equipmentUsed: equipment,
-      processingStartedAt: `${now} · Mar 15, 2026`,
+      processingStartedAt: `${now} · ${new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}`,
     });
     setToast({ message: `Processing started: ${processTarget.testName} for ${processTarget.patientName}.`, type: "success" });
     setProcessTarget(null);
@@ -102,7 +121,7 @@ export default function LabProcessingPage() {
                     <span className={`rounded-full px-2.5 py-0.5 text-xs ${PRIORITY_STYLES[t.priority]}`}>{t.priority}</span>
                   </td>
                   <td className="px-5 py-3">
-                    <Button size="sm" onClick={() => { setProcessTarget(t); setTechName(TECH_OPTIONS[0]); setEquipment(EQUIPMENT_OPTIONS[0]); }}>
+                    <Button size="sm" onClick={() => { setProcessTarget(t); setTechName(techOptions.includes(staffName) ? staffName : (techOptions[0] ?? staffName)); setEquipment(EQUIPMENT_OPTIONS[0]); }}>
                       Start Processing
                     </Button>
                   </td>
@@ -158,7 +177,7 @@ export default function LabProcessingPage() {
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Technician *</label>
               <select value={techName} onChange={(e) => setTechName(e.target.value)} className={inputCls}>
-                {TECH_OPTIONS.map((o) => <option key={o}>{o}</option>)}
+                {techOptions.map((o) => <option key={o}>{o}</option>)}
               </select>
             </div>
             <div>

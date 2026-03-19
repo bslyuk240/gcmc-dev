@@ -5,6 +5,7 @@ import { Modal, ModalFooter } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
 import { Toast, type ToastData } from "@/components/ui/toast";
 import { usePharmacyStore } from "@/lib/hooks/use-pharmacy-store";
+import { useHMSSession } from "@/modules/rbac/hooks";
 import {
   updatePrescriptionStatus,
   addPharmacyBill,
@@ -23,6 +24,8 @@ const STATUS_TONE: Record<string, string> = {
 
 export default function PendingPrescriptionsPage() {
   const { prescriptions } = usePharmacyStore();
+  const session = useHMSSession();
+  const staffName = session?.full_name ?? "Pharmacist";
 
   const [activeTab, setActiveTab] = useState<Tab>("All Pending");
   const [dispenseTarget, setDispenseTarget] = useState<SharedPrescription | null>(null);
@@ -63,10 +66,11 @@ export default function PendingPrescriptionsPage() {
     const now = new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
     const total = calcTotal(dispenseTarget);
 
+    const dateStr = new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
     setTimeout(() => {
       updatePrescriptionStatus(dispenseTarget.id, "Dispensed", {
-        dispensedAt: `${now} · Mar 15, 2026`,
-        dispensedBy: "Pharmacist (You)",
+        dispensedAt: `${now} · ${dateStr}`,
+        dispensedBy: staffName,
         totalCost: total,
       });
 
@@ -78,7 +82,7 @@ export default function PendingPrescriptionsPage() {
         patientId: dispenseTarget.patientId,
         drugs: dispenseTarget.drugs.map((d) => `${d.name} × ${d.qty}`).join(", "),
         totalCost: total,
-        dispensedAt: `${now} · Mar 15, 2026`,
+        dispensedAt: `${now} · ${dateStr}`,
         billStatus: "Pending",
         source: "prescription",
       });

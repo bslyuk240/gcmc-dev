@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { PageHeader } from "@/components/layout/page-header";
+import { useHMSSession } from "@/modules/rbac/hooks";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Modal, ModalFooter } from "@/components/ui/modal";
@@ -47,6 +48,8 @@ export default function DoctorPrescriptionsPage() {
   const { prescriptions, metrics } = usePharmacyStore();
   const { consultations, doctors } = useDoctorsStore();
   const { allPatients } = useNursesStore();
+  const session = useHMSSession();
+  const sessionDoctorName = session?.full_name ?? "";
   const drugList = getPharmacyDrugList();
 
   // Build unified patient list from consultations + inpatients
@@ -91,7 +94,7 @@ export default function DoctorPrescriptionsPage() {
   // Form state
   const [patient, setPatient] = useState("");
   const [patientId, setPatientId] = useState("");
-  const [doctor, setDoctor] = useState("Dr. Chen Lin");
+  const [doctor, setDoctor] = useState("");
   const [urgency, setUrgency] = useState<"Routine" | "Urgent">("Routine");
   const [drugs, setDrugs] = useState<DrugLine[]>([{ ...BLANK_DRUG }]);
   const [rxNotes, setRxNotes] = useState("");
@@ -125,7 +128,7 @@ export default function DoctorPrescriptionsPage() {
     setSelectedPatientKey("");
     setPatient(prefill?.patient ?? "");
     setPatientId(prefill?.patientId ?? "");
-    setDoctor(prefill?.doctor ?? "Dr. Chen Lin");
+    setDoctor(prefill?.doctor ?? sessionDoctorName);
     setUrgency("Routine");
     setDrugs([{ ...BLANK_DRUG }]);
     setRxNotes("");
@@ -169,7 +172,7 @@ export default function DoctorPrescriptionsPage() {
         urgency,
         drugs: prescribedDrugs,
         notes: rxNotes || undefined,
-        createdAt: `${now} · Mar 15, 2026`,
+        createdAt: `${now} · ${new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}`,
         status: "Pending",
         totalCost,
       };
@@ -184,7 +187,7 @@ export default function DoctorPrescriptionsPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <PageHeader title="Prescriptions" description="Write prescriptions from the pharmacy inventory. All prescriptions go directly to the Pharmacy queue." />
-        <Button onClick={() => openWrite()}>+ Write Prescription</Button>
+        <Button onClick={() => { setDoctor(sessionDoctorName); openWrite(); }}>+ Write Prescription</Button>
       </div>
 
       {/* KPI strip */}

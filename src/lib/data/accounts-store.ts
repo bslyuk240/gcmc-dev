@@ -274,9 +274,13 @@ export function updateFrontDeskChargeStatus(id: string, status: ChargeStatus) {
 export function getConsultationFees(): ConsultationFee[] { return [...getState().consultationFees]; }
 export function addConsultationFee(f: ConsultationFee) {
   mutate((s) => { s.consultationFees = [f, ...s.consultationFees]; });
+  import("@/lib/supabase/db").then(({ insertConsultationFee }) => insertConsultationFee(f))
+    .catch((err) => console.error("[accounts-store] addConsultationFee failed:", err));
 }
 export function updateConsultationFeeStatus(id: string, status: ChargeStatus) {
   mutate((s) => { s.consultationFees = s.consultationFees.map((f) => f.id === id ? { ...f, status } : f); });
+  import("@/lib/supabase/db").then(({ upsertConsultationFeeStatus }) => upsertConsultationFeeStatus(id, status))
+    .catch((err) => console.error("[accounts-store] updateConsultationFeeStatus failed:", err));
 }
 
 // ─── Supplier Payments ────────────────────────────────────────────────────────
@@ -284,9 +288,13 @@ export function updateConsultationFeeStatus(id: string, status: ChargeStatus) {
 export function getSupplierPayments(): SupplierPayment[] { return [...getState().supplierPayments]; }
 export function addSupplierPayment(p: SupplierPayment) {
   mutate((s) => { s.supplierPayments = [p, ...s.supplierPayments]; });
+  import("@/lib/supabase/db").then(({ insertSupplierPayment }) => insertSupplierPayment(p))
+    .catch((err) => console.error("[accounts-store] addSupplierPayment failed:", err));
 }
 export function updateSupplierPaymentStatus(id: string, status: SupplierPaymentStatus, extra?: Partial<SupplierPayment>) {
   mutate((s) => { s.supplierPayments = s.supplierPayments.map((p) => p.id === id ? { ...p, status, ...extra } : p); });
+  import("@/lib/supabase/db").then(({ upsertSupplierPaymentStatus }) => upsertSupplierPaymentStatus(id, status, extra))
+    .catch((err) => console.error("[accounts-store] updateSupplierPaymentStatus failed:", err));
 }
 
 // ─── Payroll ──────────────────────────────────────────────────────────────────
@@ -294,9 +302,13 @@ export function updateSupplierPaymentStatus(id: string, status: SupplierPaymentS
 export function getPayrollBatches(): PayrollBatch[] { return [...getState().payrollBatches]; }
 export function addPayrollBatch(b: PayrollBatch) {
   mutate((s) => { s.payrollBatches = [b, ...s.payrollBatches]; });
+  import("@/lib/supabase/db").then(({ insertPayrollBatch }) => insertPayrollBatch(b))
+    .catch((err) => console.error("[accounts-store] addPayrollBatch failed:", err));
 }
 export function updatePayrollStatus(id: string, status: PayrollStatus, extra?: Partial<PayrollBatch>) {
   mutate((s) => { s.payrollBatches = s.payrollBatches.map((b) => b.id === id ? { ...b, status, ...extra } : b); });
+  import("@/lib/supabase/db").then(({ upsertPayrollBatchStatus }) => upsertPayrollBatchStatus(id, status, extra))
+    .catch((err) => console.error("[accounts-store] updatePayrollStatus failed:", err));
 }
 
 // ─── Kiosk Sales ─────────────────────────────────────────────────────────────
@@ -304,9 +316,13 @@ export function updatePayrollStatus(id: string, status: PayrollStatus, extra?: P
 export function getKioskSales(): KioskSale[] { return [...getState().kioskSales]; }
 export function addKioskSale(sale: KioskSale) {
   mutate((s) => { s.kioskSales = [sale, ...s.kioskSales]; });
+  import("@/lib/supabase/db").then(({ insertKioskSale }) => insertKioskSale(sale))
+    .catch((err) => console.error("[accounts-store] addKioskSale failed:", err));
 }
 export function updateKioskSaleStatus(id: string, status: KioskSale["status"]) {
   mutate((s) => { s.kioskSales = s.kioskSales.map((k) => k.id === id ? { ...k, status } : k); });
+  import("@/lib/supabase/db").then(({ upsertKioskSaleStatus }) => upsertKioskSaleStatus(id, status))
+    .catch((err) => console.error("[accounts-store] updateKioskSaleStatus failed:", err));
 }
 
 // ─── Lab Charges ──────────────────────────────────────────────────────────────
@@ -314,9 +330,13 @@ export function updateKioskSaleStatus(id: string, status: KioskSale["status"]) {
 export function getLabCharges(): LabCharge[] { return [...(getState().labCharges ?? [])]; }
 export function addLabCharge(c: LabCharge) {
   mutate((s) => { s.labCharges = [c, ...(s.labCharges ?? [])]; });
+  import("@/lib/supabase/db").then(({ insertLabCharge }) => insertLabCharge(c))
+    .catch((err) => console.error("[accounts-store] addLabCharge failed:", err));
 }
 export function updateLabChargeStatus(id: string, status: ChargeStatus) {
   mutate((s) => { s.labCharges = (s.labCharges ?? []).map((c) => c.id === id ? { ...c, status } : c); });
+  import("@/lib/supabase/db").then(({ upsertLabChargeStatus }) => upsertLabChargeStatus(id, status))
+    .catch((err) => console.error("[accounts-store] updateLabChargeStatus failed:", err));
 }
 
 // ─── Nursing Charges ─────────────────────────────────────────────────────────
@@ -324,9 +344,13 @@ export function updateLabChargeStatus(id: string, status: ChargeStatus) {
 export function getNursingCharges(): NursingCharge[] { return [...(getState().nursingCharges ?? [])]; }
 export function addNursingCharge(c: NursingCharge) {
   mutate((s) => { s.nursingCharges = [c, ...(s.nursingCharges ?? [])]; });
+  import("@/lib/supabase/db").then(({ insertNursingCharge }) => insertNursingCharge(c))
+    .catch((err) => console.error("[accounts-store] addNursingCharge failed:", err));
 }
 export function updateNursingChargeStatus(id: string, status: ChargeStatus) {
   mutate((s) => { s.nursingCharges = (s.nursingCharges ?? []).map((c) => c.id === id ? { ...c, status } : c); });
+  import("@/lib/supabase/db").then(({ upsertNursingChargeStatus }) => upsertNursingChargeStatus(id, status))
+    .catch((err) => console.error("[accounts-store] updateNursingChargeStatus failed:", err));
 }
 
 // ─── Financial Metrics (for Admin and Accounts dashboard) ────────────────────

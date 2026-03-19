@@ -132,7 +132,7 @@ export default function DoctorsConsultationsPage() {
         urgency,
         drugs: prescribedDrugs,
         notes: rxNotes || undefined,
-        createdAt: `${now} · Mar 15, 2026`,
+        createdAt: `${now} · ${new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}`,
         status: "Pending",
       };
       addPrescription(rx);
@@ -189,7 +189,7 @@ export default function DoctorsConsultationsPage() {
         testCode: cat.code,
         category: cat.category,
         orderedBy: labTarget.doctor,
-        orderedAt: `${now} · Mar 15, 2026`,
+        orderedAt: `${now} · ${new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}`,
         priority: line.priority,
         status: "Pending",
         sampleType: cat.sampleType,

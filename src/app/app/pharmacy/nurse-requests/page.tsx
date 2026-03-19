@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { PageHeader } from "@/components/layout/page-header";
+import { useHMSSession } from "@/modules/rbac/hooks";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Toast, type ToastData } from "@/components/ui/toast";
@@ -20,6 +21,8 @@ type Filter = "All" | "Requested" | "Preparing" | "Ready" | "Collected" | "Cance
 
 export default function PharmacyNurseRequestsPage() {
   const { nurseRequests } = usePharmacyStore();
+  const session = useHMSSession();
+  const staffName = session?.full_name ?? "Pharmacist";
   const [filter, setFilter] = useState<Filter>("All");
   const [toast, setToast] = useState<ToastData | null>(null);
 
@@ -38,7 +41,7 @@ export default function PharmacyNurseRequestsPage() {
     const now = new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
     updateNurseRequestStatus(id, "Ready", {
       preparedAt: `${now} · ${new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}`,
-      preparedBy: "Pharmacist (You)",
+      preparedBy: staffName,
     });
     setToast({ message: `${drug} for ${patient} is ready for collection.`, type: "success" });
   }

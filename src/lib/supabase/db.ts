@@ -729,6 +729,382 @@ export async function insertFrontDeskCharge(c: FrontDeskCharge): Promise<void> {
   });
 }
 
+export async function insertConsultationFee(f: ConsultationFee): Promise<void> {
+  const sb = getSupabase(); if (!sb) return;
+  const { error } = await sb.from("consultation_fees").upsert({
+    id: f.id, patient_name: f.patientName, patient_id: f.patientId,
+    doctor_name: f.doctorName, consultation_type: f.consultationType,
+    fee: f.fee, consulted_at: f.consultedAt || new Date().toISOString(),
+    status: f.status ?? "Pending",
+  });
+  if (error) console.error("[db] insertConsultationFee:", error.message);
+}
+
+export async function upsertConsultationFeeStatus(id: string, status: ConsultationFee["status"]): Promise<void> {
+  const sb = getSupabase(); if (!sb) return;
+  const { error } = await sb.from("consultation_fees").update({ status }).eq("id", id);
+  if (error) console.error("[db] upsertConsultationFeeStatus:", error.message);
+}
+
+export async function insertLabCharge(c: LabCharge): Promise<void> {
+  const sb = getSupabase(); if (!sb) return;
+  const { error } = await sb.from("lab_charges").upsert({
+    id: c.id, patient_name: c.patientName, patient_id: c.patientId,
+    test_name: c.testName, test_id: c.testId, amount: c.amount,
+    ordered_by: c.orderedBy,
+    completed_at: c.completedAt ? new Date(c.completedAt).toISOString() : new Date().toISOString(),
+    status: c.status ?? "Pending",
+  });
+  if (error) console.error("[db] insertLabCharge:", error.message);
+}
+
+export async function upsertLabChargeStatus(id: string, status: LabCharge["status"]): Promise<void> {
+  const sb = getSupabase(); if (!sb) return;
+  const { error } = await sb.from("lab_charges").update({ status }).eq("id", id);
+  if (error) console.error("[db] upsertLabChargeStatus:", error.message);
+}
+
+export async function insertNursingCharge(c: NursingCharge): Promise<void> {
+  const sb = getSupabase(); if (!sb) return;
+  const { error } = await sb.from("nursing_charges").upsert({
+    id: c.id, patient_name: c.patientName, patient_id: c.patientId,
+    unit: c.unit, procedure_type: c.procedureType, description: c.description,
+    performed_by: c.performedBy,
+    performed_at: c.performedAt ? new Date(c.performedAt).toISOString() : new Date().toISOString(),
+    amount: c.amount, status: c.status ?? "Pending",
+  });
+  if (error) console.error("[db] insertNursingCharge:", error.message);
+}
+
+export async function upsertNursingChargeStatus(id: string, status: NursingCharge["status"]): Promise<void> {
+  const sb = getSupabase(); if (!sb) return;
+  const { error } = await sb.from("nursing_charges").update({ status }).eq("id", id);
+  if (error) console.error("[db] upsertNursingChargeStatus:", error.message);
+}
+
+export async function insertPharmacyBill(bill: PharmacyBill): Promise<void> {
+  const sb = getSupabase(); if (!sb) return;
+  const { error } = await sb.from("pharmacy_bills").upsert({
+    id: bill.id, prescription_id: bill.prescriptionId,
+    patient_name: bill.patientName, patient_id: bill.patientId,
+    drugs: bill.drugs, total_cost: bill.totalCost,
+    dispensed_at: bill.dispensedAt ? new Date(bill.dispensedAt).toISOString() : new Date().toISOString(),
+    bill_status: bill.billStatus ?? "Pending", source: bill.source ?? "prescription",
+  });
+  if (error) console.error("[db] insertPharmacyBill:", error.message);
+}
+
+export async function upsertPharmacyBillStatus(id: string, billStatus: PharmacyBill["billStatus"]): Promise<void> {
+  const sb = getSupabase(); if (!sb) return;
+  const { error } = await sb.from("pharmacy_bills").update({ bill_status: billStatus }).eq("id", id);
+  if (error) console.error("[db] upsertPharmacyBillStatus:", error.message);
+}
+
+export async function insertNurseMedRequest(r: NurseMedRequest): Promise<void> {
+  const sb = getSupabase(); if (!sb) return;
+  const { error } = await sb.from("nurse_med_requests").upsert({
+    id: r.id, patient_name: r.patientName, patient_id: r.patientId,
+    ward: r.ward, requested_by: r.requestedBy, drug: r.drug,
+    dosage: r.dosage, route: r.route, qty: Number(r.qty) || 1,
+    urgency: r.urgency, notes: r.notes ?? null,
+    requested_at: r.requestedAt ? new Date(r.requestedAt).toISOString() : new Date().toISOString(),
+    status: r.status ?? "Requested",
+    prepared_at: r.preparedAt ? new Date(r.preparedAt).toISOString() : null,
+    prepared_by: r.preparedBy ?? null,
+  });
+  if (error) console.error("[db] insertNurseMedRequest:", error.message);
+}
+
+export async function upsertNurseMedRequestStatus(
+  id: string, status: NurseMedRequest["status"], extra?: Partial<NurseMedRequest>
+): Promise<void> {
+  const sb = getSupabase(); if (!sb) return;
+  const patch: Record<string, unknown> = { status };
+  if (extra?.preparedAt) patch.prepared_at = new Date(extra.preparedAt).toISOString();
+  if (extra?.preparedBy) patch.prepared_by = extra.preparedBy;
+  const { error } = await sb.from("nurse_med_requests").update(patch).eq("id", id);
+  if (error) console.error("[db] upsertNurseMedRequestStatus:", error.message);
+}
+
+export async function insertRestockRequest(r: PharmacyRestockRequest): Promise<void> {
+  const sb = getSupabase(); if (!sb) return;
+  const { error } = await sb.from("pharmacy_restock_requests").upsert({
+    id: r.id, drug: r.drug, inventory_item_id: r.inventoryItemId,
+    current_stock: r.currentStock, reorder_level: r.reorderLevel,
+    qty_requested: r.qtyRequested, unit: r.unit, urgency: r.urgency,
+    requested_by: r.requestedBy,
+    requested_at: r.requestedAt ? new Date(r.requestedAt).toISOString() : new Date().toISOString(),
+    status: r.status ?? "Pending", notes: r.notes ?? null,
+    approved_qty: r.approvedQty ?? null,
+    fulfilled_at: r.fulfilledAt ? new Date(r.fulfilledAt).toISOString() : null,
+  });
+  if (error) console.error("[db] insertRestockRequest:", error.message);
+}
+
+export async function upsertRestockStatus(
+  id: string, status: PharmacyRestockRequest["status"], extra?: Partial<PharmacyRestockRequest>
+): Promise<void> {
+  const sb = getSupabase(); if (!sb) return;
+  const patch: Record<string, unknown> = { status };
+  if (extra?.approvedQty !== undefined) patch.approved_qty = extra.approvedQty;
+  if (extra?.fulfilledAt) patch.fulfilled_at = new Date(extra.fulfilledAt).toISOString();
+  const { error } = await sb.from("pharmacy_restock_requests").update(patch).eq("id", id);
+  if (error) console.error("[db] upsertRestockStatus:", error.message);
+}
+
+export async function insertSupplierPayment(p: SupplierPayment): Promise<void> {
+  const sb = getSupabase(); if (!sb) return;
+  const { error } = await sb.from("supplier_payments").upsert({
+    id: p.id, po_id: p.poId, supplier: p.supplier, amount: p.amount,
+    description: p.description, items: p.items ?? null,
+    submitted_by: p.submittedBy,
+    submitted_at: p.submittedAt ? new Date(p.submittedAt).toISOString() : new Date().toISOString(),
+    due_date: p.dueDate || null, status: p.status ?? "Pending",
+    paid_at: p.paidAt ? new Date(p.paidAt).toISOString() : null,
+  });
+  if (error) console.error("[db] insertSupplierPayment:", error.message);
+}
+
+export async function upsertSupplierPaymentStatus(
+  id: string, status: SupplierPayment["status"], extra?: Partial<SupplierPayment>
+): Promise<void> {
+  const sb = getSupabase(); if (!sb) return;
+  const patch: Record<string, unknown> = { status };
+  if (extra?.paidAt) patch.paid_at = new Date(extra.paidAt).toISOString();
+  const { error } = await sb.from("supplier_payments").update(patch).eq("id", id);
+  if (error) console.error("[db] upsertSupplierPaymentStatus:", error.message);
+}
+
+export async function insertPayrollBatch(b: PayrollBatch): Promise<void> {
+  const sb = getSupabase(); if (!sb) return;
+  const { error } = await sb.from("payroll_batches").upsert({
+    id: b.id, period: b.period, total_staff: b.totalStaff,
+    total_amount: b.totalAmount, prepared_by: b.preparedBy,
+    prepared_at: b.preparedAt ? new Date(b.preparedAt).toISOString() : new Date().toISOString(),
+    status: b.status ?? "Draft",
+    approved_at: b.approvedAt ? new Date(b.approvedAt).toISOString() : null,
+    paid_at: b.paidAt ? new Date(b.paidAt).toISOString() : null,
+  });
+  if (error) console.error("[db] insertPayrollBatch:", error.message);
+}
+
+export async function upsertPayrollBatchStatus(
+  id: string, status: PayrollBatch["status"], extra?: Partial<PayrollBatch>
+): Promise<void> {
+  const sb = getSupabase(); if (!sb) return;
+  const patch: Record<string, unknown> = { status };
+  if (extra?.approvedAt) patch.approved_at = new Date(extra.approvedAt).toISOString();
+  if (extra?.paidAt) patch.paid_at = new Date(extra.paidAt).toISOString();
+  const { error } = await sb.from("payroll_batches").update(patch).eq("id", id);
+  if (error) console.error("[db] upsertPayrollBatchStatus:", error.message);
+}
+
+export async function insertKioskSale(s: KioskSale): Promise<void> {
+  const sb = getSupabase(); if (!sb) return;
+  // date column is type 'date' in DB — extract YYYY-MM-DD
+  let dbDate = s.date;
+  try {
+    const parsed = new Date(s.date);
+    if (!isNaN(parsed.getTime())) dbDate = parsed.toISOString().slice(0, 10);
+  } catch { /* keep as-is */ }
+  const { error } = await sb.from("kiosk_sales").upsert({
+    id: s.id, date: dbDate, total_revenue: s.totalRevenue,
+    cash_revenue: s.cashRevenue, mobile_revenue: s.mobileRevenue,
+    items_sold: s.itemsSold, reported_by: s.reportedBy,
+    reported_at: s.reportedAt ? new Date(s.reportedAt).toISOString() : new Date().toISOString(),
+    status: s.status ?? "Pending", notes: s.notes ?? null,
+  });
+  if (error) console.error("[db] insertKioskSale:", error.message);
+}
+
+export async function upsertKioskSaleStatus(id: string, status: KioskSale["status"]): Promise<void> {
+  const sb = getSupabase(); if (!sb) return;
+  const { error } = await sb.from("kiosk_sales").update({ status }).eq("id", id);
+  if (error) console.error("[db] upsertKioskSaleStatus:", error.message);
+}
+
+// ─── Staff by Department ──────────────────────────────────────────────────────
+
+export type StaffBasic = { id: string; name: string; department: string; role: string };
+
+export async function fetchStaffByDepartment(department: string): Promise<StaffBasic[]> {
+  const sb = getSupabase(); if (!sb) return [];
+  const { data, error } = await sb
+    .from("staff_profiles")
+    .select("id, full_name, department, role")
+    .eq("department", department)
+    .eq("is_active", true)
+    .order("full_name");
+  if (error) { console.error("[db] fetchStaffByDepartment:", error.message); return []; }
+  return (data ?? []).map((r) => ({
+    id: r.id as string,
+    name: (r.full_name as string) ?? "",
+    department: (r.department as string) ?? "",
+    role: (r.role as string) ?? "",
+  }));
+}
+
+// ─── Handover Notes ───────────────────────────────────────────────────────────
+
+export type HandoverNote = {
+  id: string;
+  ward: string;
+  shift: string;
+  writtenBy: string;
+  content: string;
+  createdAt: string;
+};
+
+function mapHandoverNote(r: Record<string, unknown>): HandoverNote {
+  return {
+    id: r.id as string,
+    ward: r.ward as string,
+    shift: (r.shift as string) ?? "Morning",
+    writtenBy: (r.written_by as string) ?? "",
+    content: (r.content as string) ?? "",
+    createdAt: (r.created_at as string) ?? "",
+  };
+}
+
+export async function fetchHandoverNotes(ward: string): Promise<HandoverNote[]> {
+  const sb = getSupabase(); if (!sb) return [];
+  const { data, error } = await sb
+    .from("handover_notes")
+    .select("*")
+    .eq("ward", ward)
+    .order("created_at", { ascending: false })
+    .limit(20);
+  if (error) { console.error("[db] fetchHandoverNotes:", error.message); return []; }
+  return (data ?? []).map(mapHandoverNote);
+}
+
+export async function insertHandoverNote(n: HandoverNote): Promise<void> {
+  const sb = getSupabase(); if (!sb) return;
+  const { error } = await sb.from("handover_notes").insert({
+    id: n.id, ward: n.ward, shift: n.shift,
+    written_by: n.writtenBy, content: n.content,
+  });
+  if (error) console.error("[db] insertHandoverNote:", error.message);
+}
+
+// ─── Patient Observations ─────────────────────────────────────────────────────
+
+export type PatientObservation = {
+  id: string;
+  patientId: string;
+  patientName: string;
+  unit: string;
+  observation: string;
+  recordedBy: string;
+  recordedAt: string;
+};
+
+function mapPatientObservation(r: Record<string, unknown>): PatientObservation {
+  return {
+    id: r.id as string,
+    patientId: (r.patient_id as string) ?? "",
+    patientName: (r.patient_name as string) ?? "",
+    unit: (r.unit as string) ?? "",
+    observation: (r.observation as string) ?? "",
+    recordedBy: (r.recorded_by as string) ?? "",
+    recordedAt: (r.recorded_at as string) ?? "",
+  };
+}
+
+export async function fetchPatientObservations(patientId: string): Promise<PatientObservation[]> {
+  const sb = getSupabase(); if (!sb) return [];
+  const { data, error } = await sb
+    .from("patient_observations")
+    .select("*")
+    .eq("patient_id", patientId)
+    .order("recorded_at", { ascending: false })
+    .limit(50);
+  if (error) { console.error("[db] fetchPatientObservations:", error.message); return []; }
+  return (data ?? []).map(mapPatientObservation);
+}
+
+export async function insertPatientObservation(obs: PatientObservation): Promise<void> {
+  const sb = getSupabase(); if (!sb) return;
+  const { error } = await sb.from("patient_observations").insert({
+    id: obs.id, patient_id: obs.patientId, patient_name: obs.patientName,
+    unit: obs.unit, observation: obs.observation,
+    recorded_by: obs.recordedBy,
+    recorded_at: obs.recordedAt ? new Date(obs.recordedAt).toISOString() : new Date().toISOString(),
+  });
+  if (error) console.error("[db] insertPatientObservation:", error.message);
+}
+
+// ─── MAR Entries (Medication Administration Record) ───────────────────────────
+
+export type MAREntry = {
+  id: string;
+  patientId: string;
+  patientName: string;
+  unit: string;
+  drug: string;
+  dose: string;
+  route: string;
+  scheduledAt?: string;
+  givenAt?: string;
+  givenBy?: string;
+  status: "Scheduled" | "Given" | "Missed" | "Held";
+  notes?: string;
+  createdAt: string;
+};
+
+function mapMAREntry(r: Record<string, unknown>): MAREntry {
+  return {
+    id: r.id as string,
+    patientId: (r.patient_id as string) ?? "",
+    patientName: (r.patient_name as string) ?? "",
+    unit: (r.unit as string) ?? "",
+    drug: (r.drug as string) ?? "",
+    dose: (r.dose as string) ?? "",
+    route: (r.route as string) ?? "Oral",
+    scheduledAt: (r.scheduled_at as string) ?? undefined,
+    givenAt: (r.given_at as string) ?? undefined,
+    givenBy: (r.given_by as string) ?? undefined,
+    status: (r.status as MAREntry["status"]) ?? "Scheduled",
+    notes: (r.notes as string) ?? undefined,
+    createdAt: (r.created_at as string) ?? "",
+  };
+}
+
+export async function fetchMAREntries(patientId: string): Promise<MAREntry[]> {
+  const sb = getSupabase(); if (!sb) return [];
+  const { data, error } = await sb
+    .from("mar_entries")
+    .select("*")
+    .eq("patient_id", patientId)
+    .order("created_at", { ascending: false })
+    .limit(100);
+  if (error) { console.error("[db] fetchMAREntries:", error.message); return []; }
+  return (data ?? []).map(mapMAREntry);
+}
+
+export async function insertMAREntry(entry: MAREntry): Promise<void> {
+  const sb = getSupabase(); if (!sb) return;
+  const { error } = await sb.from("mar_entries").insert({
+    id: entry.id, patient_id: entry.patientId, patient_name: entry.patientName,
+    unit: entry.unit, drug: entry.drug, dose: entry.dose, route: entry.route,
+    scheduled_at: entry.scheduledAt ?? null,
+    given_at: entry.givenAt ? new Date(entry.givenAt).toISOString() : null,
+    given_by: entry.givenBy ?? null,
+    status: entry.status ?? "Scheduled", notes: entry.notes ?? null,
+  });
+  if (error) console.error("[db] insertMAREntry:", error.message);
+}
+
+export async function upsertMAREntryStatus(
+  id: string, status: MAREntry["status"], givenBy?: string
+): Promise<void> {
+  const sb = getSupabase(); if (!sb) return;
+  const patch: Record<string, unknown> = { status };
+  if (givenBy) { patch.given_by = givenBy; patch.given_at = new Date().toISOString(); }
+  const { error } = await sb.from("mar_entries").update(patch).eq("id", id);
+  if (error) console.error("[db] upsertMAREntryStatus:", error.message);
+}
+
 // ─── HR ───────────────────────────────────────────────────────────────────────
 
 function mapStaffMember(r: Record<string, unknown>): StaffMember {

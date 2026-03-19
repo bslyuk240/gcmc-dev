@@ -207,6 +207,8 @@ export function getNurseRequests(): NurseMedRequest[] {
 
 export function addNurseRequest(r: NurseMedRequest) {
   mutate((s) => { s.nurseRequests = [r, ...s.nurseRequests]; });
+  import("@/lib/supabase/db").then(({ insertNurseMedRequest }) => insertNurseMedRequest(r))
+    .catch((err) => console.error("[pharmacy-store] addNurseRequest failed:", err));
 }
 
 export function updateNurseRequestStatus(
@@ -217,6 +219,8 @@ export function updateNurseRequestStatus(
   mutate((s) => {
     s.nurseRequests = s.nurseRequests.map((r) => r.id === id ? { ...r, status, ...extra } : r);
   });
+  import("@/lib/supabase/db").then(({ upsertNurseMedRequestStatus }) => upsertNurseMedRequestStatus(id, status, extra))
+    .catch((err) => console.error("[pharmacy-store] updateNurseRequestStatus failed:", err));
 }
 
 // ─── Restock Requests ─────────────────────────────────────────────────────────
@@ -227,6 +231,8 @@ export function getRestockRequests(): PharmacyRestockRequest[] {
 
 export function addRestockRequest(r: PharmacyRestockRequest) {
   mutate((s) => { s.restockRequests = [r, ...s.restockRequests]; });
+  import("@/lib/supabase/db").then(({ insertRestockRequest }) => insertRestockRequest(r))
+    .catch((err) => console.error("[pharmacy-store] addRestockRequest failed:", err));
 }
 
 export function updateRestockStatus(
@@ -237,6 +243,8 @@ export function updateRestockStatus(
   mutate((s) => {
     s.restockRequests = s.restockRequests.map((r) => r.id === id ? { ...r, status, ...extra } : r);
   });
+  import("@/lib/supabase/db").then(({ upsertRestockStatus }) => upsertRestockStatus(id, status, extra))
+    .catch((err) => console.error("[pharmacy-store] updateRestockStatus failed:", err));
 }
 
 // ─── Billing Records ──────────────────────────────────────────────────────────
@@ -247,12 +255,16 @@ export function getPharmacyBills(): PharmacyBill[] {
 
 export function addPharmacyBill(bill: PharmacyBill) {
   mutate((s) => { s.bills = [bill, ...s.bills]; });
+  import("@/lib/supabase/db").then(({ insertPharmacyBill }) => insertPharmacyBill(bill))
+    .catch((err) => console.error("[pharmacy-store] addPharmacyBill failed:", err));
 }
 
 export function updateBillStatus(id: string, billStatus: PharmacyBill["billStatus"]) {
   mutate((s) => {
     s.bills = s.bills.map((b) => (b.id === id ? { ...b, billStatus } : b));
   });
+  import("@/lib/supabase/db").then(({ upsertPharmacyBillStatus }) => upsertPharmacyBillStatus(id, billStatus))
+    .catch((err) => console.error("[pharmacy-store] updateBillStatus failed:", err));
 }
 
 // ─── Metrics helper (used by Admin) ──────────────────────────────────────────

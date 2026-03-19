@@ -6,6 +6,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Toast, type ToastData } from "@/components/ui/toast";
 import { useNursesStore } from "@/lib/hooks/use-nurses-store";
+import { useHMSSession } from "@/modules/rbac/hooks";
 import { addConsultation, type ConsultType } from "@/lib/data/doctors-store";
 import { addConsultationFee } from "@/lib/data/accounts-store";
 import { useBillingPresets } from "@/lib/hooks/use-billing-presets";
@@ -20,10 +21,12 @@ const PRIORITY_STYLES: Record<string, string> = {
 export default function DoctorsQueuePage() {
   const { allPatients } = useNursesStore();
   const { getAmount } = useBillingPresets();
+  const session = useHMSSession();
+  const doctorName = session?.full_name ?? "Doctor";
   const [toast, setToast] = useState<ToastData | null>(null);
   const [consultingId, setConsultingId] = useState<string | null>(null);
   const [consultType, setConsultType] = useState<ConsultType>("General");
-  const [assignedDoctor, setAssignedDoctor] = useState("Dr. Chen Lin");
+  const [assignedDoctor, setAssignedDoctor] = useState("");
 
   // Outpatient queue from Nurses Bay — populated when Front Desk registers patients
   const outpatientQueue = allPatients.filter((p) => p.unit === "Outpatient" && p.status === "Active");
@@ -33,12 +36,13 @@ export default function DoctorsQueuePage() {
     const type: ConsultType = consultType;
     const fee = getAmount("consultation", type, 100);
     const consultId = `CON-${Date.now().toString().slice(-5)}`;
+    const docLabel = assignedDoctor || doctorName;
 
     addConsultation({
       id: consultId,
       patientName: patient.patientName,
       patientId: patient.patientId,
-      doctorName: assignedDoctor,
+      doctorName: docLabel,
       consultType: type,
       date: new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }),
       time: new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }),
@@ -56,7 +60,7 @@ export default function DoctorsQueuePage() {
       id: `CF-${Date.now().toString().slice(-5)}`,
       patientName: patient.patientName,
       patientId: patient.patientId,
-      doctorName: assignedDoctor,
+      doctorName: docLabel,
       consultationType: accountsType,
       fee,
       status: "Pending",

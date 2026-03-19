@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { PageHeader } from "@/components/layout/page-header";
+import { useHMSSession } from "@/modules/rbac/hooks";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Modal, ModalFooter } from "@/components/ui/modal";
@@ -33,6 +34,8 @@ export default function DoctorLabOrdersPage() {
   const { tests, metrics } = useLabStore();
   const { consultations, doctors } = useDoctorsStore();
   const { allPatients } = useNursesStore();
+  const session = useHMSSession();
+  const sessionDoctorName = session?.full_name ?? "";
   const catalog = getTestCatalog();
 
   const [filterStatus, setFilterStatus] = useState("All");
@@ -42,7 +45,7 @@ export default function DoctorLabOrdersPage() {
   // New order form
   const [patient, setPatient] = useState("");
   const [patientId, setPatientId] = useState("");
-  const [orderingDoc, setOrderingDoc] = useState("Dr. Chen Lin");
+  const [orderingDoc, setOrderingDoc] = useState("");
   const [labLines, setLabLines] = useState<LabLine[]>([{ ...BLANK_LAB }]);
   const [clinicalNotes, setClinicalNotes] = useState("");
   const [selectedPatientKey, setSelectedPatientKey] = useState("");
@@ -119,7 +122,7 @@ export default function DoctorLabOrdersPage() {
         testCode: cat.code,
         category: cat.category,
         orderedBy: orderingDoc,
-        orderedAt: `${now} · Mar 15, 2026`,
+        orderedAt: `${now} · ${new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}`,
         priority: line.priority,
         status: "Pending",
         sampleType: cat.sampleType,
@@ -135,7 +138,7 @@ export default function DoctorLabOrdersPage() {
     });
     setShowOrder(false);
     setPatient(""); setPatientId(""); setClinicalNotes("");
-    setLabLines([{ ...BLANK_LAB }]); setOrderingDoc("Dr. Chen Lin");
+    setLabLines([{ ...BLANK_LAB }]); setOrderingDoc(sessionDoctorName);
   }
 
   const inputCls = "w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-200";
@@ -144,7 +147,7 @@ export default function DoctorLabOrdersPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <PageHeader title="Lab Orders" description="Diagnostic tests ordered for patients. Multiple tests can be ordered in a single order." />
-        <Button onClick={() => { setShowOrder(true); setLabLines([{ ...BLANK_LAB }]); }}>+ New Lab Order</Button>
+        <Button onClick={() => { setShowOrder(true); setLabLines([{ ...BLANK_LAB }]); setOrderingDoc(sessionDoctorName); }}>+ New Lab Order</Button>
       </div>
 
       {/* KPI strip */}

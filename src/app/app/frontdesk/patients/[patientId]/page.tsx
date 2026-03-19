@@ -14,6 +14,8 @@ import { Modal, ModalFooter } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
 import { Toast, type ToastData } from "@/components/ui/toast";
 import { INTERNAL_PREFIX } from "@/lib/constants/navigation";
+import { useAccountsStore } from "@/lib/hooks/use-accounts-store";
+import { usePharmacyStore } from "@/lib/hooks/use-pharmacy-store";
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 function calcAge(dob?: string): string {
@@ -71,6 +73,9 @@ export default function PatientDetailPage() {
   const params  = useParams<{ patientId: string }>();
   const router  = useRouter();
   const id      = params?.patientId ?? "";
+
+  const { frontDeskCharges, labCharges, nursingCharges } = useAccountsStore();
+  const { prescriptions } = usePharmacyStore();
 
   const [patient,  setPatient]  = useState<PatientRegistration | null>(null);
   const [visits,   setVisits]   = useState<VisitRow[]>([]);
@@ -252,6 +257,25 @@ export default function PatientDetailPage() {
                 {visits.length}
               </span>
             )}
+            {t === "Billing" && (() => {
+              const pid = patient?.patientId ?? "";
+              const cnt = frontDeskCharges.filter((c) => c.patientId === pid).length
+                + labCharges.filter((c) => c.patientId === pid).length
+                + nursingCharges.filter((c) => c.patientId === pid).length;
+              return cnt > 0 ? (
+                <span className={`ml-1.5 rounded-full px-1.5 py-0.5 text-[10px] font-bold ${tab === "Billing" ? "bg-white/20 text-white" : "bg-slate-100 text-slate-500"}`}>
+                  {cnt}
+                </span>
+              ) : null;
+            })()}
+            {t === "Prescriptions" && (() => {
+              const cnt = prescriptions.filter((p) => p.patientId === patient?.patientId).length;
+              return cnt > 0 ? (
+                <span className={`ml-1.5 rounded-full px-1.5 py-0.5 text-[10px] font-bold ${tab === "Prescriptions" ? "bg-white/20 text-white" : "bg-slate-100 text-slate-500"}`}>
+                  {cnt}
+                </span>
+              ) : null;
+            })()}
           </button>
         ))}
       </div>
@@ -391,13 +415,113 @@ export default function PatientDetailPage() {
             </section>
           )}
 
-          {/* ── BILLING / PRESCRIPTIONS placeholder ── */}
-          {(tab === "Billing" || tab === "Prescriptions") && (
-            <div className="rounded-2xl border border-slate-100 bg-slate-50 px-6 py-14 text-center">
-              <p className="text-sm font-semibold text-slate-500">{tab} records will appear here</p>
-              <p className="mt-1 text-xs text-slate-400">This section is linked to the Accounts and Pharmacy departments.</p>
-            </div>
-          )}
+          {/* ── BILLING ── */}
+          {tab === "Billing" && (() => {
+            const pid = patient.patientId;
+            const fdCharges = frontDeskCharges.filter((c) => c.patientId === pid);
+            const lbCharges = labCharges.filter((c) => c.patientId === pid);
+            const nrCharges = nursingCharges.filter((c) => c.patientId === pid);
+            const allCharges: { id: string; type: string; desc: string; amount: number; date: string; status: string }[] = [
+              ...fdCharges.map((c) => ({ id: c.id, type: c.chargeType, desc: c.description, amount: c.amount, date: c.createdAt, status: c.status })),
+              ...lbCharges.map((c) => ({ id: c.id, type: "Lab", desc: c.testName, amount: c.amount, date: c.completedAt, status: c.status })),
+              ...nrCharges.map((c) => ({ id: c.id, type: "Nursing", desc: c.procedureType, amount: c.amount, date: c.performedAt, status: c.status })),
+            ];
+            const BSTYLES: Record<string, string> = {
+              Pending: "bg-amber-50 text-amber-700", Billed: "bg-sky-50 text-sky-700",
+              Paid: "bg-emerald-50 text-emerald-700", Waived: "bg-slate-100 text-slate-500", Partial: "bg-violet-50 text-violet-700",
+            };
+            return (
+              <section className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+                <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+                  <h3 className="font-bold text-slate-900">Billing Records</h3>
+                  <span className="text-xs text-slate-400">All charges from all departments</span>
+                </div>
+                {allCharges.length === 0 ? (
+                  <div className="px-6 py-12 text-center text-sm text-slate-400">No billing records for this patient yet.</div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full text-sm text-left">
+                      <thead className="bg-slate-50">
+                        <tr>
+                          {["Type", "Description", "Amount", "Date", "Status"].map((h) => (
+                            <th key={h} className="px-5 py-3 text-xs font-bold uppercase tracking-wide text-slate-500 whitespace-nowrap">{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {allCharges.map((c) => (
+                          <tr key={c.id} className="hover:bg-slate-50">
+                            <td className="px-5 py-3 font-medium text-slate-900">{c.type}</td>
+                            <td className="px-5 py-3 text-slate-600 text-xs">{c.desc || "—"}</td>
+                            <td className="px-5 py-3 font-bold text-slate-900">₦{c.amount.toFixed(2)}</td>
+                            <td className="px-5 py-3 text-xs text-slate-400">{c.date || "—"}</td>
+                            <td className="px-5 py-3">
+                              <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${BSTYLES[c.status] ?? "bg-slate-100 text-slate-600"}`}>
+                                {c.status}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+                <div className="border-t border-slate-100 px-5 py-3 flex items-center justify-between text-xs text-slate-500">
+                  <span>Total: <strong className="text-slate-900">₦{allCharges.reduce((s, c) => s + c.amount, 0).toFixed(2)}</strong></span>
+                  <span>Paid: <strong className="text-emerald-700">₦{allCharges.filter((c) => c.status === "Paid").reduce((s, c) => s + c.amount, 0).toFixed(2)}</strong></span>
+                  <span>Pending: <strong className="text-amber-700">₦{allCharges.filter((c) => c.status === "Pending" || c.status === "Billed").reduce((s, c) => s + c.amount, 0).toFixed(2)}</strong></span>
+                </div>
+              </section>
+            );
+          })()}
+
+          {/* ── PRESCRIPTIONS ── */}
+          {tab === "Prescriptions" && (() => {
+            const patRx = prescriptions.filter((p) => p.patientId === patient.patientId);
+            const RX_STYLES: Record<string, string> = {
+              Pending: "bg-amber-50 text-amber-700", Processing: "bg-sky-50 text-sky-700",
+              Dispensed: "bg-emerald-50 text-emerald-700", Cancelled: "bg-slate-100 text-slate-500",
+            };
+            return (
+              <section className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+                <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+                  <h3 className="font-bold text-slate-900">Prescription History</h3>
+                  <span className="text-xs text-slate-400">{patRx.length} prescription{patRx.length !== 1 ? "s" : ""}</span>
+                </div>
+                {patRx.length === 0 ? (
+                  <div className="px-6 py-12 text-center text-sm text-slate-400">No prescriptions recorded for this patient yet.</div>
+                ) : (
+                  <div className="space-y-3 p-5">
+                    {patRx.map((rx) => (
+                      <div key={rx.id} className="rounded-xl border border-slate-100 p-4">
+                        <div className="flex items-center justify-between mb-2">
+                          <div>
+                            <p className="text-sm font-bold text-slate-900">Dr. {rx.doctorName}</p>
+                            <p className="text-xs text-slate-400">{rx.createdAt ? new Date(rx.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "—"}</p>
+                          </div>
+                          <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${RX_STYLES[rx.status] ?? "bg-slate-100 text-slate-600"}`}>
+                            {rx.status}
+                          </span>
+                        </div>
+                        <div className="space-y-1">
+                          {rx.drugs.map((d, i) => (
+                            <div key={i} className="flex items-center gap-2 text-xs text-slate-600">
+                              <span className="h-1.5 w-1.5 rounded-full bg-[var(--accent)] shrink-0" />
+                              <span className="font-medium">{d.name}</span>
+                              <span className="text-slate-400">— {d.dosage} · {d.frequency} · {d.duration}</span>
+                            </div>
+                          ))}
+                        </div>
+                        {rx.dispensedAt && (
+                          <p className="mt-2 text-xs text-emerald-600">Dispensed by {rx.dispensedBy ?? "Pharmacy"}</p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </section>
+            );
+          })()}
         </div>
 
         {/* ── RIGHT SIDEBAR ── */}

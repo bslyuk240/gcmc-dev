@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { PageHeader } from "@/components/layout/page-header";
+import { useHMSSession } from "@/modules/rbac/hooks";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/ui/status-badge";
@@ -22,12 +23,7 @@ type RestockRequest = {
   notes?: string;
 };
 
-const INITIAL: RestockRequest[] = [
-  { id: "REQ-P001", item: "Amoxicillin 500mg", qty: 100, unit: "Packs", urgency: "Urgent", requestedBy: "James Adu", date: "Mar 14, 2026", status: "pending", notes: "Critical low — 8 units remaining" },
-  { id: "REQ-P002", item: "Paracetamol 500mg", qty: 200, unit: "Bottles", urgency: "Routine", requestedBy: "James Adu", date: "Mar 12, 2026", status: "approved" },
-  { id: "REQ-P003", item: "Lisinopril 10mg", qty: 50, unit: "Boxes", urgency: "Critical", requestedBy: "James Adu", date: "Mar 11, 2026", status: "received" },
-  { id: "REQ-P004", item: "Atorvastatin 20mg", qty: 80, unit: "Boxes", urgency: "Urgent", requestedBy: "James Adu", date: "Mar 10, 2026", status: "rejected", notes: "Supplier out of stock; resubmit next week." },
-];
+const INITIAL: RestockRequest[] = [];
 
 const STATUS_BADGE: Record<ReqStatus, "warning" | "success" | "destructive" | "neutral"> = {
   pending: "warning", approved: "success", rejected: "destructive", received: "neutral",
@@ -40,6 +36,8 @@ const URGENCY_STYLES: Record<string, string> = {
 };
 
 export default function PharmacyRestockRequestsPage() {
+  const session = useHMSSession();
+  const staffName = session?.full_name ?? "Pharmacist";
   const [requests, setRequests] = useState<RestockRequest[]>(INITIAL);
   const [showNew, setShowNew] = useState(false);
   const [viewReq, setViewReq] = useState<RestockRequest | null>(null);
@@ -47,7 +45,7 @@ export default function PharmacyRestockRequestsPage() {
 
   const [newItem, setNewItem] = useState(""); const [newQty, setNewQty] = useState("");
   const [newUnit, setNewUnit] = useState("Packs"); const [newUrgency, setNewUrgency] = useState<"Routine" | "Urgent" | "Critical">("Routine");
-  const [newNotes, setNewNotes] = useState(""); const [newRequester, setNewRequester] = useState("James Adu");
+  const [newNotes, setNewNotes] = useState(""); const [newRequester, setNewRequester] = useState("");
 
   function handleNew(e: React.FormEvent) {
     e.preventDefault();
@@ -56,12 +54,12 @@ export default function PharmacyRestockRequestsPage() {
       id: `REQ-P${String(requests.length + 5).padStart(3, "0")}`,
       item: newItem, qty: parseInt(newQty), unit: newUnit,
       urgency: newUrgency, requestedBy: newRequester,
-      date: "Mar 15, 2026", status: "pending", notes: newNotes || undefined,
+      date: new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }), status: "pending", notes: newNotes || undefined,
     };
     setRequests((prev) => [req, ...prev]);
     setToast({ message: `Restock request ${req.id} submitted.`, type: "success" });
     setShowNew(false);
-    setNewItem(""); setNewQty(""); setNewUnit("Packs"); setNewUrgency("Routine"); setNewNotes(""); setNewRequester("James Adu");
+    setNewItem(""); setNewQty(""); setNewUnit("Packs"); setNewUrgency("Routine"); setNewNotes(""); setNewRequester(staffName);
   }
 
   function markReceived(req: RestockRequest) {
@@ -77,7 +75,7 @@ export default function PharmacyRestockRequestsPage() {
       <PageHeader
         title="Restock Requests"
         description="Request and track stock replenishment from the store."
-        action={<Button onClick={() => setShowNew(true)}>+ New Request</Button>}
+        action={<Button onClick={() => { setNewRequester(staffName); setShowNew(true); }}>+ New Request</Button>}
       />
 
       <Card className="overflow-hidden p-0">
