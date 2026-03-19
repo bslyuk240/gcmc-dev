@@ -45,6 +45,13 @@ function chargeAmount(c: AnyCharge): number {
   return c._source === "consult" ? c.fee : c.amount;
 }
 
+function chargeDescription(c: AnyCharge): string {
+  if (c._source === "fd") return c.description;
+  if (c._source === "consult") return `${c.consultationType} consultation`;
+  if (c._source === "lab") return c.testName;
+  return c.description || c.procedureType;
+}
+
 export default function ReceivePaymentPage() {
   const { frontDeskCharges, consultationFees, labCharges, nursingCharges } = useAccountsStore();
   const session = useHMSSession();
@@ -153,7 +160,7 @@ export default function ReceivePaymentPage() {
                           </span>
                         </td>
                         <td className="px-4 py-3 text-xs text-slate-500 max-w-[180px] truncate">
-                          {"description" in c ? c.description : ("testName" in c ? c.testName : ("procedure" in c ? c.procedure : ""))}
+                          {chargeDescription(c)}
                         </td>
                         <td className="px-4 py-3 font-bold text-slate-900">₦{chargeAmount(c).toFixed(2)}</td>
                         <td className="px-4 py-3 text-xs text-slate-400 whitespace-nowrap">
@@ -223,7 +230,7 @@ export default function ReceivePaymentPage() {
               <div className="flex justify-between">
                 <span className="text-slate-500">Description</span>
                 <span className="text-right text-xs">
-                  {"description" in target ? target.description : ("testName" in target ? target.testName : ("procedure" in target ? target.procedure : ""))}
+                  {chargeDescription(target)}
                 </span>
               </div>
               <div className="flex justify-between border-t border-slate-200 pt-2">
