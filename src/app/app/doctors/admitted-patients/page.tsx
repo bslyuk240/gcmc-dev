@@ -1,21 +1,25 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Modal, ModalFooter } from "@/components/ui/modal";
 import { Toast, type ToastData } from "@/components/ui/toast";
+import { SearchableSelect, type SelectOption } from "@/components/ui/searchable-select";
+import { useHMSSession } from "@/modules/rbac/hooks";
 import { useNursesStore } from "@/lib/hooks/use-nurses-store";
 import { useDoctorsStore } from "@/lib/hooks/use-doctors-store";
-import { addAdmissionOrder, type AdmissionUnit } from "@/lib/data/doctors-store";
+import { addAdmissionOrder, updateConsultation, type AdmissionUnit } from "@/lib/data/doctors-store";
 import { addLabTest, getTestCatalog, type TestPriority } from "@/lib/data/lab-store";
 import {
   addPrescription,
   getPharmacyDrugList,
-  type SharedPrescription,
   type PrescribedDrug,
+  type SharedPrescription,
 } from "@/lib/data/pharmacy-store";
+import type { WardPatient } from "@/lib/data/nurses-store";
+import { canDoctorAccessConsultation, canDoctorAccessPatient, getCurrentDoctorSpecialty } from "@/lib/utils/doctor-routing";
 
 const PRIORITY_STYLES: Record<string, string> = {
   Critical: "bg-red-100 text-red-700 font-bold",
@@ -31,223 +35,511 @@ const UNIT_STYLES: Record<string, string> = {
   Outpatient: "bg-slate-100 text-slate-600",
 };
 
-// Doctor names derived from store
-const FREQ_OPTIONS = ["Once daily", "Twice daily (BD)", "3×/day (TDS)", "4×/day (QDS)", "Every 8 hrs", "Every 12 hrs", "Once nightly", "As needed (PRN)"];
+const FREQ_OPTIONS = [
+  "Once daily",
+  "Twice daily (BD)",
+  "3x/day (TDS)",
+  "4x/day (QDS)",
+  "Every 8 hrs",
+  "Every 12 hrs",
+  "Once nightly",
+  "As needed (PRN)",
+];
 const DURATION_OPTIONS = ["3 days", "5 days", "7 days", "10 days", "14 days", "30 days", "Ongoing"];
 const QTY_PRESETS = ["6 tabs", "10 tabs", "14 tabs", "21 caps", "30 tabs", "42 tabs", "1 vial", "1 bag"];
 
 type DrugLine = { name: string; dosage: string; frequency: string; duration: string; qty: string };
-const BLANK_DRUG: DrugLine = { name: "", dosage: "", frequency: "Once daily", duration: "7 days", qty: "" };
 type LabLine = { testCode: string; priority: TestPriority };
-const BLANK_LAB: LabLine = { testCode: "", priority: "Routine" };
+type AdmissionSelection = {
+  patientName: string;
+  patientId: string;
+  diagnosis: string;
+  source: "consultation" | "outpatient";
+  consultationId?: string;
+};
 
-const inputCls = "w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-200";
+const BLANK_DRUG: DrugLine = { name: "", dosage: "", frequency: "Once daily", duration: "7 days", qty: "" };
+const BLANK_LAB: LabLine = { testCode: "", priority: "Routine" };
+const INPUT_CLASS =
+  "w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-200";
+
+function toErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : "Unknown error";
+}
+
+function toTimestamp(value?: string) {
+  if (!value) return 0;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? 0 : parsed.getTime();
+}
+
+function formatOrderTime(value?: string) {
+  if (!value) return "--";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return parsed.toLocaleString("en-GB", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
 
 export default function DoctorAdmittedPatientsPage() {
-  const { allPatients } = useNursesStore();
-  const { admissionOrders, doctors } = useDoctorsStore();
-  const DOCTORS = doctors.map((d) => d.name);
-  const [toast, setToast] = useState<ToastData | null>(null);
-  const [showAdmit, setShowAdmit] = useState(false);
-  const [viewPatient, setViewPatient] = useState<typeof allPatients[0] | null>(null);
-  const [orderTab, setOrderTab] = useState<"lab" | "rx" | null>(null);
-
-  // Admit form
-  const [admitName, setAdmitName] = useState("");
-  const [admitId, setAdmitId] = useState("");
-  const [admitUnit, setAdmitUnit] = useState<AdmissionUnit>("Ward");
-  const [admitReason, setAdmitReason] = useState("");
-  const [admitDoctor, setAdmitDoctor] = useState("Dr. Chen Lin");
-
-  // Lab order
-  const [labLines, setLabLines] = useState<LabLine[]>([{ ...BLANK_LAB }]);
-  const [labNotes, setLabNotes] = useState("");
-
-  // Rx order
-  const [rxDoctor, setRxDoctor] = useState("Dr. Chen Lin");
-  const [rxUrgency, setRxUrgency] = useState<"Routine" | "Urgent">("Routine");
-  const [drugs, setDrugs] = useState<DrugLine[]>([{ ...BLANK_DRUG }]);
-  const [rxNotes, setRxNotes] = useState("");
-
+  const session = useHMSSession();
+  const doctorName = session?.full_name ?? "";
+  const { allPatients, hydrated: nursesHydrated } = useNursesStore();
+  const { admissionOrders, doctors, consultations, hydrated: doctorsHydrated } = useDoctorsStore();
+  const doctorSpecialty = getCurrentDoctorSpecialty(doctors, doctorName);
   const drugList = getPharmacyDrugList();
   const testCatalog = getTestCatalog();
 
-  const admittedPatients = allPatients.filter(
-    (p) => p.status === "Active" && (p.unit === "Ward" || p.unit === "ICU" || p.unit === "Emergency"),
+  const [toast, setToast] = useState<ToastData | null>(null);
+  const [showAdmit, setShowAdmit] = useState(false);
+  const [admitPatientId, setAdmitPatientId] = useState("");
+  const [admitUnit, setAdmitUnit] = useState<AdmissionUnit>("Ward");
+  const [admitReason, setAdmitReason] = useState("");
+  const [admitSubmitting, setAdmitSubmitting] = useState(false);
+
+  const [viewPatient, setViewPatient] = useState<WardPatient | null>(null);
+  const [orderTab, setOrderTab] = useState<"lab" | "rx" | null>(null);
+  const [labLines, setLabLines] = useState<LabLine[]>([{ ...BLANK_LAB }]);
+  const [labNotes, setLabNotes] = useState("");
+  const [labSubmitting, setLabSubmitting] = useState(false);
+  const [rxUrgency, setRxUrgency] = useState<"Routine" | "Urgent">("Routine");
+  const [drugs, setDrugs] = useState<DrugLine[]>([{ ...BLANK_DRUG }]);
+  const [rxNotes, setRxNotes] = useState("");
+  const [rxSubmitting, setRxSubmitting] = useState(false);
+
+  const visibleConsultations = useMemo(
+    () =>
+      [...consultations]
+        .filter((entry) => canDoctorAccessConsultation(entry, doctorName))
+        .sort((left, right) => toTimestamp(right.date) - toTimestamp(left.date)),
+    [consultations, doctorName],
   );
-  const criticalPatients = admittedPatients.filter((p) => p.priority === "Critical" || p.priority === "High");
+
+  const visibleOutpatientPatients = useMemo(
+    () =>
+      [...allPatients]
+        .filter(
+          (patient) =>
+            patient.unit === "Outpatient" &&
+            patient.status === "Active" &&
+            canDoctorAccessPatient(patient, doctorName, doctorSpecialty),
+        )
+        .sort((left, right) => left.patientName.localeCompare(right.patientName)),
+    [allPatients, doctorName, doctorSpecialty],
+  );
+
+  const admittedPatients = useMemo(
+    () =>
+      [...allPatients]
+        .filter(
+          (patient) =>
+            patient.status === "Active" &&
+            ["Ward", "ICU", "Emergency"].includes(patient.unit) &&
+            canDoctorAccessPatient(patient, doctorName, doctorSpecialty),
+        )
+        .sort((left, right) => toTimestamp(right.admittedAt) - toTimestamp(left.admittedAt)),
+    [allPatients, doctorName, doctorSpecialty],
+  );
+
+  const criticalPatients = admittedPatients.filter((patient) => patient.priority === "Critical" || patient.priority === "High");
   const byUnit = {
-    ICU:       admittedPatients.filter((p) => p.unit === "ICU"),
-    Ward:      admittedPatients.filter((p) => p.unit === "Ward"),
-    Emergency: admittedPatients.filter((p) => p.unit === "Emergency"),
+    ICU: admittedPatients.filter((patient) => patient.unit === "ICU"),
+    Ward: admittedPatients.filter((patient) => patient.unit === "Ward"),
+    Emergency: admittedPatients.filter((patient) => patient.unit === "Emergency"),
   };
 
-  function openOrders(p: typeof allPatients[0]) {
-    setViewPatient(p);
-    setOrderTab(null);
-    setLabLines([{ ...BLANK_LAB }]); setLabNotes("");
-    setDrugs([{ ...BLANK_DRUG }]); setRxNotes(""); setRxUrgency("Routine");
-    setRxDoctor("Dr. Chen Lin");
-  }
+  const admitPatientOptions = useMemo(() => {
+    const options: SelectOption[] = [];
+    const seen = new Set<string>();
 
-  function handleAdmit() {
-    if (!admitName || !admitReason) { setToast({ message: "Fill in patient name and reason.", type: "error" }); return; }
-    addAdmissionOrder({
-      id: `ADM-${Date.now().toString().slice(-5)}`,
-      patientName: admitName,
-      patientId: admitId || `PT-${Date.now().toString().slice(-4)}`,
-      orderedBy: admitDoctor,
-      unit: admitUnit,
-      reason: admitReason,
-      orderedAt: "Mar 15, 2026",
-      status: "Pending",
-    });
-    setToast({ message: `${admitName} admission order sent to Nurses Bay (${admitUnit}).`, type: "success" });
-    setShowAdmit(false);
-    setAdmitName(""); setAdmitId(""); setAdmitReason("");
-  }
+    visibleConsultations
+      .filter((consultation) => !consultation.admissionOrdered)
+      .forEach((consultation) => {
+        if (seen.has(consultation.patientId)) return;
+        seen.add(consultation.patientId);
+        options.push({
+          value: consultation.patientId,
+          label: consultation.patientName,
+          sublabel: `${consultation.patientId} · ${consultation.consultType}`,
+          group: "Consultations",
+        });
+      });
 
-  function handleLabOrder() {
-    if (!viewPatient) return;
-    const filled = labLines.filter((l) => l.testCode);
-    if (!filled.length) { setToast({ message: "Select at least one test.", type: "error" }); return; }
-    const now = new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
-    filled.forEach((line) => {
-      const cat = testCatalog.find((t) => t.code === line.testCode);
-      if (!cat) return;
-      addLabTest({
-        id: `LAB-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-        patientName: viewPatient.patientName,
-        patientId: viewPatient.patientId,
-        testName: cat.name,
-        testCode: cat.code,
-        category: cat.category,
-        orderedBy: rxDoctor,
-        orderedAt: `${now} · Mar 15, 2026`,
-        priority: line.priority,
-        status: "Pending",
-        sampleType: cat.sampleType,
-        price: cat.price,
-        billStatus: "Pending",
-        resultNotes: labNotes || undefined,
+    visibleOutpatientPatients.forEach((patient) => {
+      if (seen.has(patient.patientId)) return;
+      seen.add(patient.patientId);
+      options.push({
+        value: patient.patientId,
+        label: patient.patientName,
+        sublabel: `${patient.patientId} · ${patient.diagnosis || "Outpatient queue"}`,
+        group: "Outpatient Queue",
       });
     });
-    setToast({ message: `${filled.length} test(s) sent to Lab for ${viewPatient.patientName}.`, type: "success" });
-    setViewPatient(null);
+
+    return options;
+  }, [visibleConsultations, visibleOutpatientPatients]);
+
+  const selectedAdmissionConsultation = useMemo(
+    () =>
+      visibleConsultations.find(
+        (consultation) => consultation.patientId === admitPatientId && !consultation.admissionOrdered,
+      ),
+    [admitPatientId, visibleConsultations],
+  );
+
+  const selectedAdmissionOutpatient = useMemo(
+    () => visibleOutpatientPatients.find((patient) => patient.patientId === admitPatientId),
+    [admitPatientId, visibleOutpatientPatients],
+  );
+
+  const selectedAdmissionPatient: AdmissionSelection | null = selectedAdmissionConsultation
+    ? {
+        patientName: selectedAdmissionConsultation.patientName,
+        patientId: selectedAdmissionConsultation.patientId,
+        diagnosis:
+          selectedAdmissionConsultation.diagnosis ||
+          selectedAdmissionConsultation.chiefComplaint ||
+          "Consultation patient",
+        source: "consultation",
+        consultationId: selectedAdmissionConsultation.id,
+      }
+    : selectedAdmissionOutpatient
+      ? {
+          patientName: selectedAdmissionOutpatient.patientName,
+          patientId: selectedAdmissionOutpatient.patientId,
+          diagnosis: selectedAdmissionOutpatient.diagnosis || "Outpatient queue patient",
+          source: "outpatient",
+        }
+      : null;
+
+  const myAdmissionOrders = useMemo(
+    () =>
+      [...admissionOrders]
+        .filter((order) => order.orderedBy.trim().toLowerCase() === doctorName.trim().toLowerCase())
+        .sort((left, right) => toTimestamp(right.orderedAt) - toTimestamp(left.orderedAt)),
+    [admissionOrders, doctorName],
+  );
+
+  const totalDrugCost = drugs.reduce((sum, drug) => {
+    const item = drugList.find((entry) => entry.name === drug.name);
+    const qty = parseInt(drug.qty, 10) || 0;
+    return sum + qty * (item?.unitPrice ?? 0);
+  }, 0);
+
+  function resetAdmissionModal() {
+    setShowAdmit(false);
+    setAdmitPatientId("");
+    setAdmitUnit("Ward");
+    setAdmitReason("");
+    setAdmitSubmitting(false);
   }
 
-  function handleRxOrder() {
+  function openOrders(patient: WardPatient) {
+    setViewPatient(patient);
+    setOrderTab(null);
+    setLabLines([{ ...BLANK_LAB }]);
+    setLabNotes("");
+    setLabSubmitting(false);
+    setDrugs([{ ...BLANK_DRUG }]);
+    setRxUrgency("Routine");
+    setRxNotes("");
+    setRxSubmitting(false);
+  }
+
+  async function handleAdmit() {
+    if (!doctorName) {
+      setToast({
+        message: "Doctor session is missing. Sign in again before sending an admission order.",
+        type: "error",
+      });
+      return;
+    }
+    if (!selectedAdmissionPatient) {
+      setToast({ message: "Select a real patient from your consultation or outpatient queue.", type: "error" });
+      return;
+    }
+    if (!admitReason.trim()) {
+      setToast({ message: "Enter the clinical reason for admission.", type: "error" });
+      return;
+    }
+
+    setAdmitSubmitting(true);
+
+    try {
+      await addAdmissionOrder({
+        id: `ADM-${Date.now()}`,
+        patientName: selectedAdmissionPatient.patientName,
+        patientId: selectedAdmissionPatient.patientId,
+        orderedBy: doctorName,
+        unit: admitUnit,
+        reason: admitReason.trim(),
+        orderedAt: new Date().toISOString(),
+        status: "Pending",
+      });
+
+      if (selectedAdmissionPatient.consultationId) {
+        try {
+          await updateConsultation(selectedAdmissionPatient.consultationId, {
+            admissionOrdered: true,
+            admissionUnit: admitUnit,
+            status: "Admitted",
+          });
+        } catch (error) {
+          throw new Error(
+            `Nurses received the admission order, but the consultation record could not be updated: ${toErrorMessage(error)}`,
+          );
+        }
+      }
+
+      setToast({
+        message: `${selectedAdmissionPatient.patientName} was sent to Nurses for ${admitUnit} admission review.`,
+        type: "success",
+      });
+      resetAdmissionModal();
+    } catch (error) {
+      setToast({
+        message: `Could not send admission order for ${selectedAdmissionPatient.patientName}: ${toErrorMessage(error)}`,
+        type: "error",
+      });
+      setAdmitSubmitting(false);
+    }
+  }
+
+  async function handleLabOrder() {
     if (!viewPatient) return;
-    const filled = drugs.filter((d) => d.name && d.qty);
-    if (!filled.length) { setToast({ message: "Add at least one medication.", type: "error" }); return; }
-    const prescribedDrugs: PrescribedDrug[] = filled.map((d) => {
-      const item = drugList.find((x) => x.name === d.name);
-      return { ...d, unitPrice: item?.unitPrice ?? 1.0 };
-    });
-    const totalCost = prescribedDrugs.reduce((s, d) => s + (parseInt(d.qty) || 1) * d.unitPrice, 0);
-    const now = new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
-    const rx: SharedPrescription = {
-      id: `RX-${Date.now()}`,
-      patientName: viewPatient.patientName,
-      patientId: viewPatient.patientId,
-      doctorName: rxDoctor,
-      department: "Doctors",
-      urgency: rxUrgency,
-      drugs: prescribedDrugs,
-      notes: rxNotes || undefined,
-      createdAt: `${now} · Mar 15, 2026`,
-      status: "Pending",
-      totalCost,
-    };
-    addPrescription(rx);
-    setToast({ message: `Prescription sent to Pharmacy for ${viewPatient.patientName} — ${filled.length} medication(s).`, type: "success" });
-    setViewPatient(null);
+    if (!doctorName) {
+      setToast({ message: "Doctor session is missing. Sign in again before ordering lab tests.", type: "error" });
+      return;
+    }
+
+    const filled = labLines.filter((line) => line.testCode);
+    if (filled.length === 0) {
+      setToast({ message: "Select at least one test before sending to Lab.", type: "error" });
+      return;
+    }
+
+    setLabSubmitting(true);
+
+    try {
+      for (const line of filled) {
+        const catalogItem = testCatalog.find((entry) => entry.code === line.testCode);
+        if (!catalogItem) {
+          throw new Error(`Test catalog entry ${line.testCode} was not found.`);
+        }
+
+        await addLabTest({
+          id: `LAB-${Date.now()}-${catalogItem.code}`,
+          patientName: viewPatient.patientName,
+          patientId: viewPatient.patientId,
+          testName: catalogItem.name,
+          testCode: catalogItem.code,
+          category: catalogItem.category,
+          orderedBy: doctorName,
+          orderedAt: new Date().toISOString(),
+          priority: line.priority,
+          status: "Pending",
+          sampleType: catalogItem.sampleType,
+          price: catalogItem.price,
+          billStatus: "Pending",
+          resultNotes: labNotes || undefined,
+        });
+      }
+
+      setToast({
+        message: `${filled.length} test(s) sent to Lab for ${viewPatient.patientName}.`,
+        type: "success",
+      });
+      setViewPatient(null);
+    } catch (error) {
+      setToast({
+        message: `Could not send lab order for ${viewPatient.patientName}: ${toErrorMessage(error)}`,
+        type: "error",
+      });
+    } finally {
+      setLabSubmitting(false);
+    }
+  }
+
+  async function handleRxOrder() {
+    if (!viewPatient) return;
+    if (!doctorName) {
+      setToast({ message: "Doctor session is missing. Sign in again before writing a prescription.", type: "error" });
+      return;
+    }
+
+    const filled = drugs.filter((drug) => drug.name && drug.qty);
+    if (filled.length === 0) {
+      setToast({ message: "Add at least one medication with a quantity.", type: "error" });
+      return;
+    }
+
+    setRxSubmitting(true);
+
+    try {
+      const prescription: SharedPrescription = {
+        id: `RX-${Date.now()}`,
+        patientName: viewPatient.patientName,
+        patientId: viewPatient.patientId,
+        doctorName,
+        department: "Doctors",
+        urgency: rxUrgency,
+        drugs: filled.map((drug) => {
+          const item = drugList.find((entry) => entry.name === drug.name);
+          return { ...drug, unitPrice: item?.unitPrice ?? 0 } as PrescribedDrug;
+        }),
+        notes: rxNotes || undefined,
+        createdAt: new Date().toISOString(),
+        status: "Pending",
+        totalCost: totalDrugCost,
+      };
+
+      await addPrescription(prescription);
+      setToast({
+        message: `Prescription sent to Pharmacy for ${viewPatient.patientName}.`,
+        type: "success",
+      });
+      setViewPatient(null);
+    } catch (error) {
+      setToast({
+        message: `Could not send prescription for ${viewPatient.patientName}: ${toErrorMessage(error)}`,
+        type: "error",
+      });
+    } finally {
+      setRxSubmitting(false);
+    }
+  }
+
+  function updateLabLine(index: number, field: keyof LabLine, value: string) {
+    setLabLines((prev) => prev.map((entry, itemIndex) => (itemIndex === index ? { ...entry, [field]: value } : entry)));
+  }
+
+  function updateDrug(index: number, field: keyof DrugLine, value: string) {
+    setDrugs((prev) => prev.map((entry, itemIndex) => (itemIndex === index ? { ...entry, [field]: value } : entry)));
+  }
+
+  function autoFillDrug(index: number, name: string) {
+    const item = drugList.find((entry) => entry.name === name);
+    setDrugs((prev) =>
+      prev.map((entry, itemIndex) =>
+        itemIndex === index ? { ...entry, name, dosage: item?.defaultDosage ?? entry.dosage } : entry,
+      ),
+    );
   }
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <PageHeader title="Admitted Patients" description="Patients in Ward, ICU, and Emergency. Order labs and prescribe directly from this view." />
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <PageHeader
+          title="Admitted Patients"
+          description="Patients in Ward, ICU, and Emergency. Admit from real consultation/outpatient records, then send clinical orders from here."
+        />
         <Button onClick={() => setShowAdmit(true)}>+ Admit Patient</Button>
       </div>
 
-      {criticalPatients.length > 0 && (
+      {!doctorName && (
+        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          Doctor session was not found. Admission, lab, and prescription actions are disabled until you sign in again.
+        </div>
+      )}
+
+      {(doctorsHydrated || nursesHydrated) && criticalPatients.length > 0 && (
         <div className="flex items-center gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3">
-          <div className="h-2 w-2 rounded-full bg-red-500 animate-pulse shrink-0" />
+          <div className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-red-500" />
           <span className="text-sm font-bold text-red-800">
-            {criticalPatients.length} critical/high-priority patient{criticalPatients.length > 1 ? "s" : ""} — immediate clinical review required.
+            {criticalPatients.length} critical/high-priority patient{criticalPatients.length > 1 ? "s" : ""} require immediate clinical review.
           </span>
         </div>
       )}
 
-      {/* KPI strip */}
-      <div className="flex gap-3">
+      <div className="grid gap-3 md:grid-cols-4">
         {[
           { label: "Total Admitted", value: admittedPatients.length, color: "text-slate-900" },
           { label: "ICU", value: byUnit.ICU.length, color: byUnit.ICU.length > 0 ? "text-red-700" : "text-slate-400" },
           { label: "Ward", value: byUnit.Ward.length, color: "text-indigo-700" },
           { label: "Emergency", value: byUnit.Emergency.length, color: byUnit.Emergency.length > 0 ? "text-orange-700" : "text-slate-400" },
-        ].map((s) => (
-          <Card key={s.label} className="flex flex-1 items-center gap-3 px-4 py-3">
-            <p className={`text-2xl font-bold shrink-0 ${s.color}`}>{s.value}</p>
-            <p className="text-xs font-semibold text-slate-500 leading-tight">{s.label}</p>
+        ].map((stat) => (
+          <Card key={stat.label} className="flex items-center gap-3 px-4 py-3">
+            <p className={`shrink-0 text-2xl font-bold ${stat.color}`}>{stat.value}</p>
+            <p className="text-xs font-semibold leading-tight text-slate-500">{stat.label}</p>
           </Card>
         ))}
       </div>
 
-      {/* ICU */}
       {byUnit.ICU.length > 0 && (
         <Card className="overflow-hidden p-0">
           <div className="flex items-center gap-3 border-b border-red-100 bg-red-50/50 px-5 py-4">
-            <div className="h-2 w-2 rounded-full bg-red-500 animate-pulse" />
-            <h3 className="font-bold text-red-900">ICU — Critical Care</h3>
+            <div className="h-2 w-2 animate-pulse rounded-full bg-red-500" />
+            <h3 className="font-bold text-red-900">ICU - Critical Care</h3>
           </div>
           <div className="divide-y divide-slate-100">
-            {byUnit.ICU.map((p) => (
-              <div key={p.id} className="flex items-center gap-4 px-5 py-3">
+            {byUnit.ICU.map((patient) => (
+              <div key={patient.id} className="flex items-center gap-4 px-5 py-3">
                 <div className="flex-1">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <p className="font-bold text-slate-900">{p.patientName}</p>
-                    <span className="font-mono text-xs text-slate-400">{p.patientId}</span>
-                    <span className="rounded-full bg-slate-100 text-slate-600 px-2 py-0.5 text-xs">{p.bed}</span>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="font-bold text-slate-900">{patient.patientName}</p>
+                    <span className="font-mono text-xs text-slate-400">{patient.patientId}</span>
+                    <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600">{patient.bed}</span>
                   </div>
-                  <p className="text-xs text-slate-500 mt-0.5">{p.diagnosis}</p>
-                  <p className="text-xs text-slate-400">Nurse: {p.assignedNurse}</p>
+                  <p className="mt-0.5 text-xs text-slate-500">{patient.diagnosis}</p>
+                  <p className="text-xs text-slate-400">Nurse: {patient.assignedNurse}</p>
                 </div>
-                <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${PRIORITY_STYLES[p.priority]}`}>{p.priority}</span>
-                <Button size="sm" variant="outline" onClick={() => openOrders(p)}>Clinical Orders</Button>
+                <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${PRIORITY_STYLES[patient.priority]}`}>
+                  {patient.priority}
+                </span>
+                <Button size="sm" variant="outline" onClick={() => openOrders(patient)} disabled={!doctorName}>
+                  Clinical Orders
+                </Button>
               </div>
             ))}
           </div>
         </Card>
       )}
 
-      {/* Ward */}
       <Card className="overflow-hidden p-0">
         <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
-          <h3 className="font-bold text-slate-900">Ward — Inpatients</h3>
-          <span className="text-xs text-slate-400">{byUnit.Ward.length} patient{byUnit.Ward.length !== 1 ? "s" : ""}</span>
+          <h3 className="font-bold text-slate-900">Ward - Inpatients</h3>
+          <span className="text-xs text-slate-400">
+            {byUnit.Ward.length} patient{byUnit.Ward.length !== 1 ? "s" : ""}
+          </span>
         </div>
         {byUnit.Ward.length > 0 ? (
           <div className="overflow-x-auto">
             <table className="min-w-full text-sm">
               <thead>
-                <tr className="bg-slate-50 border-b border-slate-100">
-                  {["Patient", "Patient ID", "Bed", "Diagnosis", "Priority", "Assigned Nurse", "Actions"].map((h) => (
-                    <th key={h} className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 whitespace-nowrap">{h}</th>
+                <tr className="border-b border-slate-100 bg-slate-50">
+                  {["Patient", "Patient ID", "Bed", "Diagnosis", "Priority", "Assigned Nurse", "Actions"].map((heading) => (
+                    <th
+                      key={heading}
+                      className="whitespace-nowrap px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500"
+                    >
+                      {heading}
+                    </th>
                   ))}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {byUnit.Ward.map((p) => (
-                  <tr key={p.id} className="hover:bg-slate-50">
-                    <td className="px-4 py-3 font-semibold text-slate-900">{p.patientName}</td>
-                    <td className="px-4 py-3 font-mono text-xs text-slate-400">{p.patientId}</td>
-                    <td className="px-4 py-3 font-mono text-xs font-bold text-slate-600">{p.bed}</td>
-                    <td className="px-4 py-3 text-xs text-slate-500 max-w-[180px] truncate">{p.diagnosis}</td>
-                    <td className="px-4 py-3"><span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${PRIORITY_STYLES[p.priority]}`}>{p.priority}</span></td>
-                    <td className="px-4 py-3 text-xs text-slate-500">{p.assignedNurse}</td>
-                    <td className="px-4 py-3"><Button size="sm" variant="outline" onClick={() => openOrders(p)}>Clinical Orders</Button></td>
+                {byUnit.Ward.map((patient) => (
+                  <tr key={patient.id} className="hover:bg-slate-50">
+                    <td className="px-4 py-3 font-semibold text-slate-900">{patient.patientName}</td>
+                    <td className="px-4 py-3 font-mono text-xs text-slate-400">{patient.patientId}</td>
+                    <td className="px-4 py-3 font-mono text-xs font-bold text-slate-600">{patient.bed}</td>
+                    <td className="max-w-[220px] truncate px-4 py-3 text-xs text-slate-500">{patient.diagnosis}</td>
+                    <td className="px-4 py-3">
+                      <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${PRIORITY_STYLES[patient.priority]}`}>
+                        {patient.priority}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-xs text-slate-500">{patient.assignedNurse}</td>
+                    <td className="px-4 py-3">
+                      <Button size="sm" variant="outline" onClick={() => openOrders(patient)} disabled={!doctorName}>
+                        Clinical Orders
+                      </Button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -258,287 +550,497 @@ export default function DoctorAdmittedPatientsPage() {
         )}
       </Card>
 
-      {/* Emergency */}
       {byUnit.Emergency.length > 0 && (
         <Card className="overflow-hidden p-0">
           <div className="border-b border-orange-100 bg-orange-50/50 px-5 py-4">
             <h3 className="font-bold text-orange-900">Emergency Unit</h3>
           </div>
           <div className="divide-y divide-slate-100">
-            {byUnit.Emergency.map((p) => (
-              <div key={p.id} className="flex items-center gap-4 px-5 py-3">
+            {byUnit.Emergency.map((patient) => (
+              <div key={patient.id} className="flex items-center gap-4 px-5 py-3">
                 <div className="flex-1">
-                  <p className="font-bold text-slate-900">{p.patientName} <span className="font-mono text-xs text-slate-400 ml-1">{p.patientId}</span></p>
-                  <p className="text-xs text-slate-500">{p.diagnosis} · {p.bed}</p>
+                  <p className="font-bold text-slate-900">
+                    {patient.patientName} <span className="ml-1 font-mono text-xs text-slate-400">{patient.patientId}</span>
+                  </p>
+                  <p className="text-xs text-slate-500">
+                    {patient.diagnosis} - {patient.bed}
+                  </p>
                 </div>
-                <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${PRIORITY_STYLES[p.priority]}`}>{p.priority}</span>
-                <Button size="sm" variant="outline" onClick={() => openOrders(p)}>Clinical Orders</Button>
+                <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${PRIORITY_STYLES[patient.priority]}`}>
+                  {patient.priority}
+                </span>
+                <Button size="sm" variant="outline" onClick={() => openOrders(patient)} disabled={!doctorName}>
+                  Clinical Orders
+                </Button>
               </div>
             ))}
           </div>
         </Card>
       )}
 
-      {/* Admission Orders Log */}
       <Card className="overflow-hidden p-0">
         <div className="border-b border-slate-100 px-5 py-4">
-          <h3 className="font-bold text-slate-900">Admission Orders Log</h3>
+          <h3 className="font-bold text-slate-900">My Admission Orders</h3>
         </div>
         <div className="overflow-x-auto">
           <table className="min-w-full text-sm">
             <thead>
-              <tr className="bg-slate-50 border-b border-slate-100">
-                {["ADM ID", "Patient", "Unit", "Ordered By", "Reason", "Ordered At", "Status"].map((h) => (
-                  <th key={h} className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 whitespace-nowrap">{h}</th>
+              <tr className="border-b border-slate-100 bg-slate-50">
+                {["ADM ID", "Patient", "Unit", "Ordered By", "Reason", "Ordered At", "Status"].map((heading) => (
+                  <th
+                    key={heading}
+                    className="whitespace-nowrap px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500"
+                  >
+                    {heading}
+                  </th>
                 ))}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {admissionOrders.map((a) => (
-                <tr key={a.id} className="hover:bg-slate-50">
-                  <td className="px-4 py-3 font-mono text-xs text-slate-400">{a.id}</td>
-                  <td className="px-4 py-3 font-medium text-slate-900">{a.patientName}</td>
-                  <td className="px-4 py-3"><span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${UNIT_STYLES[a.unit]}`}>{a.unit}</span></td>
-                  <td className="px-4 py-3 text-xs text-slate-500">{a.orderedBy}</td>
-                  <td className="px-4 py-3 text-xs text-slate-500 max-w-[200px] truncate">{a.reason}</td>
-                  <td className="px-4 py-3 text-xs text-slate-400 whitespace-nowrap">{a.orderedAt}</td>
+              {myAdmissionOrders.map((order) => (
+                <tr key={order.id} className="hover:bg-slate-50">
+                  <td className="px-4 py-3 font-mono text-xs text-slate-400">{order.id}</td>
+                  <td className="px-4 py-3 font-medium text-slate-900">{order.patientName}</td>
                   <td className="px-4 py-3">
-                    <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${a.status === "Admitted" ? "bg-emerald-50 text-emerald-700" : a.status === "Discharged" ? "bg-slate-100 text-slate-500" : "bg-amber-50 text-amber-700"}`}>{a.status}</span>
+                    <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${UNIT_STYLES[order.unit]}`}>
+                      {order.unit}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 text-xs text-slate-500">{order.orderedBy}</td>
+                  <td className="max-w-[240px] truncate px-4 py-3 text-xs text-slate-500">{order.reason}</td>
+                  <td className="whitespace-nowrap px-4 py-3 text-xs text-slate-400">{formatOrderTime(order.orderedAt)}</td>
+                  <td className="px-4 py-3">
+                    <span
+                      className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${
+                        order.status === "Admitted"
+                          ? "bg-emerald-50 text-emerald-700"
+                          : order.status === "Discharged"
+                            ? "bg-slate-100 text-slate-500"
+                            : "bg-amber-50 text-amber-700"
+                      }`}
+                    >
+                      {order.status}
+                    </span>
                   </td>
                 </tr>
               ))}
-              {admissionOrders.length === 0 && (
-                <tr><td colSpan={7} className="px-6 py-8 text-center text-sm text-slate-400">No admission orders yet.</td></tr>
+              {myAdmissionOrders.length === 0 && (
+                <tr>
+                  <td colSpan={7} className="px-6 py-8 text-center text-sm text-slate-400">
+                    No admission orders sent by you yet.
+                  </td>
+                </tr>
               )}
             </tbody>
           </table>
         </div>
       </Card>
 
-      {/* ── Admit Patient Modal ──────────────────────────────────────────────── */}
-      <Modal open={showAdmit} onClose={() => setShowAdmit(false)} title="Admit Patient">
-        <div className="space-y-3">
-          <div className="grid grid-cols-2 gap-3">
-            <div><label className="block text-xs font-semibold text-slate-600 mb-1">Patient Name *</label><input value={admitName} onChange={(e) => setAdmitName(e.target.value)} className={inputCls} /></div>
-            <div><label className="block text-xs font-semibold text-slate-600 mb-1">Patient ID</label><input value={admitId} onChange={(e) => setAdmitId(e.target.value)} placeholder="PT-XXXX" className={inputCls} /></div>
-            <div><label className="block text-xs font-semibold text-slate-600 mb-1">Admitting Doctor</label>
-              <select value={admitDoctor} onChange={(e) => setAdmitDoctor(e.target.value)} className={inputCls}>
-                {DOCTORS.map((d) => <option key={d}>{d}</option>)}
-              </select>
+      <Modal open={showAdmit} onClose={resetAdmissionModal} title="Admit Patient">
+        <div className="space-y-4">
+          <div>
+            <label className="mb-1 block text-xs font-semibold text-slate-600">Patient *</label>
+            <SearchableSelect
+              options={admitPatientOptions}
+              value={admitPatientId}
+              onChange={setAdmitPatientId}
+              placeholder="Search your consultation or outpatient patients"
+            />
+          </div>
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+            <div>
+              <label className="mb-1 block text-xs font-semibold text-slate-600">Admitting Doctor</label>
+              <input value={doctorName || "--"} readOnly className={`${INPUT_CLASS} bg-slate-50 text-slate-500`} />
             </div>
-            <div><label className="block text-xs font-semibold text-slate-600 mb-1">Admission Unit</label>
-              <select value={admitUnit} onChange={(e) => setAdmitUnit(e.target.value as AdmissionUnit)} className={inputCls}>
-                {["Ward", "ICU", "Emergency"].map((u) => <option key={u}>{u}</option>)}
+            <div>
+              <label className="mb-1 block text-xs font-semibold text-slate-600">Admission Unit</label>
+              <select
+                value={admitUnit}
+                onChange={(event) => setAdmitUnit(event.target.value as AdmissionUnit)}
+                className={INPUT_CLASS}
+              >
+                {["Ward", "ICU", "Emergency"].map((unit) => (
+                  <option key={unit} value={unit}>
+                    {unit}
+                  </option>
+                ))}
               </select>
             </div>
           </div>
-          <div><label className="block text-xs font-semibold text-slate-600 mb-1">Reason for Admission *</label>
-            <textarea rows={3} value={admitReason} onChange={(e) => setAdmitReason(e.target.value)}
-              placeholder="Clinical reason and initial management plan…" className={inputCls + " resize-none"} />
+
+          {selectedAdmissionPatient && (
+            <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs">
+              <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+                <p>
+                  <span className="text-slate-400">Patient:</span> <strong>{selectedAdmissionPatient.patientName}</strong>
+                </p>
+                <p>
+                  <span className="text-slate-400">ID:</span> <strong>{selectedAdmissionPatient.patientId}</strong>
+                </p>
+                <p>
+                  <span className="text-slate-400">Source:</span> <strong>{selectedAdmissionPatient.source}</strong>
+                </p>
+                <p>
+                  <span className="text-slate-400">Clinical summary:</span> <strong>{selectedAdmissionPatient.diagnosis}</strong>
+                </p>
+              </div>
+            </div>
+          )}
+
+          <div>
+            <label className="mb-1 block text-xs font-semibold text-slate-600">Reason for Admission *</label>
+            <textarea
+              rows={3}
+              value={admitReason}
+              onChange={(event) => setAdmitReason(event.target.value)}
+              placeholder="Clinical reason and immediate management plan"
+              className={`${INPUT_CLASS} resize-none`}
+            />
           </div>
+
+          <p className="text-xs text-slate-400">
+            Doctors cannot type patient IDs manually here. Admission must be linked to a real consultation or routed outpatient record.
+          </p>
         </div>
         <ModalFooter>
-          <Button variant="ghost" size="md" onClick={() => setShowAdmit(false)}>Cancel</Button>
-          <Button size="md" onClick={handleAdmit}>Admit Patient</Button>
+          <Button variant="ghost" size="md" onClick={resetAdmissionModal} disabled={admitSubmitting}>
+            Cancel
+          </Button>
+          <Button size="md" onClick={handleAdmit} disabled={admitSubmitting || !doctorName}>
+            {admitSubmitting ? "Sending..." : "Send Admission Order"}
+          </Button>
         </ModalFooter>
       </Modal>
 
-      {/* ── Clinical Orders Modal ────────────────────────────────────────────── */}
-      <Modal open={!!viewPatient} onClose={() => setViewPatient(null)}
-        title={`Clinical Orders — ${viewPatient?.patientName ?? ""}`}>
+      <Modal
+        open={!!viewPatient}
+        onClose={() => setViewPatient(null)}
+        title={`Clinical Orders - ${viewPatient?.patientName ?? ""}`}
+        className="max-w-3xl"
+      >
         {viewPatient && (
           <div className="space-y-4">
-            {/* Patient info banner */}
-            <div className="grid grid-cols-2 gap-2 rounded-xl bg-slate-50 px-4 py-3 text-xs">
-              <div><span className="text-slate-400">Unit:</span> <strong>{viewPatient.unit}</strong></div>
-              <div><span className="text-slate-400">Bed:</span> <strong>{viewPatient.bed}</strong></div>
-              <div><span className="text-slate-400">Priority:</span> <strong>{viewPatient.priority}</strong></div>
-              <div><span className="text-slate-400">Nurse:</span> <strong>{viewPatient.assignedNurse}</strong></div>
-              <div className="col-span-2"><span className="text-slate-400">Diagnosis:</span> <strong>{viewPatient.diagnosis}</strong></div>
+            <div className="grid grid-cols-1 gap-2 rounded-xl bg-slate-50 px-4 py-3 text-xs md:grid-cols-2">
+              <div>
+                <span className="text-slate-400">Unit:</span> <strong>{viewPatient.unit}</strong>
+              </div>
+              <div>
+                <span className="text-slate-400">Bed:</span> <strong>{viewPatient.bed}</strong>
+              </div>
+              <div>
+                <span className="text-slate-400">Priority:</span> <strong>{viewPatient.priority}</strong>
+              </div>
+              <div>
+                <span className="text-slate-400">Nurse:</span> <strong>{viewPatient.assignedNurse}</strong>
+              </div>
+              <div className="md:col-span-2">
+                <span className="text-slate-400">Diagnosis:</span> <strong>{viewPatient.diagnosis}</strong>
+              </div>
             </div>
 
-            {/* Order type tabs */}
             <div className="flex gap-2">
-              <button onClick={() => setOrderTab(orderTab === "lab" ? null : "lab")}
-                className={`flex-1 rounded-xl border-2 py-2.5 text-sm font-semibold transition ${orderTab === "lab" ? "border-sky-400 bg-sky-50 text-sky-700" : "border-slate-200 hover:border-slate-300"}`}>
-                🧪 Order Lab Tests
+              <button
+                type="button"
+                onClick={() => setOrderTab(orderTab === "lab" ? null : "lab")}
+                className={`flex-1 rounded-xl border-2 py-2.5 text-sm font-semibold transition ${
+                  orderTab === "lab"
+                    ? "border-sky-400 bg-sky-50 text-sky-700"
+                    : "border-slate-200 hover:border-slate-300"
+                }`}
+              >
+                Order Lab Tests
               </button>
-              <button onClick={() => setOrderTab(orderTab === "rx" ? null : "rx")}
-                className={`flex-1 rounded-xl border-2 py-2.5 text-sm font-semibold transition ${orderTab === "rx" ? "border-violet-400 bg-violet-50 text-violet-700" : "border-slate-200 hover:border-slate-300"}`}>
-                💊 Write Prescription
+              <button
+                type="button"
+                onClick={() => setOrderTab(orderTab === "rx" ? null : "rx")}
+                className={`flex-1 rounded-xl border-2 py-2.5 text-sm font-semibold transition ${
+                  orderTab === "rx"
+                    ? "border-violet-400 bg-violet-50 text-violet-700"
+                    : "border-slate-200 hover:border-slate-300"
+                }`}
+              >
+                Write Prescription
               </button>
             </div>
 
-            {/* Doctor selector */}
             {orderTab && (
               <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-1">Ordering Doctor</label>
-                <select value={rxDoctor} onChange={(e) => setRxDoctor(e.target.value)} className={inputCls}>
-                  {DOCTORS.map((d) => <option key={d}>{d}</option>)}
-                </select>
+                <label className="mb-1 block text-xs font-semibold text-slate-600">Ordering Doctor</label>
+                <input value={doctorName || "--"} readOnly className={`${INPUT_CLASS} bg-slate-50 text-slate-500`} />
               </div>
             )}
 
-            {/* Lab order panel */}
             {orderTab === "lab" && (
-              <div className="space-y-2.5">
+              <div className="space-y-3">
                 <div className="flex items-center justify-between">
                   <span className="text-sm font-bold text-slate-800">Tests</span>
-                  <button type="button" onClick={() => setLabLines((p) => [...p, { ...BLANK_LAB }])}
-                    className="text-xs font-semibold text-sky-600 hover:underline">+ Add test</button>
+                  <button
+                    type="button"
+                    onClick={() => setLabLines((prev) => [...prev, { ...BLANK_LAB }])}
+                    className="text-xs font-semibold text-sky-600 hover:underline"
+                  >
+                    + Add test
+                  </button>
                 </div>
-                {labLines.map((line, i) => {
-                  const sel = testCatalog.find((t) => t.code === line.testCode);
+
+                {labLines.map((line, index) => {
+                  const selectedTest = testCatalog.find((entry) => entry.code === line.testCode);
                   return (
-                    <div key={i} className="rounded-xl border border-slate-200 p-3 space-y-2 bg-white">
+                    <div key={`${line.testCode}-${index}`} className="space-y-2 rounded-xl border border-slate-200 bg-white p-3">
                       <div className="flex items-center justify-between">
-                        <span className="text-xs font-semibold text-slate-400 uppercase tracking-wide">Test {i + 1}</span>
+                        <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">Test {index + 1}</span>
                         {labLines.length > 1 && (
-                          <button type="button" onClick={() => setLabLines((p) => p.filter((_, j) => j !== i))}
-                            className="text-xs text-red-500 hover:text-red-700">Remove</button>
+                          <button
+                            type="button"
+                            onClick={() => setLabLines((prev) => prev.filter((_, itemIndex) => itemIndex !== index))}
+                            className="text-xs text-red-500 hover:text-red-700"
+                          >
+                            Remove
+                          </button>
                         )}
                       </div>
-                      <select value={line.testCode} onChange={(e) => setLabLines((p) => p.map((l, j) => j === i ? { ...l, testCode: e.target.value } : l))}
-                        className={inputCls}>
-                        <option value="">— Choose a test —</option>
-                        {testCatalog.map((t) => <option key={t.code} value={t.code}>{t.name} — ₦{t.price}</option>)}
+
+                      <select
+                        value={line.testCode}
+                        onChange={(event) => updateLabLine(index, "testCode", event.target.value)}
+                        className={INPUT_CLASS}
+                      >
+                        <option value="">- Choose a test -</option>
+                        {testCatalog.map((entry) => (
+                          <option key={entry.code} value={entry.code}>
+                            {entry.name} - N{entry.price}
+                          </option>
+                        ))}
                       </select>
+
                       <div className="flex gap-1">
-                        {(["Routine", "Urgent", "STAT"] as const).map((p) => (
-                          <button key={p} type="button" onClick={() => setLabLines((prev) => prev.map((l, j) => j === i ? { ...l, priority: p } : l))}
+                        {(["Routine", "Urgent", "STAT"] as const).map((priority) => (
+                          <button
+                            key={priority}
+                            type="button"
+                            onClick={() => updateLabLine(index, "priority", priority)}
                             className={`flex-1 rounded-lg border px-2 py-1.5 text-center text-xs font-semibold transition ${
-                              line.priority === p
-                                ? p === "STAT" ? "border-red-400 bg-red-50 text-red-700"
-                                  : p === "Urgent" ? "border-amber-400 bg-amber-50 text-amber-700"
-                                  : "border-sky-400 bg-sky-50 text-sky-700"
+                              line.priority === priority
+                                ? priority === "STAT"
+                                  ? "border-red-400 bg-red-50 text-red-700"
+                                  : priority === "Urgent"
+                                    ? "border-amber-400 bg-amber-50 text-amber-700"
+                                    : "border-sky-400 bg-sky-50 text-sky-700"
                                 : "border-slate-200 text-slate-500 hover:border-slate-300"
-                            }`}>
-                            {p}
+                            }`}
+                          >
+                            {priority}
                           </button>
                         ))}
                       </div>
-                      {sel && (
-                        <p className="text-xs text-sky-700 font-medium">Sample: {sel.sampleType} · TAT: {sel.turnaroundHours < 1 ? `${sel.turnaroundHours * 60} min` : `${sel.turnaroundHours} hr`}</p>
+
+                      {selectedTest && (
+                        <p className="text-xs font-medium text-sky-700">
+                          Sample: {selectedTest.sampleType} · TAT:{" "}
+                          {selectedTest.turnaroundHours < 1
+                            ? `${selectedTest.turnaroundHours * 60} min`
+                            : `${selectedTest.turnaroundHours} hr`}
+                        </p>
                       )}
                     </div>
                   );
                 })}
+
                 <div>
-                  <label className="block text-xs font-semibold text-slate-600 mb-1">Clinical Notes</label>
-                  <textarea rows={2} value={labNotes} onChange={(e) => setLabNotes(e.target.value)}
-                    placeholder="e.g. Check FBC, patient anaemic…"
-                    className={inputCls + " resize-none"} />
+                  <label className="mb-1 block text-xs font-semibold text-slate-600">Clinical Notes</label>
+                  <textarea
+                    rows={2}
+                    value={labNotes}
+                    onChange={(event) => setLabNotes(event.target.value)}
+                    placeholder="Reason for the test request"
+                    className={`${INPUT_CLASS} resize-none`}
+                  />
                 </div>
               </div>
             )}
-
-            {/* Rx panel */}
             {orderTab === "rx" && (
-              <div className="space-y-2.5">
+              <div className="space-y-3">
                 <div className="flex items-center justify-between">
                   <span className="text-sm font-bold text-slate-800">Medications</span>
                   <div className="flex items-center gap-3">
                     <div className="flex gap-1">
-                      {(["Routine", "Urgent"] as const).map((u) => (
-                        <button key={u} type="button" onClick={() => setRxUrgency(u)}
-                          className={`rounded-full px-2.5 py-1 text-xs font-bold transition ${rxUrgency === u ? u === "Urgent" ? "bg-red-600 text-white" : "bg-sky-600 text-white" : "bg-slate-100 text-slate-600"}`}>
-                          {u}
+                      {(["Routine", "Urgent"] as const).map((urgency) => (
+                        <button
+                          key={urgency}
+                          type="button"
+                          onClick={() => setRxUrgency(urgency)}
+                          className={`rounded-full px-2.5 py-1 text-xs font-bold transition ${
+                            rxUrgency === urgency
+                              ? urgency === "Urgent"
+                                ? "bg-red-600 text-white"
+                                : "bg-sky-600 text-white"
+                              : "bg-slate-100 text-slate-600"
+                          }`}
+                        >
+                          {urgency}
                         </button>
                       ))}
                     </div>
-                    <button type="button" onClick={() => setDrugs((p) => [...p, { ...BLANK_DRUG }])}
-                      className="text-xs font-semibold text-violet-600 hover:underline">+ Add</button>
+                    <button
+                      type="button"
+                      onClick={() => setDrugs((prev) => [...prev, { ...BLANK_DRUG }])}
+                      className="text-xs font-semibold text-violet-600 hover:underline"
+                    >
+                      + Add
+                    </button>
                   </div>
                 </div>
-                {drugs.map((d, i) => {
-                  const item = drugList.find((x) => x.name === d.name);
-                  const qty = parseInt(d.qty) || 0;
+
+                {drugs.map((drug, index) => {
+                  const item = drugList.find((entry) => entry.name === drug.name);
+                  const qty = parseInt(drug.qty, 10) || 0;
+
                   return (
-                    <div key={i} className="rounded-xl border border-slate-200 p-3 space-y-2 bg-white">
+                    <div key={`${drug.name}-${index}`} className="space-y-2 rounded-xl border border-slate-200 bg-white p-3">
                       <div className="flex items-center justify-between">
-                        <span className="text-xs font-semibold text-slate-400 uppercase tracking-wide">Drug {i + 1}</span>
+                        <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">Drug {index + 1}</span>
                         {drugs.length > 1 && (
-                          <button type="button" onClick={() => setDrugs((p) => p.filter((_, j) => j !== i))}
-                            className="text-xs text-red-500 hover:text-red-700">Remove</button>
+                          <button
+                            type="button"
+                            onClick={() => setDrugs((prev) => prev.filter((_, itemIndex) => itemIndex !== index))}
+                            className="text-xs text-red-500 hover:text-red-700"
+                          >
+                            Remove
+                          </button>
                         )}
                       </div>
-                      <div className="grid grid-cols-2 gap-2">
-                        <div className="col-span-2">
+
+                      <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+                        <div className="md:col-span-2">
                           <label className="mb-1 block text-xs text-slate-500">Medication *</label>
-                          <select value={d.name} onChange={(e) => {
-                            const found = drugList.find((x) => x.name === e.target.value);
-                            setDrugs((prev) => prev.map((dr, j) => j === i ? { ...dr, name: e.target.value, dosage: found?.defaultDosage ?? dr.dosage } : dr));
-                          }} className={inputCls}>
-                            <option value="">— Select from pharmacy inventory —</option>
+                          <select
+                            value={drug.name}
+                            onChange={(event) => autoFillDrug(index, event.target.value)}
+                            className={INPUT_CLASS}
+                          >
+                            <option value="">- Select from pharmacy inventory -</option>
                             {Object.entries(
-                              drugList.reduce<Record<string, typeof drugList>>((acc, drug) => {
-                                (acc[drug.category] = acc[drug.category] || []).push(drug);
+                              drugList.reduce<Record<string, typeof drugList>>((acc, entry) => {
+                                (acc[entry.category] = acc[entry.category] || []).push(entry);
                                 return acc;
                               }, {}),
-                            ).map(([cat, items]) => (
-                              <optgroup key={cat} label={cat}>
-                                {items.map((opt) => (
-                                  <option key={opt.id} value={opt.name}>{opt.name} — ₦{opt.unitPrice.toFixed(2)}/{opt.unit}</option>
+                            ).map(([category, items]) => (
+                              <optgroup key={category} label={category}>
+                                {items.map((entry) => (
+                                  <option key={entry.id} value={entry.name}>
+                                    {entry.name} - N{entry.unitPrice.toFixed(2)}/{entry.unit}
+                                  </option>
                                 ))}
                               </optgroup>
                             ))}
                           </select>
                         </div>
+
                         <div>
                           <label className="mb-1 block text-xs text-slate-500">Dosage</label>
-                          <input type="text" placeholder="e.g. 500mg" value={d.dosage}
-                            onChange={(e) => setDrugs((p) => p.map((dr, j) => j === i ? { ...dr, dosage: e.target.value } : dr))}
-                            className={inputCls} />
+                          <input
+                            type="text"
+                            placeholder="e.g. 500mg"
+                            value={drug.dosage}
+                            onChange={(event) => updateDrug(index, "dosage", event.target.value)}
+                            className={INPUT_CLASS}
+                          />
                         </div>
+
                         <div>
                           <label className="mb-1 block text-xs text-slate-500">Quantity</label>
-                          <input type="text" list={`q-${i}`} placeholder="e.g. 21 caps" value={d.qty}
-                            onChange={(e) => setDrugs((p) => p.map((dr, j) => j === i ? { ...dr, qty: e.target.value } : dr))}
-                            className={inputCls} />
-                          <datalist id={`q-${i}`}>{QTY_PRESETS.map((q) => <option key={q} value={q} />)}</datalist>
+                          <input
+                            type="text"
+                            list={`qty-${index}`}
+                            placeholder="e.g. 21 caps"
+                            value={drug.qty}
+                            onChange={(event) => updateDrug(index, "qty", event.target.value)}
+                            className={INPUT_CLASS}
+                          />
+                          <datalist id={`qty-${index}`}>
+                            {QTY_PRESETS.map((preset) => (
+                              <option key={preset} value={preset} />
+                            ))}
+                          </datalist>
                         </div>
+
                         <div>
                           <label className="mb-1 block text-xs text-slate-500">Frequency</label>
-                          <select value={d.frequency} onChange={(e) => setDrugs((p) => p.map((dr, j) => j === i ? { ...dr, frequency: e.target.value } : dr))} className={inputCls}>
-                            {FREQ_OPTIONS.map((f) => <option key={f}>{f}</option>)}
+                          <select
+                            value={drug.frequency}
+                            onChange={(event) => updateDrug(index, "frequency", event.target.value)}
+                            className={INPUT_CLASS}
+                          >
+                            {FREQ_OPTIONS.map((option) => (
+                              <option key={option} value={option}>
+                                {option}
+                              </option>
+                            ))}
                           </select>
                         </div>
+
                         <div>
                           <label className="mb-1 block text-xs text-slate-500">Duration</label>
-                          <select value={d.duration} onChange={(e) => setDrugs((p) => p.map((dr, j) => j === i ? { ...dr, duration: e.target.value } : dr))} className={inputCls}>
-                            {DURATION_OPTIONS.map((dur) => <option key={dur}>{dur}</option>)}
+                          <select
+                            value={drug.duration}
+                            onChange={(event) => updateDrug(index, "duration", event.target.value)}
+                            className={INPUT_CLASS}
+                          >
+                            {DURATION_OPTIONS.map((option) => (
+                              <option key={option} value={option}>
+                                {option}
+                              </option>
+                            ))}
                           </select>
                         </div>
+
                         {item && qty > 0 && (
-                          <div className="col-span-2 flex justify-between rounded-lg bg-violet-50 px-3 py-1.5 text-xs text-violet-800">
-                            <span>₦{item.unitPrice.toFixed(2)} × {qty}</span>
-                            <strong>= ₦{(item.unitPrice * qty).toFixed(2)}</strong>
+                          <div className="flex justify-between rounded-lg bg-violet-50 px-3 py-1.5 text-xs text-violet-800 md:col-span-2">
+                            <span>
+                              N{item.unitPrice.toFixed(2)} x {qty}
+                            </span>
+                            <strong>= N{(item.unitPrice * qty).toFixed(2)}</strong>
                           </div>
                         )}
                       </div>
                     </div>
                   );
                 })}
+
                 <div>
-                  <label className="block text-xs font-semibold text-slate-600 mb-1">Notes / Instructions</label>
-                  <textarea rows={2} value={rxNotes} onChange={(e) => setRxNotes(e.target.value)}
-                    placeholder="e.g. Take with food. Complete the full course."
-                    className={inputCls + " resize-none"} />
+                  <label className="mb-1 block text-xs font-semibold text-slate-600">Notes / Instructions</label>
+                  <textarea
+                    rows={2}
+                    value={rxNotes}
+                    onChange={(event) => setRxNotes(event.target.value)}
+                    placeholder="Medication instructions for Pharmacy and ward team"
+                    className={`${INPUT_CLASS} resize-none`}
+                  />
                 </div>
               </div>
             )}
           </div>
         )}
         <ModalFooter>
-          <Button variant="ghost" size="md" onClick={() => setViewPatient(null)}>Close</Button>
+          <Button variant="ghost" size="md" onClick={() => setViewPatient(null)} disabled={labSubmitting || rxSubmitting}>
+            Close
+          </Button>
           {orderTab === "lab" && (
-            <Button size="md" disabled={!labLines.some((l) => l.testCode)} onClick={handleLabOrder}>
-              Send {labLines.filter((l) => l.testCode).length} Test(s) to Lab
+            <Button
+              size="md"
+              disabled={!doctorName || !labLines.some((line) => line.testCode) || labSubmitting}
+              onClick={handleLabOrder}
+            >
+              {labSubmitting ? "Sending..." : `Send ${labLines.filter((line) => line.testCode).length} Test(s) to Lab`}
             </Button>
           )}
           {orderTab === "rx" && (
-            <Button size="md" disabled={!drugs.some((d) => d.name)} onClick={handleRxOrder}>
-              Send Prescription to Pharmacy
+            <Button
+              size="md"
+              disabled={!doctorName || !drugs.some((drug) => drug.name && drug.qty) || rxSubmitting}
+              onClick={handleRxOrder}
+            >
+              {rxSubmitting ? "Sending..." : "Send Prescription to Pharmacy"}
             </Button>
           )}
         </ModalFooter>

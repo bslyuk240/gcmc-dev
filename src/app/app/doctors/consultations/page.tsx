@@ -13,7 +13,7 @@ import { useAccountsStore } from "@/lib/hooks/use-accounts-store";
 import { addPrescription, getPharmacyDrugList, type PrescribedDrug, type SharedPrescription } from "@/lib/data/pharmacy-store";
 import { addConsultationFee, type ConsultationFee } from "@/lib/data/accounts-store";
 import { addLabTest, getTestCatalog, type TestPriority } from "@/lib/data/lab-store";
-import { updateConsultation } from "@/lib/data/doctors-store";
+import { addAdmissionOrder, updateConsultation, type AdmissionUnit } from "@/lib/data/doctors-store";
 import { canDoctorAccessConsultation } from "@/lib/utils/doctor-routing";
 import { useBillingPresets } from "@/lib/hooks/use-billing-presets";
 
@@ -108,6 +108,11 @@ export default function DoctorsConsultationsPage() {
   const [labLines, setLabLines] = useState<LabLine[]>([{ ...BLANK_LAB }]);
   const [labClinicalNotes, setLabClinicalNotes] = useState("");
   const [labSubmitting, setLabSubmitting] = useState(false);
+
+  const [admitTarget, setAdmitTarget] = useState<(typeof consultations)[number] | null>(null);
+  const [admissionUnit, setAdmissionUnit] = useState<AdmissionUnit>("Ward");
+  const [admissionReason, setAdmissionReason] = useState("");
+  const [admitSubmitting, setAdmitSubmitting] = useState(false);
 
   const stats = {
     inProgress: consultations.filter((entry) => entry.status === "In Progress").length,
@@ -292,6 +297,51 @@ export default function DoctorsConsultationsPage() {
     }
   }
 
+  async function handleSubmitAdmission() {
+    if (!admitTarget) return;
+    if (!doctorName) {
+      setToast({ message: "Doctor session is missing. Sign in again before creating an admission order.", type: "error" });
+      return;
+    }
+    if (!admissionReason.trim()) {
+      setToast({ message: "Admission reason is required.", type: "error" });
+      return;
+    }
+
+    setAdmitSubmitting(true);
+    try {
+      await addAdmissionOrder({
+        id: `ADM-${Date.now().toString().slice(-6)}`,
+        patientName: admitTarget.patientName,
+        patientId: admitTarget.patientId,
+        orderedBy: doctorName,
+        unit: admissionUnit,
+        reason: admissionReason.trim(),
+        orderedAt: new Date().toISOString(),
+        status: "Pending",
+      });
+
+      try {
+        await updateConsultation(admitTarget.id, {
+          admissionOrdered: true,
+          admissionUnit,
+          status: "Admitted",
+        });
+      } catch (error) {
+        throw new Error(`Nurses received the admission order, but the consultation record could not be updated: ${toErrorMessage(error)}`);
+      }
+
+      setToast({ message: `Admission order sent to ${admissionUnit} for ${admitTarget.patientName}.`, type: "success" });
+      setAdmitTarget(null);
+      setAdmissionUnit("Ward");
+      setAdmissionReason("");
+    } catch (error) {
+      setToast({ message: `Could not admit ${admitTarget.patientName}: ${toErrorMessage(error)}`, type: "error" });
+    } finally {
+      setAdmitSubmitting(false);
+    }
+  }
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -365,6 +415,21 @@ export default function DoctorsConsultationsPage() {
                       <button type="button" onClick={() => { setLabTarget(row); setLabLines([{ ...BLANK_LAB }]); setLabClinicalNotes(""); }} className="rounded-lg bg-sky-600 px-2.5 py-1 text-xs font-semibold text-white transition-colors hover:bg-sky-700">
                         Order Lab
                       </button>
+                      {row.admissionOrdered ? (
+                        <span className="text-xs font-semibold text-red-700">Admission sent</span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setAdmitTarget(row);
+                            setAdmissionUnit(row.admissionUnit ?? "Ward");
+                            setAdmissionReason(row.diagnosis || row.chiefComplaint || "");
+                          }}
+                          className="rounded-lg bg-red-600 px-2.5 py-1 text-xs font-semibold text-white transition-colors hover:bg-red-700"
+                        >
+                          Admit
+                        </button>
+                      )}
                       {consultationHasFee(row.id) ? (
                         <span className="text-xs font-semibold text-emerald-700">Fee sent</span>
                       ) : (
@@ -565,6 +630,52 @@ export default function DoctorsConsultationsPage() {
         <ModalFooter>
           <Button variant="ghost" size="md" onClick={() => setLabTarget(null)} disabled={labSubmitting}>Cancel</Button>
           <Button size="md" disabled={labSubmitting || !labLines.some((line) => line.testCode)} onClick={() => void handleOrderLab()}>{labSubmitting ? "Sending..." : "Send to Lab"}</Button>
+        </ModalFooter>
+      </Modal>
+
+      <Modal open={!!admitTarget} onClose={() => !admitSubmitting && setAdmitTarget(null)} title={`Admit Patient - ${admitTarget?.patientName ?? ""}`}>
+        <div className="space-y-4">
+          <div className="space-y-1 rounded-lg bg-slate-50 px-4 py-3 text-sm">
+            <div className="flex justify-between"><span className="text-slate-500">Patient</span><span className="font-semibold">{admitTarget?.patientName}</span></div>
+            <div className="flex justify-between"><span className="text-slate-500">Patient ID</span><span>{admitTarget?.patientId || "--"}</span></div>
+            <div className="flex justify-between"><span className="text-slate-500">Doctor</span><span>{doctorName || "--"}</span></div>
+          </div>
+          <div>
+            <label className="mb-2 block text-sm font-semibold text-slate-700">Admission Unit</label>
+            <div className="grid grid-cols-3 gap-2">
+              {(["Ward", "ICU", "Emergency"] as AdmissionUnit[]).map((entry) => (
+                <button
+                  key={entry}
+                  type="button"
+                  onClick={() => setAdmissionUnit(entry)}
+                  className={`rounded-xl border px-4 py-3 text-sm font-semibold transition-all ${
+                    admissionUnit === entry
+                      ? "border-red-500 bg-red-50 text-red-700 ring-2 ring-red-400/20"
+                      : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
+                  }`}
+                >
+                  {entry}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <label className="mb-1.5 block text-sm font-semibold text-slate-700">Reason for Admission</label>
+            <textarea
+              value={admissionReason}
+              onChange={(event) => setAdmissionReason(event.target.value)}
+              rows={3}
+              className="w-full resize-none rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-red-400 focus:ring-2 focus:ring-red-400/20"
+              placeholder="Clinical reason, initial plan, or monitoring requirement..."
+            />
+          </div>
+          <p className="text-xs text-slate-500">Nurses will only see this as a pending admission until they accept the patient into the target unit.</p>
+        </div>
+        <ModalFooter>
+          <Button variant="ghost" size="md" type="button" onClick={() => setAdmitTarget(null)} disabled={admitSubmitting}>Cancel</Button>
+          <Button size="md" type="button" onClick={() => void handleSubmitAdmission()} disabled={admitSubmitting || !admissionReason.trim()}>
+            {admitSubmitting ? "Sending..." : `Send to ${admissionUnit}`}
+          </Button>
         </ModalFooter>
       </Modal>
 

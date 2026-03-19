@@ -136,27 +136,15 @@ export async function fetchDoctors(): Promise<DoctorProfile[]> {
     sb.from("doctor_profiles").select("*"),
     sb
       .from("staff_profiles")
-      .select("id, full_name, role, specialty")
+      .select("id, full_name, role")
       .eq("department", "doctors")
       .eq("is_active", true)
       .order("full_name"),
   ]);
 
   if (profileError) throw new Error(profileError.message);
-  let staffRows = staffResponse.data ?? [];
-  let staffError = staffResponse.error;
-
-  if (staffError && isMissingColumnError(staffError, "staff_profiles.specialty")) {
-    const fallbackResponse = await sb
-      .from("staff_profiles")
-      .select("id, full_name, role")
-      .eq("department", "doctors")
-      .eq("is_active", true)
-      .order("full_name");
-    staffRows = fallbackResponse.data ?? [];
-    staffError = fallbackResponse.error;
-  }
-
+  const staffRows = staffResponse.data ?? [];
+  const staffError = staffResponse.error;
   if (staffError) throw new Error(staffError.message);
 
   const profiles = (profileRows ?? []).map(mapDoctor);
@@ -168,12 +156,11 @@ export async function fetchDoctors(): Promise<DoctorProfile[]> {
       const staffId = row.id as string;
       const staffName = ((row.full_name as string) ?? "").trim();
       const matchedProfile = profileById.get(staffId) ?? profileByName.get(staffName.toLowerCase());
-      const staffSpecialty = normalizeDoctorSpecialty((row.specialty as string) ?? "");
 
       return {
         id: staffId,
         name: staffName,
-        specialty: staffSpecialty || matchedProfile?.specialty || "",
+        specialty: matchedProfile?.specialty || "",
         qualifications: matchedProfile?.qualifications ?? "",
         status: "On Duty" as const,
         consultationsToday: matchedProfile?.consultationsToday ?? 0,
@@ -631,7 +618,7 @@ export async function fetchICUVitals(): Promise<ICUVitalsEntry[]> {
 export async function insertWardPatient(p: WardPatient): Promise<void> {
   const sb = getSupabase();
   if (!sb) return;
-  const { error } = await sb.from("ward_patients").upsert({
+  const payload = {
     id: p.id, patient_name: p.patientName, patient_id: p.patientId,
     unit: p.unit, bed: p.bed, diagnosis: p.diagnosis, admitted_at: p.admittedAt,
     assigned_nurse: p.assignedNurse, priority: p.priority, status: p.status,
@@ -639,7 +626,17 @@ export async function insertWardPatient(p: WardPatient): Promise<void> {
     spo2: p.vitals?.spo2,
     doctor_in_charge: p.doctorInCharge, doctor_specialty: p.doctorSpecialty,
     notes: p.notes, last_vitals_at: p.lastVitalsAt,
-  });
+  };
+
+  let { error } = await sb.from("ward_patients").upsert(payload);
+
+  if (error && isMissingColumnError(error, "ward_patients.doctor_specialty")) {
+    const fallbackPayload = { ...payload };
+    delete fallbackPayload.doctor_specialty;
+    const fallbackResponse = await sb.from("ward_patients").upsert(fallbackPayload);
+    error = fallbackResponse.error;
+  }
+
   if (error) throw new Error(error.message);
 }
 

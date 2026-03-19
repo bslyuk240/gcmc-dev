@@ -110,6 +110,17 @@ function mapObservationRow(entry: PatientObservation, patient?: WardPatient): Ob
   };
 }
 
+function dedupeObservationRows(entries: ObservationLogEntry[]) {
+  const byId = new Map<string, ObservationLogEntry>();
+  for (const entry of entries) {
+    const existing = byId.get(entry.id);
+    if (!existing || new Date(entry.recordedAt).getTime() >= new Date(existing.recordedAt).getTime()) {
+      byId.set(entry.id, entry);
+    }
+  }
+  return [...byId.values()].sort((a, b) => new Date(b.recordedAt).getTime() - new Date(a.recordedAt).getTime());
+}
+
 function getEscalatedPriority(current: WardPatient["priority"], flag: ObsFlag): WardPatient["priority"] {
   if (flag === "Normal") return current;
   const target: WardPatient["priority"] = flag === "Urgent" ? "High" : "Watch";
@@ -153,6 +164,11 @@ export default function NursesObservationPage() {
     [activePatients],
   );
 
+  const activePatientIds = useMemo(
+    () => [...new Set(activePatients.map((patient) => patient.patientId))],
+    [activePatients],
+  );
+
   useEffect(() => {
     setObsNurse(nurseName);
   }, [nurseName]);
@@ -161,7 +177,7 @@ export default function NursesObservationPage() {
     let cancelled = false;
 
     async function loadObservations() {
-      if (activePatients.length === 0) {
+      if (activePatientIds.length === 0) {
         if (!cancelled) {
           setEntries([]);
           setLoading(false);
@@ -171,7 +187,7 @@ export default function NursesObservationPage() {
 
       setLoading(true);
       const results = await Promise.allSettled(
-        activePatients.map((patient) => fetchPatientObservations(patient.patientId)),
+        activePatientIds.map((patientId) => fetchPatientObservations(patientId)),
       );
 
       if (cancelled) return;
@@ -179,9 +195,9 @@ export default function NursesObservationPage() {
       const loaded = results.flatMap((result) => (result.status === "fulfilled" ? result.value : []));
       const failedCount = results.filter((result) => result.status === "rejected").length;
 
-      const rows = loaded
-        .map((entry) => mapObservationRow(entry, patientByDisplayId.get(entry.patientId)))
-        .sort((a, b) => new Date(b.recordedAt).getTime() - new Date(a.recordedAt).getTime());
+      const rows = dedupeObservationRows(
+        loaded.map((entry) => mapObservationRow(entry, patientByDisplayId.get(entry.patientId))),
+      );
 
       setEntries(rows);
       setLoading(false);
@@ -198,7 +214,7 @@ export default function NursesObservationPage() {
     return () => {
       cancelled = true;
     };
-  }, [activePatients, patientByDisplayId]);
+  }, [activePatientIds, patientByDisplayId]);
 
   function resetForm() {
     setSelPatient("");
@@ -256,7 +272,7 @@ export default function NursesObservationPage() {
         });
       }
 
-      setEntries((prev) => [mapObservationRow(record, patient), ...prev.filter((entry) => entry.id !== record.id)]);
+      setEntries((prev) => dedupeObservationRows([mapObservationRow(record, patient), ...prev]));
       setToast({
         message:
           flag === "Normal"
@@ -268,7 +284,7 @@ export default function NursesObservationPage() {
       resetForm();
     } catch (error) {
       if (observationSaved) {
-        setEntries((prev) => [mapObservationRow(record, patient), ...prev.filter((entry) => entry.id !== record.id)]);
+        setEntries((prev) => dedupeObservationRows([mapObservationRow(record, patient), ...prev]));
         setShowAdd(false);
         resetForm();
         setToast({

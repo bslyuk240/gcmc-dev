@@ -202,7 +202,7 @@ export function SearchableSelect({
               <li className="px-4 py-6 text-center text-xs text-slate-400">No results for &ldquo;{query}&rdquo;</li>
             ) : showGroups && groups.length > 0 ? (
               groups.map(({ group, items }) => (
-                <li key={group}>
+                <div key={group}>
                   {group && (
                     <p className="sticky top-0 bg-slate-50 px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-slate-400">
                       {group}
@@ -211,7 +211,7 @@ export function SearchableSelect({
                   {items.map((opt) => (
                     <Option key={opt.value} opt={opt} selected={opt.value === value} onSelect={handleSelect} />
                   ))}
-                </li>
+                </div>
               ))
             ) : (
               filtered.map((opt) => (
