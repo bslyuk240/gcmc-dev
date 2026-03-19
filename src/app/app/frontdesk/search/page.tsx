@@ -1,232 +1,287 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { Card } from "@/components/ui/card";
 import { PageHeader } from "@/components/layout/page-header";
-import Link from "next/link";
 import { INTERNAL_PREFIX } from "@/lib/constants/navigation";
+import {
+  fetchPatientRegistrations,
+  fetchAllVisits,
+  fetchStaffMembers,
+  type PatientRegistration,
+  type VisitRow,
+} from "@/lib/supabase/db";
+import type { StaffMember } from "@/lib/data/hr-store";
 
-type ResultType = "patient" | "visit" | "staff";
+type Tab = "patient" | "visit" | "staff";
 
-const PATIENT_RESULTS = [
-  { id: "P-10491", name: "Kwame Asante", dob: "1988-04-12", phone: "+233 24 111 2233", address: "Accra, Accra Region", lastVisit: "Mar 12, 2026", status: "Outpatient" },
-  { id: "P-10382", name: "Ama Owusu", dob: "1995-09-03", phone: "+233 24 222 3344", address: "Kumasi, Ashanti Region", lastVisit: "Mar 10, 2026", status: "Discharged" },
-  { id: "P-10271", name: "Kofi Mensah", dob: "1972-01-25", phone: "+233 24 333 4455", address: "Tamale, Northern Region", lastVisit: "Feb 28, 2026", status: "Admitted" },
-  { id: "P-10155", name: "Efua Boateng", dob: "2001-07-17", phone: "+233 24 444 5566", address: "Cape Coast, Central Region", lastVisit: "Feb 20, 2026", status: "Outpatient" },
-];
+function fmtDate(iso?: string) {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  return isNaN(d.getTime()) ? "—" : d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+}
 
-const VISIT_RESULTS = [
-  { id: "V-5821", patient: "Kwame Asante", patientId: "P-10491", dept: "Doctors", purpose: "Routine check-up", date: "Mar 12, 2026", status: "Completed" },
-  { id: "V-5820", patient: "Ama Owusu", patientId: "P-10382", dept: "Pharmacy", purpose: "Prescription collection", date: "Mar 10, 2026", status: "Completed" },
-  { id: "V-5818", patient: "Kofi Mensah", patientId: "P-10271", dept: "Emergency", purpose: "Chest pain evaluation", date: "Feb 28, 2026", status: "Admitted" },
-  { id: "V-5801", patient: "Efua Boateng", patientId: "P-10155", dept: "Nurses", purpose: "Blood pressure monitoring", date: "Feb 20, 2026", status: "Completed" },
-];
-
-const STAFF_RESULTS = [
-  { id: "S-0842", name: "Dr. Amaka Osei", role: "Senior Doctor", dept: "Doctors", phone: "+233 24 100 2001", status: "On Shift" },
-  { id: "S-0751", name: "Nurse Patricia", role: "Registered Nurse", dept: "Nurses", phone: "+233 24 100 2002", status: "On Shift" },
-  { id: "S-0610", name: "James Adu", role: "Pharmacist", dept: "Pharmacy", phone: "+233 24 100 2003", status: "Off Duty" },
-];
+function calcAge(dob?: string) {
+  if (!dob) return "—";
+  const d = new Date(dob);
+  if (isNaN(d.getTime())) return "—";
+  const today = new Date();
+  let age = today.getFullYear() - d.getFullYear();
+  if (today.getMonth() < d.getMonth() || (today.getMonth() === d.getMonth() && today.getDate() < d.getDate())) age--;
+  return `${age} yrs`;
+}
 
 const STATUS_STYLES: Record<string, string> = {
-  Outpatient: "bg-sky-50 text-sky-700",
-  Admitted: "bg-amber-50 text-amber-700",
-  Discharged: "bg-slate-100 text-slate-600",
-  Completed: "bg-emerald-50 text-emerald-700",
-  "On Shift": "bg-emerald-50 text-emerald-700",
-  "Off Duty": "bg-slate-100 text-slate-600",
+  Waiting:           "bg-amber-50 text-amber-700",
+  "In Consultation": "bg-sky-50 text-sky-700",
+  "Checked In":      "bg-sky-50 text-sky-700",
+  Discharged:        "bg-emerald-50 text-emerald-700",
+  Completed:         "bg-emerald-50 text-emerald-700",
+  Referred:          "bg-violet-50 text-violet-700",
+  Billing:           "bg-orange-50 text-orange-700",
+  Active:            "bg-emerald-50 text-emerald-700",
+  Terminated:        "bg-slate-100 text-slate-500",
 };
 
 export default function FrontDeskSearchPage() {
-  const [query, setQuery] = useState("");
-  const [type, setType] = useState<ResultType>("patient");
+  const [query,       setQuery]       = useState("");
+  const [tab,         setTab]         = useState<Tab>("patient");
+  const [searching,   setSearching]   = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
 
-  const q = query.toLowerCase();
+  const [patients, setPatients] = useState<PatientRegistration[]>([]);
+  const [visits,   setVisits]   = useState<VisitRow[]>([]);
+  const [staff,    setStaff]    = useState<StaffMember[]>([]);
 
-  const filteredPatients = PATIENT_RESULTS.filter(
-    (p) => p.name.toLowerCase().includes(q) || p.id.toLowerCase().includes(q) || p.phone.includes(q),
-  );
-  const filteredVisits = VISIT_RESULTS.filter(
-    (v) => v.patient.toLowerCase().includes(q) || v.id.toLowerCase().includes(q) || v.patientId.toLowerCase().includes(q),
-  );
-  const filteredStaff = STAFF_RESULTS.filter(
-    (s) => s.name.toLowerCase().includes(q) || s.role.toLowerCase().includes(q) || s.dept.toLowerCase().includes(q),
-  );
-
-  function handleSearch(e: React.FormEvent) {
+  async function handleSearch(e: React.FormEvent) {
     e.preventDefault();
+    if (!query.trim()) return;
+    setSearching(true);
+    const q = query.toLowerCase().trim();
+
+    const [allPatients, allVisits, allStaff] = await Promise.all([
+      fetchPatientRegistrations(),
+      fetchAllVisits(),
+      fetchStaffMembers(),
+    ]);
+
+    setPatients(allPatients.filter((p) =>
+      p.patientName.toLowerCase().includes(q) ||
+      (p.patientId ?? "").toLowerCase().includes(q) ||
+      (p.contact ?? "").includes(q) ||
+      (p.email ?? "").toLowerCase().includes(q),
+    ));
+
+    setVisits(allVisits.filter((v) =>
+      v.patientName.toLowerCase().includes(q) ||
+      (v.patientId ?? "").toLowerCase().includes(q) ||
+      (v.visitType ?? "").toLowerCase().includes(q),
+    ));
+
+    setStaff(allStaff.filter((s) =>
+      s.name.toLowerCase().includes(q) ||
+      s.department.toLowerCase().includes(q) ||
+      s.role.toLowerCase().includes(q) ||
+      (s.email ?? "").toLowerCase().includes(q),
+    ));
+
     setHasSearched(true);
+    setSearching(false);
   }
 
-  const resultCount = type === "patient" ? filteredPatients.length : type === "visit" ? filteredVisits.length : filteredStaff.length;
+  const resultCount = tab === "patient" ? patients.length : tab === "visit" ? visits.length : staff.length;
 
   return (
-    <div className="space-y-8">
-      <PageHeader
-        title="Search"
-        description="Find patients, visits, and staff records quickly."
-      />
+    <div className="space-y-6">
+      <PageHeader title="Search" description="Find patients, visits, and staff records across the HMS." />
 
       {/* Search bar */}
       <Card className="p-5">
         <form onSubmit={handleSearch} className="flex flex-col gap-4 sm:flex-row sm:items-end">
           <div className="flex-1">
-            <label className="mb-1.5 block text-sm font-medium text-slate-700">Search query</label>
-            <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2.5 focus-within:border-[var(--accent)] focus-within:ring-2 focus-within:ring-[var(--accent)]/20">
-              <svg className="h-5 w-5 shrink-0 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M11 19a8 8 0 100-16 8 8 0 000 16z" />
+            <label className="mb-1.5 block text-sm font-semibold text-slate-700">Search query</label>
+            <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2.5 focus-within:border-[var(--accent)] focus-within:ring-2 focus-within:ring-[var(--accent)]/20">
+              <svg className="h-4 w-4 shrink-0 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeWidth="2" strokeLinecap="round" d="M21 21l-4.35-4.35M11 19a8 8 0 100-16 8 8 0 000 16z" />
               </svg>
               <input
                 type="text"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="Name, ID, phone number..."
+                placeholder="Name, ID, phone, email…"
                 className="min-w-0 flex-1 bg-transparent text-sm text-slate-900 outline-none"
                 autoFocus
               />
             </div>
           </div>
+
+          {/* Tab type */}
           <div>
-            <label className="mb-1.5 block text-sm font-medium text-slate-700">Search in</label>
-            <div className="flex rounded-lg border border-slate-200 p-0.5">
-              {(["patient", "visit", "staff"] as ResultType[]).map((t) => (
-                <button
-                  key={t}
-                  type="button"
-                  onClick={() => setType(t)}
-                  className={`rounded-md px-4 py-2 text-sm font-semibold capitalize transition ${type === t ? "bg-[var(--accent)] text-white" : "text-slate-600 hover:text-slate-900"}`}
-                >
+            <label className="mb-1.5 block text-sm font-semibold text-slate-700">Search in</label>
+            <div className="flex rounded-xl border border-slate-200 p-0.5 gap-0.5">
+              {(["patient", "visit", "staff"] as Tab[]).map((t) => (
+                <button key={t} type="button" onClick={() => setTab(t)}
+                  className={`rounded-lg px-4 py-2 text-sm font-semibold capitalize transition ${tab === t ? "bg-[var(--accent)] text-white" : "text-slate-600 hover:text-slate-900"}`}>
                   {t === "patient" ? "Patients" : t === "visit" ? "Visits" : "Staff"}
                 </button>
               ))}
             </div>
           </div>
-          <button
-            type="submit"
-            className="rounded-lg bg-[var(--accent)] px-6 py-2.5 text-sm font-semibold text-white hover:opacity-95"
-          >
+
+          <button type="submit" disabled={searching || !query.trim()}
+            className="flex items-center gap-2 rounded-xl bg-[var(--accent)] px-6 py-2.5 text-sm font-bold text-white transition hover:opacity-90 disabled:opacity-50">
+            {searching
+              ? <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+              : <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeWidth="2" strokeLinecap="round" d="M21 21l-4.35-4.35M11 19a8 8 0 100-16 8 8 0 000 16z" /></svg>}
             Search
           </button>
         </form>
       </Card>
 
+      {/* Before search */}
+      {!hasSearched && (
+        <Card className="py-20 text-center">
+          <svg className="mx-auto h-12 w-12 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeWidth="1.5" strokeLinecap="round" d="M21 21l-4.35-4.35M11 19a8 8 0 100-16 8 8 0 000 16z" />
+          </svg>
+          <p className="mt-4 font-medium text-slate-500">Enter a search term above</p>
+          <p className="mt-1 text-sm text-slate-400">Search patients by name, ID or phone • visits by type • staff by name or department.</p>
+        </Card>
+      )}
+
       {/* Results */}
       {hasSearched && (
         <div>
           <p className="mb-4 text-sm text-slate-500">
-            {resultCount === 0 ? "No results found." : `${resultCount} result${resultCount !== 1 ? "s" : ""} found.`}
+            {resultCount === 0 ? `No ${tab}s matched "${query}".` : `${resultCount} result${resultCount !== 1 ? "s" : ""} found.`}
           </p>
 
-          {/* Patient Results */}
-          {type === "patient" && filteredPatients.length > 0 && (
-            <Card className="overflow-hidden p-0">
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-slate-100 bg-slate-50 text-left">
-                      {["Patient ID", "Name", "DOB", "Phone", "Address", "Last Visit", "Status", ""].map((h) => (
-                        <th key={h} className="whitespace-nowrap px-5 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {filteredPatients.map((p) => (
-                      <tr key={p.id} className="hover:bg-slate-50">
-                        <td className="px-5 py-3 font-mono text-xs text-slate-500">{p.id}</td>
-                        <td className="px-5 py-3 font-semibold text-slate-900">{p.name}</td>
-                        <td className="px-5 py-3 text-slate-600">{p.dob}</td>
-                        <td className="px-5 py-3 text-slate-600">{p.phone}</td>
-                        <td className="px-5 py-3 text-slate-600">{p.address}</td>
-                        <td className="px-5 py-3 whitespace-nowrap text-slate-600">{p.lastVisit}</td>
-                        <td className="px-5 py-3">
-                          <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${STATUS_STYLES[p.status] ?? "bg-slate-100 text-slate-600"}`}>{p.status}</span>
-                        </td>
-                        <td className="px-5 py-3">
-                          <Link href={`${INTERNAL_PREFIX}/frontdesk/patients/${p.id}`} className="text-xs font-medium text-[var(--accent)] hover:underline">
-                            View →
-                          </Link>
-                        </td>
+          {/* ── Patient results ── */}
+          {tab === "patient" && (
+            patients.length > 0 ? (
+              <Card className="overflow-hidden p-0">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-slate-100 bg-slate-50 text-left">
+                        {["Patient ID", "Name", "Age/Sex", "Phone", "Blood Grp", "Registered", "Status", ""].map((h) => (
+                          <th key={h} className="whitespace-nowrap px-5 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">{h}</th>
+                        ))}
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </Card>
-          )}
-
-          {/* Visit Results */}
-          {type === "visit" && filteredVisits.length > 0 && (
-            <Card className="overflow-hidden p-0">
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-slate-100 bg-slate-50 text-left">
-                      {["Visit ID", "Patient", "Patient ID", "Department", "Purpose", "Date", "Status"].map((h) => (
-                        <th key={h} className="whitespace-nowrap px-5 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">{h}</th>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {patients.map((p) => (
+                        <tr key={p.id} className="hover:bg-slate-50">
+                          <td className="px-5 py-3 font-mono text-xs text-slate-400">{p.patientId || "—"}</td>
+                          <td className="px-5 py-3 font-semibold text-slate-900">{p.patientName}</td>
+                          <td className="px-5 py-3 text-slate-600 whitespace-nowrap">
+                            {calcAge(p.dateOfBirth)}{p.gender ? ` / ${p.gender}` : ""}
+                          </td>
+                          <td className="px-5 py-3 text-slate-600">{p.contact || "—"}</td>
+                          <td className="px-5 py-3">
+                            {p.bloodGroup
+                              ? <span className="rounded bg-red-50 px-1.5 py-0.5 text-xs font-bold text-red-700">{p.bloodGroup}</span>
+                              : <span className="text-slate-300">—</span>}
+                          </td>
+                          <td className="px-5 py-3 whitespace-nowrap text-slate-500">{fmtDate(p.registeredAt)}</td>
+                          <td className="px-5 py-3">
+                            <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${STATUS_STYLES[p.status] ?? "bg-slate-100 text-slate-600"}`}>
+                              {p.status}
+                            </span>
+                          </td>
+                          <td className="px-5 py-3">
+                            <Link href={`${INTERNAL_PREFIX}/frontdesk/patients/${p.id}`}
+                              className="text-xs font-semibold text-[var(--accent)] hover:underline">
+                              Open →
+                            </Link>
+                          </td>
+                        </tr>
                       ))}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {filteredVisits.map((v) => (
-                      <tr key={v.id} className="hover:bg-slate-50">
-                        <td className="px-5 py-3 font-mono text-xs text-slate-500">{v.id}</td>
-                        <td className="px-5 py-3 font-semibold text-slate-900">{v.patient}</td>
-                        <td className="px-5 py-3 font-mono text-xs text-slate-500">{v.patientId}</td>
-                        <td className="px-5 py-3 text-slate-600">{v.dept}</td>
-                        <td className="px-5 py-3 text-slate-600">{v.purpose}</td>
-                        <td className="px-5 py-3 whitespace-nowrap text-slate-600">{v.date}</td>
-                        <td className="px-5 py-3">
-                          <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${STATUS_STYLES[v.status] ?? "bg-slate-100 text-slate-600"}`}>{v.status}</span>
-                        </td>
+                    </tbody>
+                  </table>
+                </div>
+              </Card>
+            ) : (
+              <EmptyState type="patients" query={query} />
+            )
+          )}
+
+          {/* ── Visit results ── */}
+          {tab === "visit" && (
+            visits.length > 0 ? (
+              <Card className="overflow-hidden p-0">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-slate-100 bg-slate-50 text-left">
+                        {["Patient", "Patient ID", "Visit Type", "Assigned To", "Date", "Status"].map((h) => (
+                          <th key={h} className="whitespace-nowrap px-5 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">{h}</th>
+                        ))}
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {visits.map((v) => (
+                        <tr key={v.id} className="hover:bg-slate-50">
+                          <td className="px-5 py-3 font-semibold text-slate-900">{v.patientName}</td>
+                          <td className="px-5 py-3 font-mono text-xs text-slate-400">{v.patientId}</td>
+                          <td className="px-5 py-3 text-slate-600">{v.visitType || "—"}</td>
+                          <td className="px-5 py-3 text-slate-600">{v.assignedTo || "—"}</td>
+                          <td className="px-5 py-3 whitespace-nowrap text-slate-500">{fmtDate(v.visitDate)}</td>
+                          <td className="px-5 py-3">
+                            <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${STATUS_STYLES[v.status] ?? "bg-slate-100 text-slate-600"}`}>
+                              {v.status}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </Card>
+            ) : (
+              <EmptyState type="visits" query={query} />
+            )
+          )}
+
+          {/* ── Staff results ── */}
+          {tab === "staff" && (
+            staff.length > 0 ? (
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                {staff.map((s) => (
+                  <Card key={s.id} className="flex items-center gap-4 p-5">
+                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[var(--accent)]/10 text-sm font-bold text-[var(--accent)]">
+                      {s.name.split(" ").map((w) => w[0]).join("").toUpperCase().slice(0, 2)}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="truncate font-semibold text-slate-900">{s.name}</p>
+                      <p className="text-sm text-slate-500">{s.role}</p>
+                      <p className="text-xs text-slate-400">{s.department}</p>
+                      <span className={`mt-1 inline-block rounded-full px-2 py-0.5 text-xs font-semibold ${STATUS_STYLES[s.status] ?? "bg-slate-100 text-slate-600"}`}>
+                        {s.status}
+                      </span>
+                    </div>
+                  </Card>
+                ))}
               </div>
-            </Card>
-          )}
-
-          {/* Staff Results */}
-          {type === "staff" && filteredStaff.length > 0 && (
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {filteredStaff.map((s) => (
-                <Card key={s.id} className="flex items-center gap-4 p-5">
-                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-slate-200 text-sm font-bold text-slate-600">
-                    {s.name.split(" ").map((w) => w[0]).join("").toUpperCase().slice(0, 2)}
-                  </div>
-                  <div className="min-w-0">
-                    <p className="font-semibold text-slate-900 truncate">{s.name}</p>
-                    <p className="text-sm text-slate-500">{s.role} · {s.dept}</p>
-                    <p className="mt-1 text-xs text-slate-400">{s.phone}</p>
-                    <span className={`mt-1 inline-block rounded-full px-2 py-0.5 text-xs font-semibold ${STATUS_STYLES[s.status] ?? "bg-slate-100 text-slate-600"}`}>{s.status}</span>
-                  </div>
-                </Card>
-              ))}
-            </div>
-          )}
-
-          {resultCount === 0 && (
-            <Card className="py-16 text-center">
-              <svg className="mx-auto h-12 w-12 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M11 19a8 8 0 100-16 8 8 0 000 16z" />
-              </svg>
-              <p className="mt-3 font-medium text-slate-500">No {type}s matched &quot;{query}&quot;</p>
-              <p className="mt-1 text-sm text-slate-400">Try a different name, ID, or phone number.</p>
-            </Card>
+            ) : (
+              <EmptyState type="staff" query={query} />
+            )
           )}
         </div>
       )}
-
-      {!hasSearched && (
-        <Card className="py-20 text-center">
-          <svg className="mx-auto h-14 w-14 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M11 19a8 8 0 100-16 8 8 0 000 16z" />
-          </svg>
-          <p className="mt-4 text-base font-medium text-slate-500">Enter a search term above</p>
-          <p className="mt-1 text-sm text-slate-400">Search by patient name, ID, phone, or visit reference.</p>
-        </Card>
-      )}
     </div>
+  );
+}
+
+function EmptyState({ type, query }: { type: string; query: string }) {
+  return (
+    <Card className="py-14 text-center">
+      <svg className="mx-auto h-10 w-10 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeWidth="1.5" strokeLinecap="round" d="M21 21l-4.35-4.35M11 19a8 8 0 100-16 8 8 0 000 16z" />
+      </svg>
+      <p className="mt-3 font-medium text-slate-500">No {type} matched &quot;{query}&quot;</p>
+      <p className="mt-1 text-sm text-slate-400">Try a different name, ID, or phone number.</p>
+    </Card>
   );
 }

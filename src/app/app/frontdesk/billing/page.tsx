@@ -1,12 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { PageHeader } from "@/components/layout/page-header";
 import { INTERNAL_PREFIX } from "@/lib/constants/navigation";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { StatusBadge } from "@/components/ui/status-badge";
 import { Modal, ModalFooter } from "@/components/ui/modal";
 import { Toast, type ToastData } from "@/components/ui/toast";
 import { useAccountsStore } from "@/lib/hooks/use-accounts-store";
@@ -15,6 +14,7 @@ import {
   updateFrontDeskChargeStatus,
   type FrontDeskCharge,
 } from "@/lib/data/accounts-store";
+import { fetchPatientRegistrations, type PatientRegistration } from "@/lib/supabase/db";
 
 const CHARGE_TYPES: FrontDeskCharge["chargeType"][] = [
   "Registration", "Consultation", "Emergency", "Follow-up",
@@ -32,12 +32,6 @@ const CHARGE_PRESETS: Record<FrontDeskCharge["chargeType"], number> = {
   Other: 50,
 };
 
-const PATIENTS = [
-  "Alice Thompson (PT-8234)", "Kofi Mensah (PT-8236)", "Ama Owusu (PT-8235)",
-  "Joseph James (PT-8240)", "Ruth Cole (PT-8241)", "Mary Ibrahim (PT-8233)",
-  "Kwame Asante (PT-8242)", "Efua Boateng (PT-8243)",
-];
-
 const CHARGE_STATUS_STYLES: Record<string, string> = {
   Pending: "bg-amber-50 text-amber-700",
   Paid: "bg-emerald-50 text-emerald-700",
@@ -48,41 +42,52 @@ const CHARGE_STATUS_STYLES: Record<string, string> = {
 export default function FrontDeskBillingPage() {
   const { frontDeskCharges, metrics } = useAccountsStore();
 
+  const [patients, setPatients] = useState<PatientRegistration[]>([]);
+  const [loadingPatients, setLoadingPatients] = useState(true);
+
   const [showNew, setShowNew] = useState(false);
   const [payTarget, setPayTarget] = useState<FrontDeskCharge | null>(null);
   const [toast, setToast] = useState<ToastData | null>(null);
 
   // New charge form
-  const [newPatient, setNewPatient] = useState("");
+  const [newPatientId, setNewPatientId] = useState("");
   const [newChargeType, setNewChargeType] = useState<FrontDeskCharge["chargeType"]>("Consultation");
   const [newAmount, setNewAmount] = useState(String(CHARGE_PRESETS["Consultation"]));
   const [newDescription, setNewDescription] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
+  useEffect(() => {
+    fetchPatientRegistrations()
+      .then((data) => { setPatients(data); setLoadingPatients(false); })
+      .catch(() => setLoadingPatients(false));
+  }, []);
+
   function handleAddCharge(e: React.FormEvent) {
     e.preventDefault();
-    if (!newPatient || !newAmount) return;
+    if (!newPatientId || !newAmount) return;
+    const patientRecord = patients.find((p) => p.id === newPatientId);
+    if (!patientRecord) return;
     setSubmitting(true);
     const now = new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+    const todayStr = new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
     setTimeout(() => {
-      const parts = newPatient.match(/^(.+?)\s*\((.+?)\)$/) ?? [, newPatient, "PT-0000"];
       addFrontDeskCharge({
         id: `FDC-${Date.now()}`,
-        patientName: parts[1] ?? newPatient,
-        patientId: parts[2] ?? "PT-0000",
+        patientName: patientRecord.patientName,
+        patientId: patientRecord.patientId,
         chargeType: newChargeType,
         amount: parseFloat(newAmount) || 0,
         description: newDescription || `${newChargeType} fee`,
-        createdAt: `${now} · Mar 15, 2026`,
+        createdAt: `${now} · ${todayStr}`,
         createdBy: "Front Desk (You)",
         status: "Pending",
       });
-      setToast({ message: `Charge of ₦${newAmount} added for ${parts[1] ?? newPatient}. Sent to Accounts.`, type: "success" });
+      setToast({ message: `Charge of ₦${newAmount} added for ${patientRecord.patientName}. Sent to Accounts.`, type: "success" });
       setShowNew(false);
-      setNewPatient(""); setNewChargeType("Consultation"); setNewDescription("");
+      setNewPatientId(""); setNewChargeType("Consultation"); setNewDescription("");
       setNewAmount(String(CHARGE_PRESETS["Consultation"]));
       setSubmitting(false);
-    }, 500);
+    }, 400);
   }
 
   function handleSendToAccounts(charge: FrontDeskCharge) {
@@ -220,10 +225,19 @@ export default function FrontDeskBillingPage() {
         <form onSubmit={handleAddCharge} className="space-y-4">
           <div>
             <label className="mb-1 block text-sm font-semibold text-slate-700">Patient *</label>
-            <select required value={newPatient} onChange={(e) => setNewPatient(e.target.value)} className={inputCls}>
-              <option value="">Select patient…</option>
-              {PATIENTS.map((p) => <option key={p} value={p}>{p}</option>)}
+            <select required value={newPatientId} onChange={(e) => setNewPatientId(e.target.value)} className={inputCls}>
+              <option value="">
+                {loadingPatients ? "Loading patients…" : "Select patient…"}
+              </option>
+              {patients.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.patientName} ({p.patientId || "No ID"})
+                </option>
+              ))}
             </select>
+            {!loadingPatients && patients.length === 0 && (
+              <p className="mt-1 text-xs text-amber-600">No patients registered yet.</p>
+            )}
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>

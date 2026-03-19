@@ -1346,6 +1346,41 @@ export async function updatePatientRegistration(
   return !error;
 }
 
+export async function insertVisit(params: {
+  patientId: string;
+  patientName: string;
+  visitType: string;
+  department: string;
+  assignedTo: string;
+}): Promise<string | null> {
+  const sb = getSupabase();
+  if (!sb) return null;
+  const today = new Date().toISOString().slice(0, 10);
+  const { data, error } = await sb.from("visits").insert({
+    patient_id:   params.patientId,
+    patient_name: params.patientName,
+    visit_date:   today,
+    visit_type:   params.visitType,
+    department:   params.department,
+    assigned_to:  params.assignedTo,
+    status:       "Checked In",
+    checked_in_at: new Date().toISOString(),
+  }).select("id").single();
+  if (error) { console.error("insertVisit:", error.message); return null; }
+  return (data as { id: string }).id;
+}
+
+export async function fetchAllVisits(): Promise<VisitRow[]> {
+  const sb = getSupabase();
+  if (!sb) return [];
+  const { data } = await sb
+    .from("visits")
+    .select("*")
+    .order("visit_date", { ascending: false })
+    .limit(200);
+  return (data ?? []).map(mapVisit);
+}
+
 export async function fetchVisitsByPatientId(patientId: string): Promise<VisitRow[]> {
   const sb = getSupabase();
   if (!sb) return [];
