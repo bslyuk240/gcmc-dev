@@ -19,7 +19,97 @@ function generatePatientId() {
 
 // ── constants ─────────────────────────────────────────────────────────────────
 const BLOOD_GROUPS = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-", "Unknown"];
-const GENDERS     = ["Male", "Female", "Other"];
+const GENDERS      = ["Male", "Female", "Other"];
+
+const MONTHS = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
+];
+
+const currentYear = new Date().getFullYear();
+const YEARS = Array.from({ length: currentYear - 1899 }, (_, i) => currentYear - i);
+
+function buildDob(day: string, month: string, year: string): string {
+  if (!day || !month || !year) return "";
+  const m = String(MONTHS.indexOf(month) + 1).padStart(2, "0");
+  const d = String(day).padStart(2, "0");
+  return `${year}-${m}-${d}`;
+}
+
+function daysInMonth(month: string, year: string): number {
+  const m = MONTHS.indexOf(month) + 1;
+  const y = parseInt(year) || 2000;
+  return m ? new Date(y, m, 0).getDate() : 31;
+}
+
+// ── DOB Picker sub-component ───────────────────────────────────────────────────
+function DobPicker({
+  day, month, year,
+  onDay, onMonth, onYear,
+}: {
+  day: string; month: string; year: string;
+  onDay: (v: string) => void; onMonth: (v: string) => void; onYear: (v: string) => void;
+}) {
+  const totalDays = daysInMonth(month, year);
+  const days = Array.from({ length: totalDays }, (_, i) => String(i + 1));
+
+  const selCls =
+    "flex-1 rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm text-slate-900 " +
+    "outline-none appearance-none transition cursor-pointer " +
+    "focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/20";
+
+  return (
+    <div className="flex gap-2">
+      {/* Day */}
+      <div className="relative flex-[1]">
+        <select
+          value={day}
+          onChange={(e) => onDay(e.target.value)}
+          className={selCls}
+          style={{ backgroundImage: "none" }}
+        >
+          <option value="">DD</option>
+          {days.map((d) => <option key={d} value={d}>{d.padStart(2, "0")}</option>)}
+        </select>
+        <svg className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M6 9l6 6 6-6" />
+        </svg>
+      </div>
+
+      {/* Month */}
+      <div className="relative flex-[2]">
+        <select
+          value={month}
+          onChange={(e) => { onMonth(e.target.value); if (day) onDay(""); }}
+          className={selCls}
+          style={{ backgroundImage: "none" }}
+        >
+          <option value="">Month</option>
+          {MONTHS.map((m) => <option key={m} value={m}>{m}</option>)}
+        </select>
+        <svg className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M6 9l6 6 6-6" />
+        </svg>
+      </div>
+
+      {/* Year */}
+      <div className="relative flex-[1.3]">
+        <select
+          value={year}
+          onChange={(e) => { onYear(e.target.value); if (day) onDay(""); }}
+          className={selCls}
+          style={{ backgroundImage: "none" }}
+        >
+          <option value="">Year</option>
+          {YEARS.map((y) => <option key={y} value={String(y)}>{y}</option>)}
+        </select>
+        <svg className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M6 9l6 6 6-6" />
+        </svg>
+      </div>
+    </div>
+  );
+}
 
 const inputCls =
   "w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 " +
@@ -36,7 +126,9 @@ export default function RegisterNewPatientPage() {
   // ── form state ──
   const [firstName,      setFirstName]      = useState("");
   const [lastName,       setLastName]        = useState("");
-  const [dob,            setDob]             = useState("");
+  const [dobDay,         setDobDay]          = useState("");
+  const [dobMonth,       setDobMonth]        = useState("");
+  const [dobYear,        setDobYear]         = useState("");
   const [gender,         setGender]          = useState("");
   const [phone,          setPhone]           = useState("");
   const [email,          setEmail]           = useState("");
@@ -86,7 +178,7 @@ export default function RegisterNewPatientPage() {
       initials,
       status:         "Waiting",
       registeredBy:   session?.full_name ?? "Front Desk",
-      dateOfBirth:    dob || undefined,
+      dateOfBirth:    buildDob(dobDay, dobMonth, dobYear) || undefined,
       gender:         gender || undefined,
       address:        address.trim() || undefined,
       nextOfKinName:  nokFull || undefined,
@@ -165,14 +257,11 @@ export default function RegisterNewPatientPage() {
               </div>
 
               {/* Date of birth */}
-              <div>
+              <div className="sm:col-span-2">
                 <label className={labelCls}>Date of Birth</label>
-                <input
-                  type="date"
-                  value={dob}
-                  max={new Date().toISOString().slice(0, 10)}
-                  onChange={(e) => setDob(e.target.value)}
-                  className={inputCls}
+                <DobPicker
+                  day={dobDay} month={dobMonth} year={dobYear}
+                  onDay={setDobDay} onMonth={setDobMonth} onYear={setDobYear}
                 />
               </div>
 
@@ -367,9 +456,9 @@ export default function RegisterNewPatientPage() {
               </div>
             </div>
 
-            {dob && (
+            {(dobDay && dobMonth && dobYear) && (
               <div className="mt-3 border-t border-slate-100 pt-3 text-xs text-slate-500">
-                DOB: {new Date(dob).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}
+                DOB: {dobDay} {dobMonth} {dobYear}
                 {bloodGroup && <span className="ml-2 rounded bg-red-50 px-1.5 py-0.5 font-semibold text-red-700">{bloodGroup}</span>}
               </div>
             )}
