@@ -18,9 +18,6 @@ const PRIORITY_STYLES: Record<string, string> = {
   Stable: "bg-emerald-50 text-emerald-700",
 };
 
-const DOCTORS = ["Dr. Robert Smith", "Dr. Kwame Mensah", "Dr. Amaka Osei", "Dr. Kalu", "Dr. Osei"];
-const NURSES = ["Nurse Tom", "Nurse Patricia", "Nurse Grace", "Nurse Sandra"];
-
 export default function NursesEmergencyPage() {
   const { getByUnit, procedures } = useNursesStore();
   const erPatients = getByUnit("Emergency").filter((p) => p.status === "Active");
@@ -34,7 +31,7 @@ export default function NursesEmergencyPage() {
   // New patient form
   const [name, setName] = useState(""); const [pid, setPid] = useState("");
   const [diagnosis, setDiagnosis] = useState(""); const [priority, setPriority] = useState<WardPatient["priority"]>("High");
-  const [doctor, setDoctor] = useState(DOCTORS[0]); const [nurse, setNurse] = useState(NURSES[0]);
+  const [doctor, setDoctor] = useState(""); const [nurse, setNurse] = useState("");
 
   // Vitals
   const [bp, setBp] = useState(""); const [pulse, setPulse] = useState("");
@@ -44,9 +41,10 @@ export default function NursesEmergencyPage() {
     if (!name || !diagnosis) return;
     addWardPatient({
       id: `WP-ER-${Date.now()}`, patientName: name, patientId: pid || `PT-ER-${Date.now()}`,
-      unit: "Emergency", bed: `ER-${erPatients.length + 3}`, diagnosis,
-      admittedAt: "Mar 15, 2026", assignedNurse: nurse, priority,
-      status: "Active", doctorInCharge: doctor,
+      unit: "Emergency", bed: `ER-${erPatients.length + 1}`, diagnosis,
+      admittedAt: new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }),
+      assignedNurse: nurse || "Unassigned", priority,
+      status: "Active", doctorInCharge: doctor || undefined,
     });
     setToast({ message: `${name} admitted to Emergency Unit.`, type: "success" });
     setNewPatientModal(false);
@@ -57,8 +55,8 @@ export default function NursesEmergencyPage() {
     if (!vitalsTarget || !bp) return;
     const now = new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
     updateWardPatient(vitalsTarget.id, {
-      vitals: { bp, pulse, temp, spo2, recordedAt: `${now}`, recordedBy: NURSES[0] },
-      lastVitalsAt: `${now} · Mar 15`,
+      vitals: { bp, pulse, temp, spo2, recordedAt: `${now}`, recordedBy: "Nurse (You)" },
+      lastVitalsAt: `${now} · ${new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short" })}`,
     });
     setToast({ message: `Emergency vitals recorded for ${vitalsTarget.patientName}.`, type: "success" });
     setVitalsTarget(null);
@@ -206,14 +204,10 @@ export default function NursesEmergencyPage() {
                 {["Critical", "High", "Watch", "Stable"].map((p) => <option key={p}>{p}</option>)}
               </select></div>
             <div><label className="block text-xs font-semibold text-slate-600 mb-1">Assigned Nurse</label>
-              <select value={nurse} onChange={(e) => setNurse(e.target.value)} className={inputCls}>
-                {NURSES.map((n) => <option key={n}>{n}</option>)}
-              </select></div>
+              <input value={nurse} onChange={(e) => setNurse(e.target.value)} placeholder="e.g. Nurse Grace" className={inputCls} /></div>
           </div>
           <div><label className="block text-xs font-semibold text-slate-600 mb-1">Doctor in Charge</label>
-            <select value={doctor} onChange={(e) => setDoctor(e.target.value)} className={inputCls}>
-              {DOCTORS.map((d) => <option key={d}>{d}</option>)}
-            </select></div>
+            <input value={doctor} onChange={(e) => setDoctor(e.target.value)} placeholder="e.g. Dr. Mensah" className={inputCls} /></div>
         </div>
         <ModalFooter>
           <Button variant="ghost" size="md" onClick={() => setNewPatientModal(false)}>Cancel</Button>

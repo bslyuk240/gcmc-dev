@@ -27,26 +27,9 @@ const FLAG_STYLES: Record<string, string> = {
   Urgent: "bg-red-50 text-red-700 font-bold",
 };
 
-const NURSES = ["Nurse Patricia", "Nurse Grace", "Nurse Sandra", "Nurse Tom", "Nurse Ama"];
-
-const INITIAL_OBS: ObsEntry[] = [
-  { id: "OBS-001", patientId: "PT-8236", patientName: "Kofi Mensah", unit: "ICU", bed: "ICU-1",
-    observation: "SpO2 dropped to 89% at 09:00. Patient visibly distressed, accessory muscle use noted.",
-    actionTaken: "O2 increased to 4L/min. Dr. Mensah notified. Suction performed. Patient now SpO2 92%.",
-    nurse: "Nurse Sandra", time: "09:15 AM · Mar 15, 2026", flag: "Urgent" },
-  { id: "OBS-002", patientId: "PT-8235", patientName: "Ama Owusu", unit: "Ward", bed: "3B",
-    observation: "Post-op wound site clean, no signs of infection. Mild tenderness on palpation.",
-    actionTaken: "Wound dressing changed. Tramadol 50mg IV given as charted for pain.",
-    nurse: "Nurse Grace", time: "09:00 AM · Mar 15, 2026", flag: "Normal" },
-  { id: "OBS-003", patientId: "PT-8231", patientName: "Yaw Darko", unit: "Ward", bed: "4B",
-    observation: "Temperature 38.4°C, persistent cough, SpO2 94%. Patient complaining of chest tightness.",
-    actionTaken: "Dr. Osei notified. Nebuliser ordered. IV antibiotics continued as charted.",
-    nurse: "Nurse Patricia", time: "07:50 AM · Mar 15, 2026", flag: "Concern" },
-];
-
 export default function NursesObservationPage() {
   const { allPatients } = useNursesStore();
-  const [obs, setObs] = useState<ObsEntry[]>(INITIAL_OBS);
+  const [obs, setObs] = useState<ObsEntry[]>([]);
   const [showAdd, setShowAdd] = useState(false);
   const [filterFlag, setFilterFlag] = useState<"All" | "Normal" | "Concern" | "Urgent">("All");
   const [toast, setToast] = useState<ToastData | null>(null);
@@ -55,7 +38,7 @@ export default function NursesObservationPage() {
   const [observation, setObservation] = useState("");
   const [actionTaken, setActionTaken] = useState("");
   const [flag, setFlag] = useState<ObsEntry["flag"]>("Normal");
-  const [obsNurse, setObsNurse] = useState(NURSES[0]);
+  const [obsNurse, setObsNurse] = useState("");
 
   function handleAdd() {
     if (!selPatient || !observation) return;
@@ -69,7 +52,7 @@ export default function NursesObservationPage() {
       bed: patient?.bed ?? "—",
       observation, actionTaken,
       nurse: obsNurse,
-      time: `${now} · Mar 15, 2026`,
+      time: `${now} · ${new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}`,
       flag,
     }, ...obs]);
     setToast({ message: "Observation recorded.", type: "success" });
@@ -167,9 +150,7 @@ export default function NursesObservationPage() {
             </div>
             <div>
               <label className="block text-xs font-semibold text-slate-600 mb-1">Nurse</label>
-              <select value={obsNurse} onChange={(e) => setObsNurse(e.target.value)} className={inputCls}>
-                {NURSES.map((n) => <option key={n}>{n}</option>)}
-              </select>
+              <input value={obsNurse} onChange={(e) => setObsNurse(e.target.value)} placeholder="e.g. Nurse Grace" className={inputCls} />
             </div>
           </div>
         </div>

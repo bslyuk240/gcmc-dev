@@ -10,12 +10,6 @@ import { Toast, type ToastData } from "@/components/ui/toast";
 type Shift = "Morning" | "Afternoon" | "Night";
 type Note = { id: string; shift: Shift; author: string; summary: string; detail: string; time: string; date: string; patientsHandedOver: number };
 
-const INITIAL: Note[] = [
-  { id: "HN-003", shift: "Night", author: "Nurse Sarah", summary: "Triage load increased after midnight; 2 critical prioritised.", detail: "Patient Kofi Mensah (CRITICAL) deteriorated at 02:30, moved to ICU at 03:00. Patient Yaw Darko (HIGH) stable after pain management. Ward B overstaffed; suggested 1 staff shift to Ward A for Morning handover.", time: "06:00", date: "Mar 15", patientsHandedOver: 12 },
-  { id: "HN-002", shift: "Afternoon", author: "Nurse Grace", summary: "Smooth shift. Routine vitals completed for all patients.", detail: "All ward patients had vitals recorded on time. Dr. Amaka Osei reviewed 4 patients and updated treatment plans. No emergencies during this shift. 3 patients discharged; 2 new admissions from A&E.", time: "22:00", date: "Mar 14", patientsHandedOver: 9 },
-  { id: "HN-001", shift: "Morning", author: "Nurse Patricia", summary: "Two medication errors flagged; resolved before administration.", detail: "Lisinopril 10mg was prepared in double dose for patient Ama Owusu — flagged by second nurse check and corrected. Reminded team to follow double-check protocol. 1 patient awaiting lab results before discharge.", time: "14:00", date: "Mar 14", patientsHandedOver: 11 },
-];
-
 const SHIFT_STYLES: Record<Shift, string> = {
   Morning: "bg-amber-50 text-amber-700",
   Afternoon: "bg-sky-50 text-sky-700",
@@ -23,7 +17,7 @@ const SHIFT_STYLES: Record<Shift, string> = {
 };
 
 export default function NursesHandoverNotesPage() {
-  const [notes, setNotes] = useState<Note[]>(INITIAL);
+  const [notes, setNotes] = useState<Note[]>([]);
   const [showAdd, setShowAdd] = useState(false);
   const [viewNote, setViewNote] = useState<Note | null>(null);
   const [toast, setToast] = useState<ToastData | null>(null);
@@ -38,10 +32,10 @@ export default function NursesHandoverNotesPage() {
     e.preventDefault();
     if (!summary || !author) return;
     const note: Note = {
-      id: `HN-${String(notes.length + 4).padStart(3, "0")}`,
+      id: `HN-${String(notes.length + 1).padStart(3, "0")}`,
       shift, author, summary, detail,
       time: new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }),
-      date: "Mar 15",
+      date: new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short" }),
       patientsHandedOver: parseInt(patients) || 0,
     };
     setNotes((prev) => [note, ...prev]);

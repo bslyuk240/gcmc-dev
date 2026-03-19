@@ -1,12 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Modal, ModalFooter } from "@/components/ui/modal";
 import { Toast, type ToastData } from "@/components/ui/toast";
 import { sendPasswordResetAction } from "@/server/actions/it/send-password-reset";
+import { fetchStaffMembers } from "@/lib/supabase/db";
 
 type UserStatus = "Active" | "Suspended" | "Inactive";
 
@@ -20,14 +21,6 @@ type UserRecord = {
   lastLogin: string;
 };
 
-const INITIAL: UserRecord[] = [
-  { id: "USR-001", name: "Sarah Jenkins", email: "sarah.jenkins@gcmc.local", role: "Front Desk", department: "Front Desk", status: "Active", lastLogin: "Today 09:14" },
-  { id: "USR-002", name: "Dr. Nwosu", email: "nwosu@gcmc.local", role: "Doctor", department: "Surgery", status: "Active", lastLogin: "Today 08:30" },
-  { id: "USR-003", name: "Ama Owusu", email: "ama.owusu@gcmc.local", role: "Nurse", department: "Nursing", status: "Active", lastLogin: "Yesterday" },
-  { id: "USR-004", name: "James Adu", email: "j.adu@gcmc.local", role: "Pharmacist", department: "Pharmacy", status: "Active", lastLogin: "Today 10:00" },
-  { id: "USR-005", name: "Kofi Store", email: "k.store@gcmc.local", role: "Store Keeper", department: "Store", status: "Suspended", lastLogin: "Mar 10" },
-];
-
 const ROLES = ["Admin", "Doctor", "Nurse", "Pharmacist", "Front Desk", "Accountant", "Store Keeper", "IT Officer", "HR Officer"];
 const DEPARTMENTS = ["Admin", "Doctors", "Nurses", "Pharmacy", "Front Desk", "Accounts", "Store", "IT", "HR"];
 
@@ -38,7 +31,27 @@ const STATUS_STYLES: Record<UserStatus, string> = {
 };
 
 export default function ITUserAccessPage() {
-  const [users, setUsers] = useState<UserRecord[]>(INITIAL);
+  const [users, setUsers] = useState<UserRecord[]>([]);
+  const [loadingUsers, setLoadingUsers] = useState(true);
+
+  useEffect(() => {
+    fetchStaffMembers().then((staff) => {
+      setUsers(
+        staff.map((s, i) => ({
+          id: `USR-${String(i + 1).padStart(3, "0")}`,
+          name: s.name,
+          email: s.email,
+          role: s.role,
+          department: s.department,
+          status: (s.status === "Active" || s.status === "Suspended" || s.status === "Terminated")
+            ? (s.status === "Terminated" ? "Inactive" : s.status)
+            : "Active",
+          lastLogin: "—",
+        }))
+      );
+      setLoadingUsers(false);
+    }).catch(() => setLoadingUsers(false));
+  }, []);
   const [showInvite, setShowInvite] = useState(false);
   const [manageUser, setManageUser] = useState<UserRecord | null>(null);
   const [toast, setToast] = useState<ToastData | null>(null);
@@ -105,6 +118,11 @@ export default function ITUserAccessPage() {
         <div className="border-b border-slate-100 px-5 py-4">
           <h3 className="font-bold text-slate-900">All Users <span className="text-sm font-normal text-slate-400">({users.length})</span></h3>
         </div>
+        {loadingUsers ? (
+          <div className="flex items-center justify-center py-16">
+            <div className="h-7 w-7 animate-spin rounded-full border-4 border-slate-200 border-t-[var(--accent)]" />
+          </div>
+        ) : (
         <div className="overflow-x-auto">
           <table className="min-w-full text-left text-sm">
             <thead>
@@ -115,6 +133,9 @@ export default function ITUserAccessPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
+              {users.length === 0 && (
+                <tr><td colSpan={8} className="px-6 py-10 text-center text-sm text-slate-400">No staff accounts found.</td></tr>
+              )}
               {users.map((row) => (
                 <tr key={row.id} className="hover:bg-slate-50">
                   <td className="px-5 py-3 font-mono text-xs text-slate-400">{row.id}</td>
@@ -132,6 +153,7 @@ export default function ITUserAccessPage() {
             </tbody>
           </table>
         </div>
+        )}
       </Card>
 
       {/* Invite user modal */}

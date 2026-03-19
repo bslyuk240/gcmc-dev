@@ -33,9 +33,6 @@ const SAMPLE_TESTS = [
   { name: "Electrolytes", code: "ELEC", sampleType: "Serum", price: 90 },
 ];
 
-const NURSES = ["Nurse Patricia", "Nurse Grace", "Nurse Sandra", "Nurse Tom", "Nurse Ama"];
-const DOCTORS = ["Dr. Robert Smith", "Dr. Kwame Mensah", "Dr. Amaka Osei", "Dr. Kalu", "Dr. Osei", "Dr. Smith"];
-
 export default function NursesSampleCollectionPage() {
   const { sampleRequests, allPatients } = useNursesStore();
 
@@ -47,11 +44,11 @@ export default function NursesSampleCollectionPage() {
   const [patient, setPatient] = useState(""); const [patientId, setPatientId] = useState("");
   const [testCode, setTestCode] = useState(SAMPLE_TESTS[0].code);
   const [priority, setPriority] = useState<NurseSampleRequest["priority"]>("Routine");
-  const [doctor, setDoctor] = useState(DOCTORS[0]); const [nurse, setNurse] = useState(NURSES[0]);
+  const [doctor, setDoctor] = useState(""); const [nurse, setNurse] = useState("");
   const [unit, setUnit] = useState<NurseSampleRequest["unit"]>("Ward");
 
   // Collect form
-  const [collectNurse, setCollectNurse] = useState(NURSES[0]);
+  const [collectNurse, setCollectNurse] = useState("");
 
   function handleAddRequest() {
     if (!patient || !testCode) return;
@@ -63,7 +60,7 @@ export default function NursesSampleCollectionPage() {
       unit, testName: selectedTest.name, testCode: selectedTest.code,
       sampleType: selectedTest.sampleType,
       status: "Ordered", priority, orderedBy: doctor,
-      orderedAt: `${now} · Mar 15, 2026`,
+      orderedAt: `${now} · ${new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}`,
     });
     setToast({ message: `Sample request created for ${patient} — ${selectedTest.name}.`, type: "success" });
     setNewSampleModal(false);
@@ -75,7 +72,7 @@ export default function NursesSampleCollectionPage() {
     const now = new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
     updateNurseSampleRequest(collectTarget.id, {
       status: "Collected", collectedBy: collectNurse,
-      collectedAt: `${now} · Mar 15, 2026`,
+      collectedAt: `${now} · ${new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}`,
     });
     setToast({ message: `Sample collected for ${collectTarget.patientName}.`, type: "success" });
     setCollectTarget(null);
@@ -169,7 +166,7 @@ export default function NursesSampleCollectionPage() {
                   <td className="px-4 py-3">
                     <div className="flex gap-1.5">
                       {r.status === "Ordered" && (
-                        <Button size="sm" onClick={() => { setCollectTarget(r); setCollectNurse(NURSES[0]); }}>Collect</Button>
+                        <Button size="sm" onClick={() => { setCollectTarget(r); setCollectNurse(""); }}>Collect</Button>
                       )}
                       {r.status === "Collected" && (
                         <Button size="sm" onClick={() => handleSendToLab(r)}>Send to Lab</Button>
@@ -217,9 +214,7 @@ export default function NursesSampleCollectionPage() {
               </select></div>
           </div>
           <div><label className="block text-xs font-semibold text-slate-600 mb-1">Ordered By (Doctor)</label>
-            <select value={doctor} onChange={(e) => setDoctor(e.target.value)} className={inputCls}>
-              {DOCTORS.map((d) => <option key={d}>{d}</option>)}
-            </select></div>
+            <input value={doctor} onChange={(e) => setDoctor(e.target.value)} placeholder="e.g. Dr. Mensah" className={inputCls} /></div>
         </div>
         <ModalFooter>
           <Button variant="ghost" size="md" onClick={() => setNewSampleModal(false)}>Cancel</Button>
@@ -239,9 +234,7 @@ export default function NursesSampleCollectionPage() {
               </div>
             </div>
             <div><label className="block text-xs font-semibold text-slate-600 mb-1">Collected By *</label>
-              <select value={collectNurse} onChange={(e) => setCollectNurse(e.target.value)} className={inputCls}>
-                {NURSES.map((n) => <option key={n}>{n}</option>)}
-              </select></div>
+              <input value={collectNurse} onChange={(e) => setCollectNurse(e.target.value)} placeholder="e.g. Nurse Grace" className={inputCls} /></div>
           </div>
         )}
         <ModalFooter>

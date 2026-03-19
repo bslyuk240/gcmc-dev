@@ -36,14 +36,6 @@ type MarEntry = {
   source?: "doctor" | "nurse";
 };
 
-const INITIAL_MAR: MarEntry[] = [
-  { id: "MAR-001", patient: "Kwame Asante", patientId: "PT-8230", ward: "Ward", drug: "Amlodipine 5mg", dosage: "5mg", frequency: "OD", route: "oral", time: "09:00", status: "administered", administeredAt: "09:02", administeredBy: "Nurse Ama", source: "doctor" },
-  { id: "MAR-002", patient: "Ama Owusu", patientId: "PT-8235", ward: "Ward", drug: "Metronidazole 400mg", dosage: "400mg", frequency: "8hrly", route: "oral", time: "10:00", status: "due", source: "doctor" },
-  { id: "MAR-003", patient: "Efua Boateng", patientId: "PT-8232", ward: "Ward", drug: "Metformin 850mg", dosage: "850mg", frequency: "BD", route: "oral", time: "10:00", status: "due", source: "doctor" },
-  { id: "MAR-004", patient: "Yaw Darko", patientId: "PT-8231", ward: "Ward", drug: "Amoxicillin 500mg", dosage: "500mg", frequency: "8hrly", route: "oral", time: "08:00", status: "overdue", source: "doctor" },
-  { id: "MAR-005", patient: "Kofi Mensah", patientId: "PT-8236", ward: "ICU", drug: "IV Normal Saline 500ml", dosage: "500ml", frequency: "12hrly", route: "IV", time: "09:30", status: "administered", administeredAt: "09:35", administeredBy: "Nurse Sandra", source: "nurse" },
-];
-
 const STATUS_BADGE: Record<MedStatus, "success" | "warning" | "destructive" | "neutral"> = {
   administered: "success", due: "warning", overdue: "destructive", skipped: "neutral",
 };
@@ -61,7 +53,7 @@ const ROUTES = ["oral", "IV", "IV infusion", "IM", "SC", "sublingual", "topical"
 export default function NursesMedicationAdministrationPage() {
   const idCounterRef = useRef(0);
   const [activeTab, setActiveTab] = useState<Tab>("Doctor Prescriptions");
-  const [entries, setEntries] = useState<MarEntry[]>(INITIAL_MAR);
+  const [entries, setEntries] = useState<MarEntry[]>([]);
   const [confirmTarget, setConfirmTarget] = useState<MarEntry | null>(null);
   const [skipTarget, setSkipTarget] = useState<MarEntry | null>(null);
   const [skipReason, setSkipReason] = useState("");
@@ -205,7 +197,7 @@ export default function NursesMedicationAdministrationPage() {
         qty: reqQty,
         urgency: reqUrgency,
         notes: reqNotes || undefined,
-        requestedAt: `${now} · Mar 15, 2026`,
+        requestedAt: `${now} · ${new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}`,
         status: "Requested",
       };
       addNurseRequest(req);
