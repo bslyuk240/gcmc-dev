@@ -207,21 +207,18 @@ export async function addPrescription(p: SharedPrescription) {
   }
 }
 
-export async function updatePrescriptionStatus(
+export function updatePrescriptionStatus(
   id: string,
   status: PrescriptionStatus,
   extra?: Partial<SharedPrescription>,
 ) {
-  try {
-    const { upsertPrescriptionStatus } = await import("@/lib/supabase/db");
-    await upsertPrescriptionStatus(id, status, extra);
-    mutate((s) => {
-      s.prescriptions = s.prescriptions.map((p) => p.id === id ? { ...p, status, ...extra } : p);
-    });
-  } catch (err) {
-    console.error("[pharmacy-store] write failed:", err);
-    throw err;
-  }
+  // Optimistic update — instant UI response
+  mutate((s) => {
+    s.prescriptions = s.prescriptions.map((p) => p.id === id ? { ...p, status, ...extra } : p);
+  });
+  // Background Supabase write
+  import("@/lib/supabase/db").then(({ upsertPrescriptionStatus }) => upsertPrescriptionStatus(id, status, extra))
+    .catch((err) => console.error("[pharmacy-store] updatePrescriptionStatus failed:", err));
 }
 
 // ─── Nurse Medication Requests ────────────────────────────────────────────────

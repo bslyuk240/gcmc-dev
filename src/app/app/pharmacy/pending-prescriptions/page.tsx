@@ -9,6 +9,7 @@ import { useHMSSession } from "@/modules/rbac/hooks";
 import {
   updatePrescriptionStatus,
   addPharmacyBill,
+  syncPharmacyFromSupabase,
   type SharedPrescription,
 } from "@/lib/data/pharmacy-store";
 
@@ -18,9 +19,22 @@ const STATUS_TONE: Record<string, string> = {
   Pending: "bg-blue-100 text-blue-800",
   Processing: "bg-amber-100 text-amber-800",
   Urgent: "bg-red-100 text-red-800",
+  Ready: "bg-violet-100 text-violet-800",
   Dispensed: "bg-emerald-100 text-emerald-800",
+  Collected: "bg-slate-100 text-slate-500",
   Cancelled: "bg-slate-100 text-slate-600",
 };
+
+function fmtRxTime(s: string) {
+  if (!s) return "—";
+  if (!s.includes("T")) return s;
+  const d = new Date(s);
+  if (isNaN(d.getTime())) return s;
+  return d.toLocaleString("en-GB", {
+    hour: "2-digit", minute: "2-digit",
+    day: "numeric", month: "short", year: "numeric",
+  });
+}
 
 export default function PendingPrescriptionsPage() {
   const { prescriptions } = usePharmacyStore();
@@ -30,27 +44,42 @@ export default function PendingPrescriptionsPage() {
   const [activeTab, setActiveTab] = useState<Tab>("All Pending");
   const [dispenseTarget, setDispenseTarget] = useState<SharedPrescription | null>(null);
   const [dispenseNotes, setDispenseNotes] = useState("");
-  const [readyIds, setReadyIds] = useState<Set<string>>(new Set());
   const [collectedIds, setCollectedIds] = useState<Set<string>>(new Set());
   const [toast, setToast] = useState<ToastData | null>(null);
   const [dispensing, setDispensing] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
-  const urgent = prescriptions.filter((p) => p.urgency === "Urgent" && p.status !== "Dispensed" && p.status !== "Cancelled");
-  const waitingPickup = prescriptions.filter((p) => readyIds.has(p.id) && !collectedIds.has(p.id));
-  const allPending = prescriptions.filter((p) => p.status !== "Dispensed" && p.status !== "Cancelled" && !collectedIds.has(p.id));
-  const dispensed = prescriptions.filter((p) => p.status === "Dispensed");
+  // Derive lists from store state — no local readyIds needed
+  const urgent = prescriptions.filter(
+    (p) => p.urgency === "Urgent" && p.status !== "Dispensed" && p.status !== "Cancelled"
+  );
+  const waitingPickup = prescriptions.filter(
+    (p) => p.status === "Dispensed" && !collectedIds.has(p.id)
+  );
+  const allPending = prescriptions.filter(
+    (p) => p.status !== "Dispensed" && p.status !== "Cancelled"
+  );
+  const dispensedToday = prescriptions.filter((p) => {
+    if (p.status !== "Dispensed") return false;
+    if (!p.dispensedAt) return true;
+    // dispensedAt is "HH:MM · DD Mon YYYY" — check if date portion matches today
+    const today = new Date().toLocaleDateString("en-GB", {
+      day: "numeric", month: "short", year: "numeric",
+    });
+    return p.dispensedAt.includes(today);
+  });
 
   const tabs: { label: string; tab: Tab; count: number; color?: string }[] = [
     { label: "All Pending", tab: "All Pending", count: allPending.length },
     { label: "Urgent", tab: "Urgent", count: urgent.length, color: urgent.length > 0 ? "text-red-600" : undefined },
     { label: "Waiting for Pickup", tab: "Waiting for Pickup", count: waitingPickup.length },
-    { label: "Dispensed Today", tab: "Dispensed", count: dispensed.length },
+    { label: "Dispensed Today", tab: "Dispensed", count: dispensedToday.length },
   ];
 
   const displayed =
     activeTab === "Urgent" ? urgent
     : activeTab === "Waiting for Pickup" ? waitingPickup
-    : activeTab === "Dispensed" ? dispensed
+    : activeTab === "Dispensed" ? dispensedToday
     : allPending;
 
   function calcTotal(rx: SharedPrescription): number {
@@ -63,39 +92,38 @@ export default function PendingPrescriptionsPage() {
   function handleDispense() {
     if (!dispenseTarget) return;
     setDispensing(true);
+    const target = dispenseTarget; // capture before clearing
     const now = new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
-    const total = calcTotal(dispenseTarget);
-
     const dateStr = new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
-    setTimeout(() => {
-      updatePrescriptionStatus(dispenseTarget.id, "Dispensed", {
-        dispensedAt: `${now} · ${dateStr}`,
-        dispensedBy: staffName,
-        totalCost: total,
-      });
+    const dispensedAt = `${now} · ${dateStr}`;
+    const total = calcTotal(target);
 
-      // Create billing record → visible in Accounts
-      addPharmacyBill({
-        id: `PBILL-${Date.now()}`,
-        prescriptionId: dispenseTarget.id,
-        patientName: dispenseTarget.patientName,
-        patientId: dispenseTarget.patientId,
-        drugs: dispenseTarget.drugs.map((d) => `${d.name} × ${d.qty}`).join(", "),
-        totalCost: total,
-        dispensedAt: `${now} · ${dateStr}`,
-        billStatus: "Pending",
-        source: "prescription",
-      });
+    // Optimistic update — instant UI (updatePrescriptionStatus now mutates first)
+    updatePrescriptionStatus(target.id, "Dispensed", {
+      dispensedAt,
+      dispensedBy: staffName,
+      totalCost: total,
+    });
 
-      setReadyIds((prev) => new Set([...prev, dispenseTarget.id]));
-      setToast({
-        message: `${dispenseTarget.id} dispensed for ${dispenseTarget.patientName}. Bill ₦${total.toFixed(2)} sent to Accounts.`,
-        type: "success",
-      });
-      setDispenseTarget(null);
-      setDispenseNotes("");
-      setDispensing(false);
-    }, 700);
+    addPharmacyBill({
+      id: `PBILL-${Date.now()}`,
+      prescriptionId: target.id,
+      patientName: target.patientName,
+      patientId: target.patientId,
+      drugs: target.drugs.map((d) => `${d.name} × ${d.qty}`).join(", "),
+      totalCost: total,
+      dispensedAt,
+      billStatus: "Pending",
+      source: "prescription",
+    });
+
+    setToast({
+      message: `${target.id} dispensed for ${target.patientName}. Bill ₦${total.toFixed(2)} sent to Accounts.`,
+      type: "success",
+    });
+    setDispenseTarget(null);
+    setDispenseNotes("");
+    setDispensing(false);
   }
 
   function markCollected(id: string, patientName: string) {
@@ -103,10 +131,16 @@ export default function PendingPrescriptionsPage() {
     setToast({ message: `${patientName} collected their medication.`, type: "success" });
   }
 
+  async function handleRefresh() {
+    setRefreshing(true);
+    await syncPharmacyFromSupabase(true);
+    setRefreshing(false);
+    setToast({ message: "Prescription list refreshed.", type: "info" });
+  }
+
   function getRowStatus(rx: SharedPrescription): string {
     if (collectedIds.has(rx.id)) return "Collected";
-    if (rx.status === "Dispensed" && readyIds.has(rx.id)) return "Ready";
-    if (rx.status === "Dispensed") return "Dispensed";
+    if (rx.status === "Dispensed") return "Ready";
     if (rx.urgency === "Urgent") return "Urgent";
     return rx.status;
   }
@@ -127,8 +161,8 @@ export default function PendingPrescriptionsPage() {
               {urgent.length} urgent
             </span>
           )}
-          <Button size="md" variant="outline" onClick={() => setToast({ message: "List refreshed.", type: "info" })}>
-            Refresh
+          <Button size="md" variant="outline" onClick={handleRefresh} disabled={refreshing}>
+            {refreshing ? "Refreshing…" : "Refresh"}
           </Button>
         </div>
       </div>
@@ -170,11 +204,9 @@ export default function PendingPrescriptionsPage() {
                   <tr key={row.id} className={`hover:bg-slate-50/70 ${row.urgency === "Urgent" && row.status === "Pending" ? "bg-red-50/30" : ""}`}>
                     <td className="px-5 py-3.5 font-bold text-slate-900 text-sm">{row.id}</td>
                     <td className="px-5 py-3.5 text-sm font-medium text-slate-800">{row.patientName}</td>
-                    <td className="px-5 py-3.5 text-sm text-slate-600">
-                      <div>{row.doctorName}</div>
-                    </td>
+                    <td className="px-5 py-3.5 text-sm text-slate-600">{row.doctorName}</td>
                     <td className="px-5 py-3.5 text-xs text-slate-500">{row.department}</td>
-                    <td className="px-5 py-3.5 text-xs text-slate-500">{row.createdAt}</td>
+                    <td className="px-5 py-3.5 text-xs text-slate-500 whitespace-nowrap">{fmtRxTime(row.createdAt)}</td>
                     <td className="px-5 py-3.5">
                       {row.drugs.map((d, i) => (
                         <div key={i} className="text-xs">
@@ -192,18 +224,15 @@ export default function PendingPrescriptionsPage() {
                       </span>
                     </td>
                     <td className="px-5 py-3.5">
-                      {(row.status === "Pending" || row.status === "Processing") && !readyIds.has(row.id) && (
+                      {(row.status === "Pending" || row.status === "Processing") && (
                         <Button size="sm" onClick={() => { setDispenseTarget(row); setDispenseNotes(""); }}>
                           Dispense
                         </Button>
                       )}
-                      {readyIds.has(row.id) && !collectedIds.has(row.id) && (
+                      {row.status === "Dispensed" && !collectedIds.has(row.id) && (
                         <Button size="sm" variant="outline" onClick={() => markCollected(row.id, row.patientName)}>
                           Mark Collected
                         </Button>
-                      )}
-                      {(row.status === "Dispensed" && !readyIds.has(row.id)) && (
-                        <span className="text-xs text-emerald-600 font-semibold">✓ Dispensed</span>
                       )}
                       {collectedIds.has(row.id) && (
                         <span className="text-xs text-slate-400">Collected</span>
@@ -225,7 +254,7 @@ export default function PendingPrescriptionsPage() {
       </section>
 
       {/* Flow note */}
-      <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-500 space-y-0.5">
+      <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-500">
         <p><strong className="text-slate-700">Flow:</strong> Doctor writes prescription (Consultations page) → appears here instantly → Dispense → bill auto-sent to Accounts → patient collects.</p>
       </div>
 
