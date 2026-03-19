@@ -119,11 +119,16 @@ const EMPTY_STATE: PharmacyStoreState = {
 };
 
 function loadState(): PharmacyStoreState {
-  return EMPTY_STATE;
+  if (typeof window === "undefined") return { ...EMPTY_STATE };
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    return raw ? (JSON.parse(raw) as PharmacyStoreState) : { ...EMPTY_STATE };
+  } catch { return { ...EMPTY_STATE }; }
 }
 
 function saveState(state: PharmacyStoreState) {
-  void state;
+  if (typeof window === "undefined") return;
+  try { window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch { /* quota */ }
 }
 
 let _state: PharmacyStoreState | null = null;
@@ -166,8 +171,9 @@ export async function syncPharmacyFromSupabase(force = false) {
       fetchPharmacyBills(),
     ]);
     _state = { prescriptions, nurseRequests, restockRequests, bills };
+    saveState(_state);
     listeners.forEach((l) => l());
-  } catch { /* keep localStorage/seed */ }
+  } catch (err) { console.error("[pharmacy-store] sync failed:", err); }
 }
 
 // ─── Prescriptions ────────────────────────────────────────────────────────────
@@ -178,7 +184,8 @@ export function getPrescriptions(): SharedPrescription[] {
 
 export function addPrescription(p: SharedPrescription) {
   mutate((s) => { s.prescriptions = [p, ...s.prescriptions]; });
-  import("@/lib/supabase/db").then(({ insertPrescription }) => insertPrescription(p)).catch(() => {});
+  import("@/lib/supabase/db").then(({ insertPrescription }) => insertPrescription(p))
+    .catch((err) => console.error("[pharmacy-store] addPrescription failed:", err));
 }
 
 export function updatePrescriptionStatus(
@@ -189,7 +196,7 @@ export function updatePrescriptionStatus(
   mutate((s) => {
     s.prescriptions = s.prescriptions.map((p) => p.id === id ? { ...p, status, ...extra } : p);
   });
-  import("@/lib/supabase/db").then(({ upsertPrescriptionStatus }) => upsertPrescriptionStatus(id, status, extra)).catch(() => {});
+  import("@/lib/supabase/db").then(({ upsertPrescriptionStatus }) => upsertPrescriptionStatus(id, status, extra)).catch((err) => console.error('[pharmacy-store] write failed:', err));
 }
 
 // ─── Nurse Medication Requests ────────────────────────────────────────────────

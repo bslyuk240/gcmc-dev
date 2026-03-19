@@ -206,11 +206,16 @@ const EMPTY_STATE: AccountsStoreState = {
 };
 
 function loadState(): AccountsStoreState {
-  return EMPTY_STATE;
+  if (typeof window === "undefined") return { ...EMPTY_STATE };
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    return raw ? (JSON.parse(raw) as AccountsStoreState) : { ...EMPTY_STATE };
+  } catch { return { ...EMPTY_STATE }; }
 }
 
 function saveState(state: AccountsStoreState) {
-  void state;
+  if (typeof window === "undefined") return;
+  try { window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch { /* quota */ }
 }
 
 let _state: AccountsStoreState | null = null;
@@ -248,8 +253,9 @@ export async function syncAccountsFromSupabase(force = false) {
       fetchPayrollBatches(), fetchKioskSales(), fetchLabCharges(), fetchNursingCharges(),
     ]);
     _state = { frontDeskCharges, consultationFees, supplierPayments, payrollBatches, kioskSales, labCharges, nursingCharges };
+    saveState(_state);
     listeners.forEach((l) => l());
-  } catch { /* keep localStorage/seed */ }
+  } catch (err) { console.error("[accounts-store] sync failed:", err); }
 }
 
 // ─── Front Desk Charges ───────────────────────────────────────────────────────
@@ -257,7 +263,7 @@ export async function syncAccountsFromSupabase(force = false) {
 export function getFrontDeskCharges(): FrontDeskCharge[] { return [...getState().frontDeskCharges]; }
 export function addFrontDeskCharge(c: FrontDeskCharge) {
   mutate((s) => { s.frontDeskCharges = [c, ...s.frontDeskCharges]; });
-  import("@/lib/supabase/db").then(({ insertFrontDeskCharge }) => insertFrontDeskCharge(c)).catch(() => {});
+  import("@/lib/supabase/db").then(({ insertFrontDeskCharge }) => insertFrontDeskCharge(c)).catch((err) => console.error('[accounts-store] write failed:', err));
 }
 export function updateFrontDeskChargeStatus(id: string, status: ChargeStatus) {
   mutate((s) => { s.frontDeskCharges = s.frontDeskCharges.map((c) => c.id === id ? { ...c, status } : c); });

@@ -106,11 +106,16 @@ const EMPTY_STATE: LabStoreState = {
 };
 
 function loadState(): LabStoreState {
-  return EMPTY_STATE;
+  if (typeof window === "undefined") return { ...EMPTY_STATE };
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    return raw ? (JSON.parse(raw) as LabStoreState) : { ...EMPTY_STATE };
+  } catch { return { ...EMPTY_STATE }; }
 }
 
 function saveState(s: LabStoreState) {
-  void s;
+  if (typeof window === "undefined") return;
+  try { window.localStorage.setItem(STORAGE_KEY, JSON.stringify(s)); } catch { /* quota */ }
 }
 
 let _state: LabStoreState | null = null;
@@ -145,8 +150,9 @@ export async function syncLabFromSupabase(force = false) {
     const { fetchLabTests, fetchTestCatalog } = await import("@/lib/supabase/db");
     const [tests, catalog] = await Promise.all([fetchLabTests(), fetchTestCatalog()]);
     _state = { tests, catalog };
+    saveState(_state);
     listeners.forEach((l) => l());
-  } catch { /* keep localStorage/seed */ }
+  } catch (err) { console.error("[lab-store] sync failed:", err); }
 }
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
@@ -155,14 +161,15 @@ export function getLabTests(): LabTest[] { return [...getState().tests]; }
 
 export function addLabTest(t: LabTest) {
   mutate((s) => { s.tests = [t, ...s.tests]; });
-  import("@/lib/supabase/db").then(({ insertLabTest }) => insertLabTest(t)).catch(() => {});
+  import("@/lib/supabase/db").then(({ insertLabTest }) => insertLabTest(t))
+    .catch((err) => console.error("[lab-store] addLabTest failed:", err));
 }
 
 export function updateLabTest(id: string, updates: Partial<LabTest>) {
   mutate((s) => {
     s.tests = s.tests.map((t) => t.id === id ? { ...t, ...updates } : t);
   });
-  import("@/lib/supabase/db").then(({ upsertLabTestResult }) => upsertLabTestResult(id, updates)).catch(() => {});
+  import("@/lib/supabase/db").then(({ upsertLabTestResult }) => upsertLabTestResult(id, updates)).catch((err) => console.error('[lab-store] write failed:', err));
 }
 
 // ─── Catalog ──────────────────────────────────────────────────────────────────

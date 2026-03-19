@@ -118,11 +118,16 @@ const EMPTY_STATE: NursesStoreState = {
 };
 
 function loadState(): NursesStoreState {
-  return EMPTY_STATE;
+  if (typeof window === "undefined") return { ...EMPTY_STATE };
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    return raw ? (JSON.parse(raw) as NursesStoreState) : { ...EMPTY_STATE };
+  } catch { return { ...EMPTY_STATE }; }
 }
 
 function saveState(s: NursesStoreState) {
-  void s;
+  if (typeof window === "undefined") return;
+  try { window.localStorage.setItem(STORAGE_KEY, JSON.stringify(s)); } catch { /* quota */ }
 }
 
 let _state: NursesStoreState | null = null;
@@ -159,8 +164,9 @@ export async function syncNursesFromSupabase(force = false) {
       fetchWardPatients(), fetchNursingProcedures(), fetchNurseSampleRequests(), fetchICUVitals(),
     ]);
     _state = { wardPatients, procedures, sampleRequests, icuVitals };
+    saveState(_state);
     listeners.forEach((l) => l());
-  } catch { /* keep localStorage/seed */ }
+  } catch (err) { console.error("[nurses-store] sync failed:", err); }
 }
 
 // ─── Ward Patients ────────────────────────────────────────────────────────────
@@ -171,13 +177,14 @@ export function getPatientsByUnit(unit: NursingUnit): WardPatient[] {
 }
 export function addWardPatient(p: WardPatient) {
   mutate((s) => { s.wardPatients = [p, ...s.wardPatients]; });
-  import("@/lib/supabase/db").then(({ insertWardPatient }) => insertWardPatient(p)).catch(() => {});
+  import("@/lib/supabase/db").then(({ insertWardPatient }) => insertWardPatient(p))
+    .catch((err) => console.error("[nurses-store] addWardPatient failed:", err));
 }
 export function updateWardPatient(id: string, updates: Partial<WardPatient>) {
   mutate((s) => { s.wardPatients = s.wardPatients.map((p) => p.id === id ? { ...p, ...updates } : p); });
-  // persist to Supabase
   const updated = getState().wardPatients.find((p) => p.id === id);
-  if (updated) import("@/lib/supabase/db").then(({ insertWardPatient }) => insertWardPatient(updated)).catch(() => {});
+  if (updated) import("@/lib/supabase/db").then(({ insertWardPatient }) => insertWardPatient(updated))
+    .catch((err) => console.error("[nurses-store] updateWardPatient failed:", err));
 }
 
 // ─── Procedures ───────────────────────────────────────────────────────────────

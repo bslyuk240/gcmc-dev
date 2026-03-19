@@ -79,11 +79,16 @@ const STORAGE_KEY = "hms_doctors_store";
 const EMPTY_STATE: DoctorsStoreState = { doctors: [], consultations: [], admissionOrders: [] };
 
 function loadState(): DoctorsStoreState {
-  return EMPTY_STATE;
+  if (typeof window === "undefined") return { ...EMPTY_STATE };
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    return raw ? (JSON.parse(raw) as DoctorsStoreState) : { ...EMPTY_STATE };
+  } catch { return { ...EMPTY_STATE }; }
 }
 
 function saveState(s: DoctorsStoreState) {
-  void s;
+  if (typeof window === "undefined") return;
+  try { window.localStorage.setItem(STORAGE_KEY, JSON.stringify(s)); } catch { /* quota */ }
 }
 
 let _state: DoctorsStoreState | null = null;
@@ -121,8 +126,9 @@ export async function syncDoctorsFromSupabase(force = false) {
       fetchAdmissionOrders(),
     ]);
     _state = { doctors, consultations, admissionOrders };
+    saveState(_state);
     listeners.forEach((l) => l());
-  } catch { /* Supabase unavailable — keep localStorage/seed data */ }
+  } catch (err) { console.error("[doctors-store] sync failed:", err); }
 }
 
 // ─── Doctors ──────────────────────────────────────────────────────────────────
@@ -134,13 +140,13 @@ export function getDoctors(): DoctorProfile[] { return [...getState().doctors]; 
 export function getConsultations(): ConsultationRecord[] { return [...getState().consultations]; }
 export function addConsultation(c: ConsultationRecord) {
   mutate((s) => { s.consultations = [c, ...s.consultations]; });
-  import("@/lib/supabase/db").then(({ insertConsultation }) => insertConsultation(c)).catch(() => {});
+  import("@/lib/supabase/db").then(({ insertConsultation }) => insertConsultation(c)).catch((err) => console.error('[doctors-store] write failed:', err));
 }
 export function updateConsultation(id: string, updates: Partial<ConsultationRecord>) {
   mutate((s) => {
     s.consultations = s.consultations.map((c) => c.id === id ? { ...c, ...updates } : c);
   });
-  import("@/lib/supabase/db").then(({ upsertConsultation }) => upsertConsultation(id, updates)).catch(() => {});
+  import("@/lib/supabase/db").then(({ upsertConsultation }) => upsertConsultation(id, updates)).catch((err) => console.error('[doctors-store] write failed:', err));
 }
 
 // ─── Admissions ───────────────────────────────────────────────────────────────
@@ -148,7 +154,7 @@ export function updateConsultation(id: string, updates: Partial<ConsultationReco
 export function getAdmissionOrders(): AdmissionOrder[] { return [...getState().admissionOrders]; }
 export function addAdmissionOrder(a: AdmissionOrder) {
   mutate((s) => { s.admissionOrders = [a, ...s.admissionOrders]; });
-  import("@/lib/supabase/db").then(({ insertAdmissionOrder }) => insertAdmissionOrder(a)).catch(() => {});
+  import("@/lib/supabase/db").then(({ insertAdmissionOrder }) => insertAdmissionOrder(a)).catch((err) => console.error('[doctors-store] write failed:', err));
 }
 
 // ─── Metrics ──────────────────────────────────────────────────────────────────
