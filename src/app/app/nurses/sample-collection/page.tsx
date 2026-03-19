@@ -1,15 +1,24 @@
 "use client";
 
-import { useState } from "react";
+import Link from "next/link";
+import { useMemo, useState } from "react";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Modal, ModalFooter } from "@/components/ui/modal";
 import { Toast, type ToastData } from "@/components/ui/toast";
+import { SearchableSelect, type SelectOption } from "@/components/ui/searchable-select";
+import { INTERNAL_PREFIX } from "@/lib/constants/navigation";
 import { useNursesStore } from "@/lib/hooks/use-nurses-store";
+import { useLabStore } from "@/lib/hooks/use-lab-store";
 import { useHMSSession } from "@/modules/rbac/hooks";
-import { addNurseSampleRequest, updateNurseSampleRequest, type NurseSampleRequest } from "@/lib/data/nurses-store";
-import { addLabTest } from "@/lib/data/lab-store";
+import {
+  addNurseSampleRequest,
+  updateNurseSampleRequest,
+  type NurseSampleRequest,
+} from "@/lib/data/nurses-store";
+import { addLabTest, updateLabTest, type LabTest } from "@/lib/data/lab-store";
+import { insertPatientObservation } from "@/lib/supabase/db";
 
 const STATUS_STYLES: Record<string, string> = {
   Ordered: "bg-amber-50 text-amber-700",
@@ -23,227 +32,458 @@ const PRIORITY_STYLES: Record<string, string> = {
   STAT: "bg-red-100 text-red-700 font-bold",
 };
 
-const SAMPLE_TESTS = [
-  { name: "Full Blood Count (FBC)", code: "FBC", sampleType: "EDTA Blood", price: 80 },
-  { name: "Malaria Parasite Test", code: "MP", sampleType: "Blood Smear", price: 40 },
-  { name: "Blood Culture & Sensitivity", code: "BCXS", sampleType: "Blood", price: 180 },
-  { name: "Urinalysis", code: "UA", sampleType: "Mid-stream Urine", price: 30 },
-  { name: "Fasting Blood Sugar", code: "FBS", sampleType: "Plain Blood", price: 35 },
-  { name: "Renal Function Test", code: "RFT", sampleType: "Serum", price: 100 },
-  { name: "Liver Function Test", code: "LFT", sampleType: "Serum", price: 120 },
-  { name: "Electrolytes", code: "ELEC", sampleType: "Serum", price: 90 },
-];
+type RequestRow = NurseSampleRequest & {
+  linkedLabTest?: LabTest;
+  source: "nurse" | "doctor";
+};
 
+function createLocalId(prefix: string) {
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+}
+
+function fmtDateTime(value?: string) {
+  if (!value) return "--";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString("en-GB", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function sortByOrderedAt(items: RequestRow[]) {
+  return [...items].sort((a, b) => {
+    const aTime = new Date(a.orderedAt).getTime();
+    const bTime = new Date(b.orderedAt).getTime();
+    return bTime - aTime;
+  });
+}
+
+function getErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : "The action could not be completed.";
+}
 
 export default function NursesSampleCollectionPage() {
   const { sampleRequests, allPatients } = useNursesStore();
+  const { tests, catalog } = useLabStore();
   const session = useHMSSession();
   const staffName = session?.full_name ?? "Nurse";
 
   const [newSampleModal, setNewSampleModal] = useState(false);
-  const [collectTarget, setCollectTarget] = useState<NurseSampleRequest | null>(null);
   const [toast, setToast] = useState<ToastData | null>(null);
+  const [optimisticRequests, setOptimisticRequests] = useState<NurseSampleRequest[]>([]);
 
-  // New sample form
-  const [patient, setPatient] = useState(""); const [patientId, setPatientId] = useState("");
-  const [testCode, setTestCode] = useState(SAMPLE_TESTS[0].code);
+  const [selectedPatientId, setSelectedPatientId] = useState("");
+  const [manualPatientName, setManualPatientName] = useState("");
+  const [manualPatientId, setManualPatientId] = useState("");
+  const [selectedTestId, setSelectedTestId] = useState("");
   const [priority, setPriority] = useState<NurseSampleRequest["priority"]>("Routine");
-  const [doctor, setDoctor] = useState(""); const [nurse, setNurse] = useState("");
+  const [doctor, setDoctor] = useState("");
   const [unit, setUnit] = useState<NurseSampleRequest["unit"]>("Ward");
 
-  // Collect form
-  const [collectNurse, setCollectNurse] = useState("");
+  const activePatients = useMemo(
+    () => allPatients.filter((patient) => patient.status === "Active"),
+    [allPatients],
+  );
 
-  function handleAddRequest() {
-    if (!patient || !testCode) return;
-    const selectedTest = SAMPLE_TESTS.find((t) => t.code === testCode)!;
-    const now = new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
-    addNurseSampleRequest({
-      id: `NSR-${Date.now()}`,
-      patientName: patient, patientId: patientId || `PT-${Date.now()}`,
-      unit, testName: selectedTest.name, testCode: selectedTest.code,
+  const patientByDisplayId = useMemo(
+    () => new Map(activePatients.map((patient) => [patient.patientId, patient])),
+    [activePatients],
+  );
+
+  const sampleRequestById = useMemo(
+    () =>
+      new Map(
+        [...sampleRequests, ...optimisticRequests.filter((request) => !sampleRequests.some((stored) => stored.id === request.id))].map((request) => [
+          request.id,
+          request,
+        ]),
+      ),
+    [optimisticRequests, sampleRequests],
+  );
+
+  const visibleSampleRequests = useMemo(
+    () => [
+      ...sampleRequests,
+      ...optimisticRequests.filter((request) => !sampleRequests.some((stored) => stored.id === request.id)),
+    ],
+    [optimisticRequests, sampleRequests],
+  );
+
+  const patientOptions: SelectOption[] = activePatients.map((patient) => ({
+    value: patient.id,
+    label: patient.patientName,
+    sublabel: `${patient.unit} / Bed ${patient.bed} / ${patient.patientId}`,
+    group: patient.unit,
+  }));
+
+  const testOptions: SelectOption[] = catalog.map((item) => ({
+    value: item.id,
+    label: item.name,
+    sublabel: `${item.sampleType} / ${item.code} / NGN ${item.price}`,
+    group: item.category,
+  }));
+
+  const derivedRequests = tests
+    .filter((test) => test.status === "Pending" || test.status === "Sample Collected" || test.status === "In Progress" || test.status === "Completed")
+    .filter((test) => !sampleRequestById.has(test.id))
+    .map((test) => ({
+      id: test.id,
+      patientName: test.patientName,
+      patientId: test.patientId,
+      unit: (patientByDisplayId.get(test.patientId)?.unit ?? "Ward") as NurseSampleRequest["unit"],
+      testName: test.testName,
+      testCode: test.testCode,
+      sampleType: test.sampleType,
+      collectedBy: test.sampleCollectedBy,
+      collectedAt: test.sampleCollectedAt,
+      status: test.status === "Pending" ? "Ordered" : "Sent to Lab",
+      priority: test.priority,
+      orderedBy: test.orderedBy,
+      orderedAt: test.orderedAt,
+      linkedLabTest: test,
+      source: "doctor" as const,
+    }));
+
+  const requestRows = sortByOrderedAt([
+    ...visibleSampleRequests.map((request) => ({
+      ...request,
+      linkedLabTest: tests.find((test) => test.id === request.id || (test.patientId === request.patientId && test.testCode === request.testCode)),
+      source: "nurse" as const,
+    })),
+    ...derivedRequests,
+  ]);
+
+  const pendingCollection = requestRows.filter((request) => request.status === "Ordered");
+  const collected = requestRows.filter((request) => request.status === "Collected");
+  const sentToLab = requestRows.filter((request) => request.status === "Sent to Lab");
+
+  const inputCls =
+    "w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/20";
+
+  function resetNewRequestForm() {
+    setSelectedPatientId("");
+    setManualPatientName("");
+    setManualPatientId("");
+    setSelectedTestId("");
+    setPriority("Routine");
+    setDoctor("");
+    setUnit("Ward");
+  }
+
+  async function ensureStoredRequest(request: RequestRow, updates?: Partial<NurseSampleRequest>) {
+    const next: NurseSampleRequest = { ...request, ...updates };
+    setOptimisticRequests((prev) => {
+      const existing = prev.find((entry) => entry.id === request.id);
+      if (existing) return prev.map((entry) => (entry.id === request.id ? next : entry));
+      return [next, ...prev];
+    });
+    if (sampleRequestById.has(request.id)) await updateNurseSampleRequest(request.id, updates ?? {});
+    else await addNurseSampleRequest(next);
+    return next;
+  }
+
+  function handleSelectPatient(patientInternalId: string) {
+    setSelectedPatientId(patientInternalId);
+    const patient = activePatients.find((entry) => entry.id === patientInternalId);
+    if (!patient) return;
+    setManualPatientName(patient.patientName);
+    setManualPatientId(patient.patientId);
+    setUnit(patient.unit);
+    setDoctor(patient.doctorInCharge || "");
+  }
+
+  async function handleAddRequest() {
+    const patient = activePatients.find((entry) => entry.id === selectedPatientId) ?? null;
+    const selectedTest = catalog.find((item) => item.id === selectedTestId);
+    const patientName = patient?.patientName || manualPatientName.trim();
+    const patientId = patient?.patientId || manualPatientId.trim() || createLocalId("PT-LAB");
+
+    if (!patientName || !selectedTest) return;
+
+    const request: NurseSampleRequest = {
+      id: createLocalId("LABREQ"),
+      patientName,
+      patientId,
+      unit: patient?.unit ?? unit,
+      testName: selectedTest.name,
+      testCode: selectedTest.code,
       sampleType: selectedTest.sampleType,
-      status: "Ordered", priority, orderedBy: doctor,
-      orderedAt: `${now} · Mar 15, 2026`,
-    });
-    setToast({ message: `Sample request created for ${patient} — ${selectedTest.name}.`, type: "success" });
-    setNewSampleModal(false);
-    setPatient(""); setPatientId(""); setTestCode(SAMPLE_TESTS[0].code);
+      status: "Ordered",
+      priority,
+      orderedBy: doctor.trim() || patient?.doctorInCharge || "Doctor",
+      orderedAt: new Date().toISOString(),
+    };
+
+    try {
+      setOptimisticRequests((prev) => [request, ...prev.filter((entry) => entry.id !== request.id)]);
+      await addNurseSampleRequest(request);
+      setToast({ message: `Sample request created for ${patientName} - ${selectedTest.name}.`, type: "success" });
+      setNewSampleModal(false);
+      resetNewRequestForm();
+    } catch (error) {
+      setOptimisticRequests((prev) => prev.filter((entry) => entry.id !== request.id));
+      setToast({ message: `Sample request failed: ${getErrorMessage(error)}`, type: "error" });
+    }
   }
 
-  function handleMarkCollected() {
-    if (!collectTarget) return;
-    const now = new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
-    updateNurseSampleRequest(collectTarget.id, {
-      status: "Collected", collectedBy: collectNurse,
-      collectedAt: `${now} · Mar 15, 2026`,
-    });
-    setToast({ message: `Sample collected for ${collectTarget.patientName}.`, type: "success" });
-    setCollectTarget(null);
+  async function handleMarkCollected(request: RequestRow, collectedBy = staffName) {
+    const collector = collectedBy.trim() || "Nurse";
+    const collectedAt = new Date().toISOString();
+
+    try {
+      const updatedRequest = await ensureStoredRequest(request, {
+        status: "Collected",
+        collectedBy: collector,
+        collectedAt,
+      });
+
+      await insertPatientObservation({
+        id: createLocalId("OBS-SAMPLE"),
+        patientId: updatedRequest.patientId,
+        patientName: updatedRequest.patientName,
+        unit: updatedRequest.unit,
+        observation: `Sample collected for ${updatedRequest.testName} (${updatedRequest.sampleType}) by ${collector}.`,
+        recordedBy: collector,
+        recordedAt: collectedAt,
+      });
+
+      setToast({ message: `Sample collected for ${updatedRequest.patientName}.`, type: "success" });
+    } catch (error) {
+      setToast({ message: `Collection failed: ${getErrorMessage(error)}`, type: "error" });
+    }
   }
 
-  function handleSendToLab(req: NurseSampleRequest) {
-    const now = new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
-    // Send to lab store
-    addLabTest({
-      id: `LAB-NSR-${Date.now()}`, patientName: req.patientName, patientId: req.patientId,
-      testName: req.testName, testCode: req.testCode, category: "Clinical Chemistry",
-      orderedBy: req.orderedBy, orderedAt: req.orderedAt,
-      priority: req.priority, status: "Sample Collected",
-      sampleType: req.sampleType, price: SAMPLE_TESTS.find((t) => t.code === req.testCode)?.price ?? 50,
-      sampleCollectedBy: req.collectedBy, sampleCollectedAt: req.collectedAt,
-      billStatus: "Billed",
-    });
-    updateNurseSampleRequest(req.id, { status: "Sent to Lab" });
-    setToast({ message: `${req.testName} for ${req.patientName} sent to Lab. Lab queue updated.`, type: "success" });
+  async function handleSendToLab(request: RequestRow) {
+    try {
+      const storedRequest = await ensureStoredRequest(request, { status: "Sent to Lab" });
+      const linkedTest =
+        request.linkedLabTest ??
+        tests.find((test) => test.id === request.id || (test.patientId === request.patientId && test.testCode === request.testCode));
+
+      if (linkedTest) {
+        await updateLabTest(linkedTest.id, {
+          status: "Sample Collected",
+          sampleCollectedBy: storedRequest.collectedBy,
+          sampleCollectedAt: storedRequest.collectedAt,
+        });
+      } else {
+        const catalogItem = catalog.find((item) => item.code === request.testCode);
+        await addLabTest({
+          id: request.id,
+          patientName: request.patientName,
+          patientId: request.patientId,
+          testName: request.testName,
+          testCode: request.testCode,
+          category: catalogItem?.category ?? "Clinical Chemistry",
+          orderedBy: request.orderedBy,
+          orderedAt: request.orderedAt,
+          priority: request.priority,
+          status: "Sample Collected",
+          sampleType: request.sampleType,
+          price: catalogItem?.price ?? 0,
+          sampleCollectedBy: storedRequest.collectedBy,
+          sampleCollectedAt: storedRequest.collectedAt,
+          billStatus: "Pending",
+        });
+      }
+
+      await insertPatientObservation({
+        id: createLocalId("OBS-SAMPLE"),
+        patientId: request.patientId,
+        patientName: request.patientName,
+        unit: request.unit,
+        observation: `Sample for ${request.testName} sent to Lab for processing.`,
+        recordedBy: staffName,
+        recordedAt: new Date().toISOString(),
+      });
+
+      setToast({ message: `${request.testName} for ${request.patientName} sent to Lab.`, type: "success" });
+    } catch (error) {
+      setToast({ message: `Send to Lab failed: ${getErrorMessage(error)}`, type: "error" });
+    }
   }
-
-  const inputCls = "w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/20";
-
-  const pendingCollection = sampleRequests.filter((r) => r.status === "Ordered");
-  const collected = sampleRequests.filter((r) => r.status === "Collected");
-  const sentToLab = sampleRequests.filter((r) => r.status === "Sent to Lab");
 
   return (
     <div className="space-y-6">
       <PageHeader
         title="Sample Collection"
-        description="Nurses collect lab samples from patients and send them to the Lab. Track all sample requests across units."
+        description="Collect doctor-ordered samples, create manual sample requests, and hand them off to Lab processing."
         action={<Button onClick={() => setNewSampleModal(true)}>+ New Sample Request</Button>}
       />
 
-      {/* Stats */}
-      <div className="flex gap-3">
-        <Card className="flex flex-1 items-center gap-3 px-4 py-3 bg-amber-50 border-0">
+      <div className="grid gap-4 lg:grid-cols-4">
+        <Card className="border-0 bg-amber-50 px-4 py-3">
           <p className="text-2xl font-bold text-amber-600">{pendingCollection.length}</p>
-          <p className="text-xs font-semibold text-slate-500 leading-tight">Awaiting Collection</p>
+          <p className="text-xs font-semibold leading-tight text-slate-500">Awaiting Collection</p>
         </Card>
-        <Card className="flex flex-1 items-center gap-3 px-4 py-3 bg-sky-50 border-0">
+        <Card className="border-0 bg-sky-50 px-4 py-3">
           <p className="text-2xl font-bold text-sky-700">{collected.length}</p>
-          <p className="text-xs font-semibold text-slate-500 leading-tight">Collected — Ready to Send</p>
+          <p className="text-xs font-semibold leading-tight text-slate-500">Collected - Ready to Send</p>
         </Card>
-        <Card className="flex flex-1 items-center gap-3 px-4 py-3 bg-emerald-50 border-0">
+        <Card className="border-0 bg-emerald-50 px-4 py-3">
           <p className="text-2xl font-bold text-emerald-700">{sentToLab.length}</p>
-          <p className="text-xs font-semibold text-slate-500 leading-tight">Sent to Lab</p>
+          <p className="text-xs font-semibold leading-tight text-slate-500">Sent to Lab</p>
+        </Card>
+        <Card className="px-4 py-3">
+          <p className="text-2xl font-bold text-slate-900">{tests.filter((test) => test.status === "Sample Collected").length}</p>
+          <p className="text-xs font-semibold leading-tight text-slate-500">Lab Processing Queue</p>
         </Card>
       </div>
 
       <Card className="overflow-hidden p-0">
         <div className="border-b border-slate-100 px-5 py-4">
           <h3 className="font-bold text-slate-900">All Sample Requests</h3>
-          <p className="text-xs text-slate-400 mt-0.5">Collect sample → then Send to Lab to update the lab queue automatically</p>
+          <p className="mt-0.5 text-xs text-slate-400">Collect sample, then send it to Lab. Doctor test orders appear here automatically.</p>
         </div>
         <div className="overflow-x-auto">
-          <table className="min-w-full text-sm text-left">
+          <table className="min-w-full text-left text-sm">
             <thead>
-              <tr className="bg-slate-50 border-b border-slate-100">
-                {["Patient", "Unit", "Test", "Sample Type", "Ordered By", "Priority", "Collection", "Status", "Action"].map((h) => (
-                  <th key={h} className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500 whitespace-nowrap">{h}</th>
+              <tr className="border-b border-slate-100 bg-slate-50">
+                {["Patient", "Unit", "Test", "Sample Type", "Ordered By", "Priority", "Collection", "Status", "Action"].map((heading) => (
+                  <th key={heading} className="whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    {heading}
+                  </th>
                 ))}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {sampleRequests.map((r) => (
-                <tr key={r.id} className={`hover:bg-slate-50 ${r.priority === "STAT" ? "bg-red-50/20" : ""}`}>
+              {requestRows.map((request) => (
+                <tr key={request.id} className={request.priority === "STAT" ? "bg-red-50/20" : "hover:bg-slate-50"}>
                   <td className="px-4 py-3">
-                    <p className="font-medium text-slate-900">{r.patientName}</p>
-                    <p className="text-xs text-slate-400">{r.patientId}</p>
+                    <Link
+                      href={`${INTERNAL_PREFIX}/nurses/patients/${encodeURIComponent(request.patientId)}`}
+                      className="font-medium text-slate-900 hover:text-accent hover:underline"
+                    >
+                      {request.patientName}
+                    </Link>
+                    <p className="text-xs text-slate-400">{request.patientId}</p>
                   </td>
                   <td className="px-4 py-3">
-                    <span className="rounded-full bg-slate-100 text-slate-600 px-2 py-0.5 text-xs font-semibold">{r.unit}</span>
+                    <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-600">{request.unit}</span>
                   </td>
                   <td className="px-4 py-3">
-                    <p className="font-medium text-slate-800">{r.testName}</p>
-                    <p className="text-xs text-slate-400 font-mono">{r.testCode}</p>
+                    <p className="font-medium text-slate-800">{request.testName}</p>
+                    <p className="text-xs font-mono text-slate-400">{request.testCode}</p>
                   </td>
-                  <td className="px-4 py-3 text-xs text-slate-500">{r.sampleType}</td>
-                  <td className="px-4 py-3 text-xs text-slate-500">{r.orderedBy}</td>
+                  <td className="px-4 py-3 text-xs text-slate-500">{request.sampleType}</td>
+                  <td className="px-4 py-3 text-xs text-slate-500">
+                    <div>{request.orderedBy}</div>
+                    <div className="text-slate-400">{fmtDateTime(request.orderedAt)}</div>
+                  </td>
                   <td className="px-4 py-3">
-                    <span className={`rounded-full px-2 py-0.5 text-xs ${PRIORITY_STYLES[r.priority]}`}>{r.priority}</span>
+                    <span className={`rounded-full px-2 py-0.5 text-xs ${PRIORITY_STYLES[request.priority]}`}>{request.priority}</span>
                   </td>
                   <td className="px-4 py-3 text-xs text-slate-500">
-                    {r.collectedBy ? <><p>{r.collectedBy}</p><p className="text-slate-400">{r.collectedAt}</p></> : <span className="text-amber-600 font-medium">Not collected</span>}
+                    {request.collectedBy ? (
+                      <>
+                        <p>{request.collectedBy}</p>
+                        <p className="text-slate-400">{fmtDateTime(request.collectedAt)}</p>
+                      </>
+                    ) : (
+                      <span className="font-medium text-amber-600">Not collected</span>
+                    )}
                   </td>
                   <td className="px-4 py-3">
-                    <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${STATUS_STYLES[r.status]}`}>{r.status}</span>
+                    <div className="space-y-1">
+                      <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${STATUS_STYLES[request.status]}`}>{request.status}</span>
+                      {request.linkedLabTest && request.linkedLabTest.status !== "Pending" ? (
+                        <p className="text-[11px] text-slate-400">Lab: {request.linkedLabTest.status}</p>
+                      ) : null}
+                    </div>
                   </td>
                   <td className="px-4 py-3">
-                    <div className="flex gap-1.5">
-                      {r.status === "Ordered" && (
-                        <Button size="sm" onClick={() => { setCollectTarget(r); setCollectNurse(staffName); }}>Collect</Button>
-                      )}
-                      {r.status === "Collected" && (
-                        <Button size="sm" onClick={() => handleSendToLab(r)}>Send to Lab</Button>
-                      )}
-                      {r.status === "Sent to Lab" && (
-                        <span className="text-xs font-semibold text-emerald-700">✓ Lab queue updated</span>
-                      )}
+                    <div className="flex flex-wrap gap-1.5">
+                      {request.status === "Ordered" ? (
+                        <Button size="sm" onClick={() => void handleMarkCollected(request)}>
+                          Collect
+                        </Button>
+                      ) : null}
+                      {request.status === "Collected" ? (
+                        <Button size="sm" onClick={() => void handleSendToLab(request)}>
+                          Send to Lab
+                        </Button>
+                      ) : null}
+                      {request.status === "Sent to Lab" ? (
+                        <span className="text-xs font-semibold text-emerald-700">Lab queue updated</span>
+                      ) : null}
                     </div>
                   </td>
                 </tr>
               ))}
-              {sampleRequests.length === 0 && (
-                <tr><td colSpan={9} className="px-6 py-10 text-center text-sm text-slate-400">No sample requests yet.</td></tr>
-              )}
+              {requestRows.length === 0 ? (
+                <tr>
+                  <td colSpan={9} className="px-6 py-10 text-center text-sm text-slate-400">
+                    No sample requests yet.
+                  </td>
+                </tr>
+              ) : null}
             </tbody>
           </table>
         </div>
       </Card>
 
       <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-500">
-        <strong className="text-slate-700">Flow:</strong> Doctor orders test → Nurse creates sample request → Nurse collects sample → Nurse sends to Lab → Lab processes test → Result returned to doctor.
+        <strong className="text-slate-700">Flow:</strong> Doctor orders test, nurse collects sample, nurse sends sample to Lab, Lab processes the test, result returns to doctor and patient record.
       </div>
 
-      {/* New Sample Modal */}
       <Modal open={newSampleModal} onClose={() => setNewSampleModal(false)} title="New Lab Sample Request">
         <div className="space-y-3">
-          <div className="grid grid-cols-2 gap-3">
-            <div><label className="block text-xs font-semibold text-slate-600 mb-1">Patient Name *</label>
-              <input value={patient} onChange={(e) => setPatient(e.target.value)} placeholder="Patient name" className={inputCls} /></div>
-            <div><label className="block text-xs font-semibold text-slate-600 mb-1">Patient ID</label>
-              <input value={patientId} onChange={(e) => setPatientId(e.target.value)} placeholder="PT-XXXX" className={inputCls} /></div>
+          <div>
+            <label className="mb-1 block text-xs font-semibold text-slate-600">Patient</label>
+            <SearchableSelect
+              options={patientOptions}
+              value={selectedPatientId}
+              onChange={handleSelectPatient}
+              placeholder="Select active patient..."
+            />
+            {!selectedPatientId ? (
+              <div className="mt-2 grid grid-cols-2 gap-3">
+                <input value={manualPatientName} onChange={(event) => setManualPatientName(event.target.value)} placeholder="Patient name" className={inputCls} />
+                <input value={manualPatientId} onChange={(event) => setManualPatientId(event.target.value)} placeholder="Patient ID" className={inputCls} />
+              </div>
+            ) : null}
           </div>
-          <div><label className="block text-xs font-semibold text-slate-600 mb-1">Select Test *</label>
-            <select value={testCode} onChange={(e) => setTestCode(e.target.value)} className={inputCls}>
-              {SAMPLE_TESTS.map((t) => <option key={t.code} value={t.code}>{t.name} ({t.sampleType})</option>)}
-            </select></div>
-          <div className="grid grid-cols-2 gap-3">
-            <div><label className="block text-xs font-semibold text-slate-600 mb-1">Priority</label>
-              <select value={priority} onChange={(e) => setPriority(e.target.value as NurseSampleRequest["priority"])} className={inputCls}>
-                {["Routine", "Urgent", "STAT"].map((p) => <option key={p}>{p}</option>)}
-              </select></div>
-            <div><label className="block text-xs font-semibold text-slate-600 mb-1">Unit</label>
-              <select value={unit} onChange={(e) => setUnit(e.target.value as NurseSampleRequest["unit"])} className={inputCls}>
-                {["Outpatient", "Ward", "Emergency", "ICU"].map((u) => <option key={u}>{u}</option>)}
-              </select></div>
+          <div>
+            <label className="mb-1 block text-xs font-semibold text-slate-600">Select Test *</label>
+            <SearchableSelect
+              options={testOptions}
+              value={selectedTestId}
+              onChange={setSelectedTestId}
+              placeholder="Search test catalog..."
+            />
           </div>
-          <div><label className="block text-xs font-semibold text-slate-600 mb-1">Ordered By (Doctor)</label>
-            <input value={doctor} onChange={(e) => setDoctor(e.target.value)} placeholder="e.g. Dr. Smith" className={inputCls} /></div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="mb-1 block text-xs font-semibold text-slate-600">Priority</label>
+              <select value={priority} onChange={(event) => setPriority(event.target.value as NurseSampleRequest["priority"])} className={inputCls}>
+                {(["Routine", "Urgent", "STAT"] as const).map((value) => (
+                  <option key={value}>{value}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-semibold text-slate-600">Unit</label>
+              <select value={unit} onChange={(event) => setUnit(event.target.value as NurseSampleRequest["unit"])} className={inputCls}>
+                {(["Outpatient", "Ward", "Emergency", "ICU"] as const).map((value) => (
+                  <option key={value}>{value}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-semibold text-slate-600">Ordered By (Doctor)</label>
+            <input value={doctor} onChange={(event) => setDoctor(event.target.value)} placeholder="e.g. Dr. Smith" className={inputCls} />
+          </div>
         </div>
         <ModalFooter>
           <Button variant="ghost" size="md" onClick={() => setNewSampleModal(false)}>Cancel</Button>
-          <Button size="md" disabled={!patient || !testCode} onClick={handleAddRequest}>Create Sample Request</Button>
-        </ModalFooter>
-      </Modal>
-
-      {/* Collect Sample Modal */}
-      <Modal open={!!collectTarget} onClose={() => setCollectTarget(null)} title={`Collect Sample — ${collectTarget?.patientName}`}>
-        {collectTarget && (
-          <div className="space-y-3">
-            <div className="rounded-lg bg-slate-50 p-3 text-sm space-y-1">
-              <div className="flex justify-between"><span className="text-slate-500">Test</span><strong>{collectTarget.testName}</strong></div>
-              <div className="flex justify-between"><span className="text-slate-500">Sample Type</span><span>{collectTarget.sampleType}</span></div>
-              <div className="flex justify-between"><span className="text-slate-500">Priority</span>
-                <span className={`rounded-full px-2 py-0.5 text-xs ${PRIORITY_STYLES[collectTarget.priority]}`}>{collectTarget.priority}</span>
-              </div>
-            </div>
-            <div><label className="block text-xs font-semibold text-slate-600 mb-1">Collected By *</label>
-              <input value={collectNurse} onChange={(e) => setCollectNurse(e.target.value)} placeholder="Your name" className={inputCls} /></div>
-          </div>
-        )}
-        <ModalFooter>
-          <Button variant="ghost" size="md" onClick={() => setCollectTarget(null)}>Cancel</Button>
-          <Button size="md" onClick={handleMarkCollected}>Mark as Collected</Button>
+          <Button size="md" disabled={!(manualPatientName || selectedPatientId) || !selectedTestId} onClick={() => void handleAddRequest()}>
+            Create Sample Request
+          </Button>
         </ModalFooter>
       </Modal>
 

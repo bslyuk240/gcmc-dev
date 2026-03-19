@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { Card } from "@/components/ui/card";
 import { INTERNAL_PREFIX } from "@/lib/constants/navigation";
+import { useAccountsStore } from "@/lib/hooks/use-accounts-store";
+import { useLabStore } from "@/lib/hooks/use-lab-store";
 import { useNursesStore } from "@/lib/hooks/use-nurses-store";
 
 const PRIORITY_STYLES: Record<string, string> = {
@@ -19,11 +21,87 @@ const UNIT_COLORS: Record<string, { bg: string; border: string; text: string; do
   ICU:        { bg: "bg-red-50", border: "border-red-200", text: "text-red-700", dot: "bg-red-500" },
 };
 
-export default function NursesDashboardPage() {
-  const { allPatients, metrics, procedures } = useNursesStore();
+const UNIT_ROUTES: Record<string, string> = {
+  Outpatient: `${INTERNAL_PREFIX}/nurses/triage`,
+  Ward: `${INTERNAL_PREFIX}/nurses/ward`,
+  Emergency: `${INTERNAL_PREFIX}/nurses/emergency`,
+  ICU: `${INTERNAL_PREFIX}/nurses/icu`,
+};
 
-  const criticalPatients = allPatients.filter((p) => p.priority === "Critical" && p.status === "Active");
+const LAB_PENDING_STATUSES = new Set(["Pending", "Sample Collected", "In Progress"]);
+
+function fmtDateTime(value?: string) {
+  if (!value) return "--";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString("en-GB", {
+    day: "numeric",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function money(value: number) {
+  return `NGN ${value.toLocaleString()}`;
+}
+
+export default function NursesDashboardPage() {
+  const { allPatients, metrics, procedures, sampleRequests } = useNursesStore();
+  const { nursingCharges } = useAccountsStore();
+  const { tests } = useLabStore();
+
+  const activePatients = [...allPatients.filter((patient) => patient.status === "Active")].sort((left, right) => {
+    const priorityRank = { Critical: 0, High: 1, Watch: 2, Stable: 3 };
+    return priorityRank[left.priority] - priorityRank[right.priority];
+  });
+
+  const criticalPatients = activePatients.filter((patient) => patient.priority === "Critical");
+  const criticalHighCount = activePatients.filter(
+    (patient) => patient.priority === "Critical" || patient.priority === "High",
+  ).length;
   const recentProcedures = procedures.slice(0, 5);
+  const pendingProcedureQueue = procedures.filter((procedure) => procedure.billStatus === "Pending");
+  const pendingSamples = sampleRequests.filter((request) => request.status === "Ordered");
+  const activeLabRequests = tests.filter((test) => LAB_PENDING_STATUSES.has(test.status)).length;
+  const accountsBillingQueue = nursingCharges.filter(
+    (charge) => charge.status === "Pending" || charge.status === "Billed",
+  ).length;
+
+  const stats = [
+    {
+      label: "Total Active Patients",
+      value: metrics.totalActive,
+      sub: "Across all nursing units",
+      color: "text-slate-900",
+      href: `${INTERNAL_PREFIX}/frontdesk/patients`,
+      cta: "Open patient records",
+    },
+    {
+      label: "Critical / High",
+      value: criticalHighCount,
+      sub: `${metrics.watchCount} on watch`,
+      color: criticalHighCount > 0 ? "text-red-700" : "text-emerald-700",
+      href: `${INTERNAL_PREFIX}/nurses/observation`,
+      cta: "Open observation board",
+    },
+    {
+      label: "Procedure Bills Pending",
+      value: pendingProcedureQueue.length,
+      sub: `${money(pendingProcedureQueue.reduce((sum, procedure) => sum + procedure.amount, 0))} awaiting Accounts`,
+      color: pendingProcedureQueue.length > 0 ? "text-amber-600" : "text-emerald-700",
+      href: `${INTERNAL_PREFIX}/nurses/procedure-charges`,
+      cta: "Open billing queue",
+    },
+    {
+      label: "Lab Samples Pending",
+      value: pendingSamples.length,
+      sub: `${activeLabRequests} active lab requests`,
+      color: pendingSamples.length > 0 ? "text-sky-700" : "text-emerald-700",
+      href: `${INTERNAL_PREFIX}/nurses/sample-collection`,
+      cta: "Open sample queue",
+    },
+  ];
 
   const units = [
     {
@@ -60,78 +138,115 @@ export default function NursesDashboardPage() {
     },
   ];
 
+  function getPatientHref(patientId: string) {
+    return patientId
+      ? `${INTERNAL_PREFIX}/nurses/patients/${encodeURIComponent(patientId)}`
+      : `${INTERNAL_PREFIX}/nurses`;
+  }
+
   return (
     <div className="space-y-5 sm:space-y-6">
       <div className="flex items-start justify-between gap-3">
         <div>
           <h1 className="text-lg font-bold tracking-tight text-slate-900 sm:text-xl">Nurses Bay</h1>
-          <p className="mt-0.5 text-xs text-slate-500 sm:text-sm">Multi-unit nursing ops — Outpatient · Ward · Emergency · ICU</p>
+          <p className="mt-0.5 text-xs text-slate-500 sm:text-sm">
+            Multi-unit nursing ops - Outpatient - Ward - Emergency - ICU
+          </p>
         </div>
-        <Link href={`${INTERNAL_PREFIX}/nurses/handover-notes`}
-          className="shrink-0 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition sm:rounded-xl sm:px-4 sm:py-2.5 sm:text-sm">
-          Handover →
+        <Link
+          href={`${INTERNAL_PREFIX}/nurses/handover-notes`}
+          className="shrink-0 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 sm:rounded-xl sm:px-4 sm:py-2.5 sm:text-sm"
+        >
+          Handover Notes -&gt;
         </Link>
       </div>
 
-      {/* Critical alert */}
       {criticalPatients.length > 0 && (
-        <div className="flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3">
-          <div className="mt-0.5 h-2 w-2 rounded-full bg-red-500 animate-pulse shrink-0" />
-          <div className="flex-1 text-sm font-semibold text-red-800">
-            {criticalPatients.length} critical patient{criticalPatients.length > 1 ? "s" : ""} require close monitoring:
-            {" "}{criticalPatients.map((p) => `${p.patientName} (${p.unit})`).join(", ")}
+        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3">
+          <div className="flex items-start gap-3">
+            <div className="mt-0.5 h-2 w-2 shrink-0 animate-pulse rounded-full bg-red-500" />
+            <div className="flex-1 text-sm font-semibold text-red-800">
+              {criticalPatients.length} critical patient{criticalPatients.length > 1 ? "s" : ""} require close monitoring:
+              {" "}
+              {criticalPatients.map((patient) => `${patient.patientName} (${patient.unit})`).join(", ")}
+            </div>
+            <Link
+              href={`${INTERNAL_PREFIX}/nurses/icu`}
+              className="rounded-lg border border-red-200 bg-white px-3 py-1.5 text-xs font-semibold text-red-700 transition hover:bg-red-100"
+            >
+              Open ICU
+            </Link>
           </div>
         </div>
       )}
 
-      {/* Top-level stats */}
       <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
-        {[
-          { label: "Total Active Patients", value: metrics.totalActive, sub: "Across all units", color: "text-slate-900" },
-          { label: "Critical / High", value: metrics.criticalCount, sub: `${metrics.watchCount} on watch`, color: metrics.criticalCount > 0 ? "text-red-700" : "text-emerald-700" },
-          { label: "Procedure Bills Pending", value: metrics.pendingProcedureBills, sub: `₦${metrics.procedureBillValue} to Accounts`, color: metrics.pendingProcedureBills > 0 ? "text-amber-600" : "text-emerald-700" },
-          { label: "Lab Samples Pending", value: metrics.samplesPending, sub: "Ordered, not collected", color: metrics.samplesPending > 0 ? "text-sky-700" : "text-emerald-700" },
-        ].map((s) => (
-          <Card key={s.label} className="p-4 sm:p-5">
-            <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 sm:text-xs">{s.label}</p>
-            <p className={`mt-1 text-2xl font-bold sm:text-3xl ${s.color}`}>{s.value}</p>
-            <p className="mt-0.5 text-[10px] text-slate-500 sm:text-xs">{s.sub}</p>
-          </Card>
+        {stats.map((stat) => (
+          <Link key={stat.label} href={stat.href} className="group block">
+            <Card className="h-full p-4 transition group-hover:border-slate-300 group-hover:shadow-md sm:p-5">
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 sm:text-xs">
+                {stat.label}
+              </p>
+              <p className={`mt-1 text-2xl font-bold sm:text-3xl ${stat.color}`}>{stat.value}</p>
+              <p className="mt-0.5 text-[10px] text-slate-500 sm:text-xs">{stat.sub}</p>
+              <p className="mt-3 text-xs font-semibold text-accent">{stat.cta} -&gt;</p>
+            </Card>
+          </Link>
         ))}
       </div>
 
-      {/* Unit cards */}
       <div>
-        <h2 className="mb-3 text-sm font-bold text-slate-900 sm:text-base">Nursing Units</h2>
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <h2 className="text-sm font-bold text-slate-900 sm:text-base">Nursing Units</h2>
+          <Link
+            href={`${INTERNAL_PREFIX}/nurses/triage`}
+            className="text-xs font-semibold text-accent hover:underline"
+          >
+            Open intake queue -&gt;
+          </Link>
+        </div>
+
         <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
           {units.map((unit) => {
-            const col = UNIT_COLORS[unit.key];
-            const unitPatients = allPatients.filter((p) => p.unit === unit.key && p.status === "Active");
-            const critCount = unitPatients.filter((p) => p.priority === "Critical").length;
+            const color = UNIT_COLORS[unit.key];
+            const unitPatients = activePatients.filter((patient) => patient.unit === unit.key);
+            const criticalCount = unitPatients.filter((patient) => patient.priority === "Critical").length;
+
             return (
-              <Link key={unit.key} href={unit.href}>
-                <Card className={`p-4 sm:p-5 ${col.bg} border ${col.border} cursor-pointer hover:shadow-md transition-all h-full`}>
-                  <div className="flex items-start justify-between mb-3">
-                    <div className={`flex h-8 w-8 items-center justify-center rounded-xl sm:h-10 sm:w-10 ${col.bg}`}>
-                      <svg className={`h-5 w-5 ${col.text}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <Link key={unit.key} href={unit.href} className="group block">
+                <Card className={`h-full border p-4 transition-all group-hover:shadow-md sm:p-5 ${color.bg} ${color.border}`}>
+                  <div className="mb-3 flex items-start justify-between">
+                    <div className={`flex h-8 w-8 items-center justify-center rounded-xl sm:h-10 sm:w-10 ${color.bg}`}>
+                      <svg className={`h-5 w-5 ${color.text}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" d={unit.icon} />
                       </svg>
                     </div>
-                    {critCount > 0 && (
-                      <span className="flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white">{critCount}</span>
-                    )}
+                    {criticalCount > 0 ? (
+                      <span className="flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white">
+                        {criticalCount}
+                      </span>
+                    ) : null}
                   </div>
-                  <p className={`text-2xl font-bold ${col.text}`}>{unit.count}</p>
+
+                  <p className={`text-2xl font-bold ${color.text}`}>{unit.count}</p>
                   <p className="mt-0.5 text-sm font-bold text-slate-900">{unit.label}</p>
                   <p className="mt-0.5 text-xs text-slate-500">{unit.desc}</p>
+
                   <div className="mt-3 flex flex-wrap gap-1">
-                    {unitPatients.slice(0, 3).map((p) => (
-                      <span key={p.id} className={`rounded-full px-2 py-0.5 text-xs font-semibold ${PRIORITY_STYLES[p.priority]}`}>
-                        {p.patientName.split(" ")[0]}
+                    {unitPatients.slice(0, 3).map((patient) => (
+                      <span
+                        key={patient.id}
+                        className={`rounded-full px-2 py-0.5 text-xs font-semibold ${PRIORITY_STYLES[patient.priority]}`}
+                      >
+                        {patient.patientName.split(" ")[0]}
                       </span>
                     ))}
-                    {unitPatients.length > 3 && <span className="text-xs text-slate-400">+{unitPatients.length - 3}</span>}
+                    {unitPatients.length > 3 ? (
+                      <span className="text-xs text-slate-400">+{unitPatients.length - 3}</span>
+                    ) : null}
                   </div>
+
+                  <p className="mt-3 text-xs font-semibold text-accent">Open unit dashboard -&gt;</p>
                 </Card>
               </Link>
             );
@@ -139,104 +254,215 @@ export default function NursesDashboardPage() {
         </div>
       </div>
 
-      {/* Main grid */}
       <div className="grid gap-5 sm:gap-6 lg:grid-cols-3">
-        <div className="lg:col-span-2 space-y-6">
-          {/* All active patients */}
-          <Card className="overflow-hidden p-0">
+        <div className="space-y-6 lg:col-span-2">
+          <Card className="overflow-hidden p-0" id="active-patients">
             <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
               <h3 className="font-bold text-slate-900">All Active Patients</h3>
-              <div className="flex gap-2 text-xs text-slate-500">
-                {Object.entries(UNIT_COLORS).map(([u, c]) => (
-                  <span key={u} className="flex items-center gap-1">
-                    <span className={`h-2 w-2 rounded-full ${c.dot}`} />{u}
-                  </span>
-                ))}
+              <div className="flex items-center gap-4">
+                <div className="flex gap-2 text-xs text-slate-500">
+                  {Object.entries(UNIT_COLORS).map(([unit, color]) => (
+                    <span key={unit} className="flex items-center gap-1">
+                      <span className={`h-2 w-2 rounded-full ${color.dot}`} />
+                      {unit}
+                    </span>
+                  ))}
+                </div>
+                <Link
+                  href={`${INTERNAL_PREFIX}/frontdesk/patients`}
+                  className="text-xs font-semibold text-accent hover:underline"
+                >
+                  Front Desk records -&gt;
+                </Link>
               </div>
             </div>
-            <div className="overflow-x-auto">
-              <table className="min-w-full text-sm">
-                <thead>
-                  <tr className="bg-slate-50 border-b border-slate-100">
-                    {["Patient", "Unit", "Bed", "Diagnosis", "Nurse", "Priority", "Last Vitals"].map((h) => (
-                      <th key={h} className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {allPatients.filter((p) => p.status === "Active").map((p) => {
-                    const col = UNIT_COLORS[p.unit];
-                    return (
-                      <tr key={p.id} className={`hover:bg-slate-50 ${p.priority === "Critical" ? "bg-red-50/20" : ""}`}>
-                        <td className="px-4 py-3">
-                          <p className="font-medium text-slate-900">{p.patientName}</p>
-                          <p className="text-xs text-slate-400">{p.patientId}</p>
-                        </td>
-                        <td className="px-4 py-3">
-                          <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${col.bg} ${col.text}`}>{p.unit}</span>
-                        </td>
-                        <td className="px-4 py-3 font-mono text-xs font-bold text-slate-600">{p.bed}</td>
-                        <td className="px-4 py-3 text-xs text-slate-600 max-w-[160px] truncate">{p.diagnosis}</td>
-                        <td className="px-4 py-3 text-xs text-slate-500">{p.assignedNurse}</td>
-                        <td className="px-4 py-3">
-                          <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${PRIORITY_STYLES[p.priority]}`}>{p.priority}</span>
-                        </td>
-                        <td className="px-4 py-3 text-xs text-slate-400">{p.lastVitalsAt ?? "—"}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+
+            {activePatients.length === 0 ? (
+              <div className="px-6 py-12 text-center text-sm text-slate-400">
+                No active nursing patients yet.
+                <div className="mt-2">
+                  <Link href={`${INTERNAL_PREFIX}/nurses/triage`} className="font-semibold text-accent hover:underline">
+                    Open triage queue -&gt;
+                  </Link>
+                </div>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-slate-100 bg-slate-50">
+                      {["Patient", "Unit", "Bed", "Diagnosis", "Nurse", "Priority", "Last Vitals", "Actions"].map((heading) => (
+                        <th
+                          key={heading}
+                          className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500"
+                        >
+                          {heading}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {activePatients.map((patient) => {
+                      const color = UNIT_COLORS[patient.unit];
+                      return (
+                        <tr key={patient.id} className={patient.priority === "Critical" ? "bg-red-50/20" : "hover:bg-slate-50"}>
+                          <td className="px-4 py-3">
+                            <Link href={getPatientHref(patient.patientId)} className="font-medium text-slate-900 hover:text-accent hover:underline">
+                              {patient.patientName}
+                            </Link>
+                            <p className="text-xs text-slate-400">{patient.patientId}</p>
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${color.bg} ${color.text}`}>
+                              {patient.unit}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 font-mono text-xs font-bold text-slate-600">{patient.bed}</td>
+                          <td className="max-w-[220px] px-4 py-3 text-xs text-slate-600">{patient.diagnosis}</td>
+                          <td className="px-4 py-3 text-xs text-slate-500">{patient.assignedNurse}</td>
+                          <td className="px-4 py-3">
+                            <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${PRIORITY_STYLES[patient.priority]}`}>
+                              {patient.priority}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-xs text-slate-400">{fmtDateTime(patient.lastVitalsAt)}</td>
+                          <td className="px-4 py-3">
+                            <div className="flex flex-wrap gap-2">
+                              <Link
+                                href={getPatientHref(patient.patientId)}
+                                className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
+                              >
+                                Open record
+                              </Link>
+                              <Link
+                                href={UNIT_ROUTES[patient.unit]}
+                                className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
+                              >
+                                Open unit
+                              </Link>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </Card>
 
-          {/* Recent procedures */}
           <Card className="overflow-hidden p-0">
             <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
               <h3 className="font-bold text-slate-900">Recent Nursing Procedures</h3>
-              <Link href={`${INTERNAL_PREFIX}/nurses/procedure-charges`} className="text-sm font-semibold text-accent hover:underline">
-                All charges →
-              </Link>
+              <div className="flex items-center gap-3">
+                <Link
+                  href={`${INTERNAL_PREFIX}/accounts/nursing-billing`}
+                  className="text-sm font-semibold text-slate-500 hover:text-slate-800 hover:underline"
+                >
+                  Accounts billing
+                </Link>
+                <Link
+                  href={`${INTERNAL_PREFIX}/nurses/procedure-charges`}
+                  className="text-sm font-semibold text-accent hover:underline"
+                >
+                  All charges -&gt;
+                </Link>
+              </div>
             </div>
-            <div className="divide-y divide-slate-100">
-              {recentProcedures.map((proc) => (
-                <div key={proc.id} className="flex items-center gap-4 px-5 py-3">
-                  <div className={`h-2 w-2 shrink-0 rounded-full ${proc.billStatus === "Pending" ? "bg-amber-400" : proc.billStatus === "Paid" ? "bg-emerald-400" : "bg-sky-400"}`} />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-slate-900">{proc.patientName} — {proc.procedureType}</p>
-                    <p className="text-xs text-slate-400">{proc.description} · {proc.performedBy}</p>
-                  </div>
-                  <div className="text-right shrink-0">
-                    <p className="text-sm font-bold text-slate-900">₦{proc.amount}</p>
-                    <span className={`text-xs font-semibold ${proc.billStatus === "Paid" ? "text-emerald-700" : proc.billStatus === "Pending" ? "text-amber-600" : "text-sky-700"}`}>{proc.billStatus}</span>
-                  </div>
+
+            {recentProcedures.length === 0 ? (
+              <div className="px-6 py-12 text-center text-sm text-slate-400">
+                No nursing procedures recorded yet.
+                <div className="mt-2">
+                  <Link
+                    href={`${INTERNAL_PREFIX}/nurses/procedure-charges`}
+                    className="font-semibold text-accent hover:underline"
+                  >
+                    Open procedure charge queue -&gt;
+                  </Link>
                 </div>
-              ))}
-            </div>
+              </div>
+            ) : (
+              <div className="divide-y divide-slate-100">
+                {recentProcedures.map((procedure) => (
+                  <div key={procedure.id} className="flex flex-wrap items-center gap-4 px-5 py-3">
+                    <div
+                      className={`h-2 w-2 shrink-0 rounded-full ${
+                        procedure.billStatus === "Pending"
+                          ? "bg-amber-400"
+                          : procedure.billStatus === "Paid"
+                            ? "bg-emerald-400"
+                            : "bg-sky-400"
+                      }`}
+                    />
+
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium text-slate-900">
+                        {procedure.patientName} - {procedure.procedureType}
+                      </p>
+                      <p className="text-xs text-slate-400">
+                        {procedure.description} - {procedure.performedBy} - {fmtDateTime(procedure.performedAt)}
+                      </p>
+                    </div>
+
+                    <div className="shrink-0 text-right">
+                      <p className="text-sm font-bold text-slate-900">{money(procedure.amount)}</p>
+                      <span
+                        className={`text-xs font-semibold ${
+                          procedure.billStatus === "Paid"
+                            ? "text-emerald-700"
+                            : procedure.billStatus === "Pending"
+                              ? "text-amber-600"
+                              : "text-sky-700"
+                        }`}
+                      >
+                        {procedure.billStatus}
+                      </span>
+                    </div>
+
+                    <div className="flex shrink-0 gap-2">
+                      <Link
+                        href={getPatientHref(procedure.patientId)}
+                        className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
+                      >
+                        Open record
+                      </Link>
+                      <Link
+                        href={`${INTERNAL_PREFIX}/nurses/procedure-charges`}
+                        className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
+                      >
+                        Charge queue
+                      </Link>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </Card>
         </div>
 
-        {/* Right column */}
         <div className="space-y-6">
-          {/* Quick navigation */}
           <Card className="p-5">
-            <h3 className="font-bold text-slate-900 mb-4">Quick Actions</h3>
+            <h3 className="mb-4 font-bold text-slate-900">Quick Actions</h3>
             <div className="space-y-2">
               {[
-                { label: "Outpatient / Triage", sub: "Vitals and patient prep", href: `${INTERNAL_PREFIX}/nurses/triage`, dot: "bg-sky-400" },
-                { label: "Ward / Inpatient", sub: `${metrics.wardCount} patients`, href: `${INTERNAL_PREFIX}/nurses/ward`, dot: "bg-emerald-500" },
-                { label: "Emergency Unit", sub: `${metrics.emergencyCount} active`, href: `${INTERNAL_PREFIX}/nurses/emergency`, dot: "bg-amber-500" },
-                { label: "ICU", sub: `${metrics.icuCount} critical`, href: `${INTERNAL_PREFIX}/nurses/icu`, dot: "bg-red-500" },
-                { label: "Medication Administration", sub: "MAR and pharmacy requests", href: `${INTERNAL_PREFIX}/nurses/medication-administration`, dot: "bg-violet-400" },
-                { label: "Sample Collection", sub: "Lab samples for patients", href: `${INTERNAL_PREFIX}/nurses/sample-collection`, dot: "bg-sky-400" },
-                { label: "Procedure Charges", sub: "Send bills to Accounts", href: `${INTERNAL_PREFIX}/nurses/procedure-charges`, dot: "bg-slate-400" },
-              ].map((a) => (
-                <Link key={a.label} href={a.href}
-                  className="flex items-center gap-3 rounded-xl border border-slate-200 px-3 py-2.5 hover:border-slate-300 hover:bg-slate-50 transition">
-                  <span className={`h-2 w-2 rounded-full shrink-0 ${a.dot}`} />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-slate-800">{a.label}</p>
-                    <p className="text-xs text-slate-400">{a.sub}</p>
+                { label: "Outpatient / Triage", sub: `${metrics.outpatientCount} active in intake`, href: `${INTERNAL_PREFIX}/nurses/triage`, dot: "bg-sky-400" },
+                { label: "Ward / Inpatient", sub: `${metrics.wardCount} admitted patients`, href: `${INTERNAL_PREFIX}/nurses/ward`, dot: "bg-emerald-500" },
+                { label: "Emergency Unit", sub: `${metrics.emergencyCount} active emergency cases`, href: `${INTERNAL_PREFIX}/nurses/emergency`, dot: "bg-amber-500" },
+                { label: "ICU", sub: `${metrics.icuCount} critical care patients`, href: `${INTERNAL_PREFIX}/nurses/icu`, dot: "bg-red-500" },
+                { label: "Medication Administration", sub: `${metrics.wardCount + metrics.icuCount + metrics.emergencyCount} inpatient medication queue`, href: `${INTERNAL_PREFIX}/nurses/medication-administration`, dot: "bg-violet-400" },
+                { label: "Sample Collection", sub: `${pendingSamples.length} ordered samples waiting`, href: `${INTERNAL_PREFIX}/nurses/sample-collection`, dot: "bg-sky-400" },
+                { label: "Procedure Charges", sub: `${pendingProcedureQueue.length} to send, ${accountsBillingQueue} with Accounts`, href: `${INTERNAL_PREFIX}/nurses/procedure-charges`, dot: "bg-slate-400" },
+              ].map((action) => (
+                <Link
+                  key={action.label}
+                  href={action.href}
+                  className="flex items-center gap-3 rounded-xl border border-slate-200 px-3 py-2.5 transition hover:border-slate-300 hover:bg-slate-50"
+                >
+                  <span className={`h-2 w-2 shrink-0 rounded-full ${action.dot}`} />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-semibold text-slate-800">{action.label}</p>
+                    <p className="text-xs text-slate-400">{action.sub}</p>
                   </div>
                   <svg className="h-4 w-4 shrink-0 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
@@ -246,28 +472,35 @@ export default function NursesDashboardPage() {
             </div>
           </Card>
 
-          {/* Departmental links */}
           <Card className="p-5">
-            <h3 className="font-bold text-slate-900 mb-3">Department Links</h3>
-            <div className="space-y-2 text-sm">
+            <h3 className="mb-3 font-bold text-slate-900">Patient Context</h3>
+            <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-600">
+              Cross-department dashboards are intentionally not linked from Nurses.
+              Open any patient record from <strong>All Active Patients</strong> to view the safe nurse-side summary for:
+            </div>
+            <div className="mt-3 space-y-2 text-sm">
               {[
-                { label: "Doctors — Consultations", href: `${INTERNAL_PREFIX}/doctors/consultations`, sub: "View care instructions" },
-                { label: "Pharmacy — Medications", href: `${INTERNAL_PREFIX}/pharmacy/inventory`, sub: "Check drug availability" },
-                { label: "Lab — Pending Tests", href: `${INTERNAL_PREFIX}/lab/test-requests`, sub: "Track ordered lab tests" },
-              ].map((link) => (
-                <Link key={link.label} href={link.href}
-                  className="flex items-center justify-between rounded-lg border border-slate-200 px-3 py-2 hover:bg-slate-50 transition">
+                { label: "Doctors", sub: "Assigned doctor, visit history, care context" },
+                { label: "Pharmacy", sub: "Prescriptions, medication requests, MAR summary" },
+                { label: "Lab", sub: "Test requests and sample workflow for that patient" },
+                { label: "Accounts", sub: "Nursing charge status and billing snapshot only" },
+              ].map((item) => (
+                <div
+                  key={item.label}
+                  className="flex items-center justify-between rounded-lg border border-slate-200 px-3 py-2"
+                >
                   <div>
-                    <p className="text-xs font-semibold text-slate-700">{link.label}</p>
-                    <p className="text-xs text-slate-400">{link.sub}</p>
+                    <p className="text-xs font-semibold text-slate-700">{item.label}</p>
+                    <p className="text-xs text-slate-400">{item.sub}</p>
                   </div>
-                  <svg className="h-3.5 w-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-                  </svg>
-                </Link>
+                  <span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-semibold text-slate-500">
+                    In patient record
+                  </span>
+                </div>
               ))}
             </div>
           </Card>
+
         </div>
       </div>
     </div>

@@ -49,6 +49,7 @@ import type {
   OffboardingRecord,
   PayrollPrep,
 } from "@/lib/data/hr-store";
+import { normalizeDoctorSpecialty } from "@/lib/utils/doctor-routing";
 import {
   DB_TO_STAFF_DEPT as dbToStaffDeptMap,
   ROLE_KEY_LABELS,
@@ -121,8 +122,43 @@ function mapAdmissionOrder(r: Record<string, unknown>): AdmissionOrder {
 export async function fetchDoctors(): Promise<DoctorProfile[]> {
   const sb = getSupabase();
   if (!sb) return [];
-  const { data } = await sb.from("doctor_profiles").select("*");
-  return (data ?? []).map(mapDoctor);
+  const [{ data: profileRows, error: profileError }, { data: staffRows, error: staffError }] = await Promise.all([
+    sb.from("doctor_profiles").select("*"),
+    sb
+      .from("staff_profiles")
+      .select("id, full_name, role, specialty")
+      .eq("department", "doctors")
+      .eq("is_active", true)
+      .order("full_name"),
+  ]);
+
+  if (profileError) throw new Error(profileError.message);
+  if (staffError) throw new Error(staffError.message);
+
+  const profiles = (profileRows ?? []).map(mapDoctor);
+  const profileById = new Map(profiles.map((profile) => [profile.id, profile]));
+  const profileByName = new Map(profiles.map((profile) => [profile.name.trim().toLowerCase(), profile]));
+
+  if ((staffRows ?? []).length > 0) {
+    return (staffRows ?? []).map((row) => {
+      const staffId = row.id as string;
+      const staffName = ((row.full_name as string) ?? "").trim();
+      const matchedProfile = profileById.get(staffId) ?? profileByName.get(staffName.toLowerCase());
+      const staffSpecialty = normalizeDoctorSpecialty((row.specialty as string) ?? "");
+
+      return {
+        id: staffId,
+        name: staffName,
+        specialty: staffSpecialty || matchedProfile?.specialty || "",
+        qualifications: matchedProfile?.qualifications ?? "",
+        status: "On Duty" as const,
+        consultationsToday: matchedProfile?.consultationsToday ?? 0,
+        avgConsultMins: matchedProfile?.avgConsultMins ?? 0,
+      };
+    });
+  }
+
+  return profiles;
 }
 
 export async function fetchConsultations(): Promise<ConsultationRecord[]> {
@@ -142,7 +178,7 @@ export async function fetchAdmissionOrders(): Promise<AdmissionOrder[]> {
 export async function insertConsultation(c: ConsultationRecord): Promise<void> {
   const sb = getSupabase();
   if (!sb) return;
-  await sb.from("consultations").upsert({
+  const { error } = await sb.from("consultations").upsert({
     id: c.id, patient_name: c.patientName, patient_id: c.patientId,
     doctor_name: c.doctorName, consult_type: c.consultType, date: c.date,
     time: c.time, status: c.status, chief_complaint: c.chiefComplaint,
@@ -150,6 +186,7 @@ export async function insertConsultation(c: ConsultationRecord): Promise<void> {
     lab_ordered: c.labOrdered, admission_ordered: c.admissionOrdered,
     admission_unit: c.admissionUnit, consult_fee: c.consultFee, fee_paid: c.feePaid,
   });
+  if (error) throw new Error(error.message);
 }
 
 export async function upsertConsultation(id: string, updates: Partial<ConsultationRecord>): Promise<void> {
@@ -164,17 +201,19 @@ export async function upsertConsultation(id: string, updates: Partial<Consultati
   if (updates.admissionOrdered !== undefined) patch.admission_ordered = updates.admissionOrdered;
   if (updates.admissionUnit !== undefined) patch.admission_unit = updates.admissionUnit;
   if (updates.feePaid !== undefined) patch.fee_paid = updates.feePaid;
-  await sb.from("consultations").update(patch).eq("id", id);
+  const { error } = await sb.from("consultations").update(patch).eq("id", id);
+  if (error) throw new Error(error.message);
 }
 
 export async function insertAdmissionOrder(a: AdmissionOrder): Promise<void> {
   const sb = getSupabase();
   if (!sb) return;
-  await sb.from("admission_orders").upsert({
+  const { error } = await sb.from("admission_orders").upsert({
     id: a.id, patient_name: a.patientName, patient_id: a.patientId,
     ordered_by: a.orderedBy, unit: a.unit, reason: a.reason,
     ordered_at: a.orderedAt, status: a.status,
   });
+  if (error) throw new Error(error.message);
 }
 
 // ─── Pharmacy ─────────────────────────────────────────────────────────────────
@@ -316,26 +355,29 @@ export async function insertPrescription(p: SharedPrescription): Promise<void> {
     notes: p.notes, status: p.status, dispensed_at: p.dispensedAt,
     dispensed_by: p.dispensedBy, total_cost: p.totalCost,
   });
+  if (error) throw new Error(error.message);
   if (!error && p.drugs.length > 0) {
-    await sb.from("prescribed_drugs").upsert(
+    const { error: drugsError } = await sb.from("prescribed_drugs").upsert(
       p.drugs.map((d) => ({
         prescription_id: p.id,
         name: d.name, dosage: d.dosage, frequency: d.frequency,
         duration: d.duration, qty: Number(d.qty) || 0, unit_price: d.unitPrice,
       }))
     );
+    if (drugsError) throw new Error(drugsError.message);
   }
 }
 
 export async function upsertPrescriptionStatus(id: string, status: SharedPrescription["status"], extra?: Partial<SharedPrescription>): Promise<void> {
   const sb = getSupabase();
   if (!sb) return;
-  await sb.from("prescriptions").update({
+  const { error } = await sb.from("prescriptions").update({
     status,
     ...(extra?.dispensedAt ? { dispensed_at: extra.dispensedAt } : {}),
     ...(extra?.dispensedBy ? { dispensed_by: extra.dispensedBy } : {}),
     ...(extra?.totalCost !== undefined ? { total_cost: extra.totalCost } : {}),
   }).eq("id", id);
+  if (error) throw new Error(error.message);
 }
 
 // ─── Lab ─────────────────────────────────────────────────────────────────────
@@ -401,13 +443,14 @@ export async function fetchTestCatalog(): Promise<TestCatalogItem[]> {
 export async function insertLabTest(t: LabTest): Promise<void> {
   const sb = getSupabase();
   if (!sb) return;
-  await sb.from("lab_tests").upsert({
+  const { error } = await sb.from("lab_tests").upsert({
     id: t.id, patient_name: t.patientName, patient_id: t.patientId,
     test_name: t.testName, test_code: t.testCode, category: t.category,
     ordered_by: t.orderedBy, ordered_at: t.orderedAt, priority: t.priority,
     status: t.status, sample_type: t.sampleType, price: t.price,
     bill_status: t.billStatus,
   });
+  if (error) throw new Error(error.message);
 }
 
 export async function upsertLabTestResult(id: string, updates: Partial<LabTest>): Promise<void> {
@@ -426,7 +469,8 @@ export async function upsertLabTestResult(id: string, updates: Partial<LabTest>)
   if (updates.resultEnteredBy) patch.result_entered_by = updates.resultEnteredBy;
   if (updates.completedAt) patch.completed_at = updates.completedAt;
   if (updates.billStatus) patch.bill_status = updates.billStatus;
-  await sb.from("lab_tests").update(patch).eq("id", id);
+  const { error } = await sb.from("lab_tests").update(patch).eq("id", id);
+  if (error) throw new Error(error.message);
 }
 
 // ─── Nurses ───────────────────────────────────────────────────────────────────
@@ -452,6 +496,7 @@ function mapWardPatient(r: Record<string, unknown>): WardPatient {
       recordedBy: (r.assigned_nurse as string) ?? "",
     },
     doctorInCharge: (r.doctor_in_charge as string) ?? "",
+    doctorSpecialty: (r.doctor_specialty as string) ?? "",
     notes: (r.notes as string) ?? "",
     lastVitalsAt: r.last_vitals_at as string | undefined,
     labTestsOrdered: (r.lab_tests_ordered as number) ?? 0,
@@ -531,6 +576,27 @@ export async function fetchNurseSampleRequests(): Promise<NurseSampleRequest[]> 
   return (data ?? []).map(mapNurseSampleRequest);
 }
 
+export async function insertNurseSampleRequest(r: NurseSampleRequest): Promise<void> {
+  const sb = getSupabase();
+  if (!sb) return;
+  const { error } = await sb.from("nurse_sample_requests").upsert({
+    id: r.id,
+    patient_name: r.patientName,
+    patient_id: r.patientId,
+    unit: r.unit,
+    test_name: r.testName,
+    test_code: r.testCode,
+    sample_type: r.sampleType,
+    collected_by: r.collectedBy ?? null,
+    collected_at: r.collectedAt ? new Date(r.collectedAt).toISOString() : null,
+    status: r.status,
+    priority: r.priority,
+    ordered_by: r.orderedBy,
+    ordered_at: r.orderedAt ? new Date(r.orderedAt).toISOString() : new Date().toISOString(),
+  });
+  if (error) throw new Error(error.message);
+}
+
 export async function fetchICUVitals(): Promise<ICUVitalsEntry[]> {
   const sb = getSupabase();
   if (!sb) return [];
@@ -541,25 +607,28 @@ export async function fetchICUVitals(): Promise<ICUVitalsEntry[]> {
 export async function insertWardPatient(p: WardPatient): Promise<void> {
   const sb = getSupabase();
   if (!sb) return;
-  await sb.from("ward_patients").upsert({
+  const { error } = await sb.from("ward_patients").upsert({
     id: p.id, patient_name: p.patientName, patient_id: p.patientId,
     unit: p.unit, bed: p.bed, diagnosis: p.diagnosis, admitted_at: p.admittedAt,
     assigned_nurse: p.assignedNurse, priority: p.priority, status: p.status,
     bp: p.vitals?.bp, pulse: p.vitals?.pulse, temp: p.vitals?.temp,
     spo2: p.vitals?.spo2,
-    doctor_in_charge: p.doctorInCharge, notes: p.notes, last_vitals_at: p.lastVitalsAt,
+    doctor_in_charge: p.doctorInCharge, doctor_specialty: p.doctorSpecialty,
+    notes: p.notes, last_vitals_at: p.lastVitalsAt,
   });
+  if (error) throw new Error(error.message);
 }
 
 export async function insertNursingProcedure(p: NursingProcedure): Promise<void> {
   const sb = getSupabase();
   if (!sb) return;
-  await sb.from("nursing_procedures").upsert({
+  const { error } = await sb.from("nursing_procedures").upsert({
     id: p.id, patient_name: p.patientName, patient_id: p.patientId,
     unit: p.unit, procedure_type: p.procedureType, description: p.description,
     performed_by: p.performedBy, performed_at: p.performedAt, amount: p.amount,
     bill_status: p.billStatus,
   });
+  if (error) throw new Error(error.message);
 }
 
 export async function insertICUVitals(v: ICUVitalsEntry): Promise<void> {
@@ -743,13 +812,13 @@ export async function insertConsultationFee(f: ConsultationFee): Promise<void> {
     fee: f.fee, consulted_at: f.consultedAt || new Date().toISOString(),
     status: f.status ?? "Pending",
   });
-  if (error) console.error("[db] insertConsultationFee:", error.message);
+  if (error) throw new Error(error.message);
 }
 
 export async function upsertConsultationFeeStatus(id: string, status: ConsultationFee["status"]): Promise<void> {
   const sb = getSupabase(); if (!sb) return;
   const { error } = await sb.from("consultation_fees").update({ status }).eq("id", id);
-  if (error) console.error("[db] upsertConsultationFeeStatus:", error.message);
+  if (error) throw new Error(error.message);
 }
 
 export async function insertLabCharge(c: LabCharge): Promise<void> {
@@ -761,13 +830,13 @@ export async function insertLabCharge(c: LabCharge): Promise<void> {
     completed_at: c.completedAt ? new Date(c.completedAt).toISOString() : new Date().toISOString(),
     status: c.status ?? "Pending",
   });
-  if (error) console.error("[db] insertLabCharge:", error.message);
+  if (error) throw new Error(error.message);
 }
 
 export async function upsertLabChargeStatus(id: string, status: LabCharge["status"]): Promise<void> {
   const sb = getSupabase(); if (!sb) return;
   const { error } = await sb.from("lab_charges").update({ status }).eq("id", id);
-  if (error) console.error("[db] upsertLabChargeStatus:", error.message);
+  if (error) throw new Error(error.message);
 }
 
 export async function insertNursingCharge(c: NursingCharge): Promise<void> {
@@ -779,13 +848,13 @@ export async function insertNursingCharge(c: NursingCharge): Promise<void> {
     performed_at: c.performedAt ? new Date(c.performedAt).toISOString() : new Date().toISOString(),
     amount: c.amount, status: c.status ?? "Pending",
   });
-  if (error) console.error("[db] insertNursingCharge:", error.message);
+  if (error) throw new Error(error.message);
 }
 
 export async function upsertNursingChargeStatus(id: string, status: NursingCharge["status"]): Promise<void> {
   const sb = getSupabase(); if (!sb) return;
   const { error } = await sb.from("nursing_charges").update({ status }).eq("id", id);
-  if (error) console.error("[db] upsertNursingChargeStatus:", error.message);
+  if (error) throw new Error(error.message);
 }
 
 export async function insertPharmacyBill(bill: PharmacyBill): Promise<void> {
@@ -980,7 +1049,7 @@ export async function fetchHandoverNotes(ward: string): Promise<HandoverNote[]> 
     .eq("ward", ward)
     .order("created_at", { ascending: false })
     .limit(20);
-  if (error) { console.error("[db] fetchHandoverNotes:", error.message); return []; }
+  if (error) throw new Error(error.message);
   return (data ?? []).map(mapHandoverNote);
 }
 
@@ -990,7 +1059,7 @@ export async function insertHandoverNote(n: HandoverNote): Promise<void> {
     id: n.id, ward: n.ward, shift: n.shift,
     written_by: n.writtenBy, content: n.content,
   });
-  if (error) console.error("[db] insertHandoverNote:", error.message);
+  if (error) throw new Error(error.message);
 }
 
 // ─── Patient Observations ─────────────────────────────────────────────────────
@@ -1037,7 +1106,7 @@ export async function insertPatientObservation(obs: PatientObservation): Promise
     recorded_by: obs.recordedBy,
     recorded_at: obs.recordedAt ? new Date(obs.recordedAt).toISOString() : new Date().toISOString(),
   });
-  if (error) console.error("[db] insertPatientObservation:", error.message);
+  if (error) throw new Error(error.message);
 }
 
 // ─── MAR Entries (Medication Administration Record) ───────────────────────────
@@ -1123,7 +1192,8 @@ function mapStaffMember(r: Record<string, unknown>): StaffMember {
     id: r.id as string,
     name: fullName,
     department: dbToStaffDeptMap[departmentKey] ?? "Administration",
-    unit: r.unit as string | undefined,
+    unit: (r.unit_name as string) ?? (r.unit as string | undefined),
+    specialty: r.specialty as string | undefined,
     role: ROLE_KEY_LABELS[roleKey ?? "viewer"] ?? "Staff Member",
     roleKey,
     contractType: (r.contract_type as StaffMember["contractType"]) ?? "Permanent",
@@ -1179,14 +1249,17 @@ export async function fetchLeaveRequests(): Promise<LeaveRequest[]> {
 export async function insertStaffMember(s: StaffMember): Promise<void> {
   const sb = getSupabase(); if (!sb) return;
   if (!/^[0-9a-fA-F-]{36}$/.test(s.id)) return;
-  await sb.from("staff_profiles").upsert({
+  const { error } = await sb.from("staff_profiles").upsert({
     id: s.id,
     full_name: s.name,
     email: s.email,
     department: STAFF_DEPT_TO_DB[s.department],
     role: s.roleKey ?? "viewer",
+    unit_name: s.unit ?? null,
+    specialty: s.specialty ?? null,
     is_active: s.status === "Active" || s.status === "On Leave" || s.status === "Probation",
   });
+  if (error) throw new Error(error.message);
 }
 
 export async function insertLeaveRequest(r: LeaveRequest): Promise<void> {
@@ -1705,6 +1778,18 @@ export async function fetchPatientById(id: string): Promise<PatientRegistration 
   return mapPatientRegistration(data as Record<string, unknown>);
 }
 
+export async function fetchPatientByDisplayId(patientId: string): Promise<PatientRegistration | null> {
+  const sb = getSupabase();
+  if (!sb) return null;
+  const { data, error } = await sb
+    .from("patient_registrations")
+    .select("*")
+    .eq("patient_id", patientId)
+    .maybeSingle();
+  if (error || !data) return null;
+  return mapPatientRegistration(data as Record<string, unknown>);
+}
+
 export async function updatePatientRegistration(
   id: string,
   updates: Partial<Omit<PatientRegistration, "id" | "patientId" | "registeredAt" | "registeredBy">>,
@@ -1734,6 +1819,7 @@ export async function insertVisit(params: {
   visitType: string;
   department: string;
   assignedTo: string;
+  doctorSpecialty?: string;
 }): Promise<string | null> {
   const sb = getSupabase();
   if (!sb) return null;
@@ -1747,6 +1833,7 @@ export async function insertVisit(params: {
     visit_type:   params.visitType,
     department:   params.department,
     assigned_to:  params.assignedTo,
+    doctor_specialty: params.doctorSpecialty,
     status:       "Checked In",
     checked_in_at: now.toISOString(),
   });
@@ -2160,6 +2247,7 @@ export type VisitRow = {
   visitType: string;
   department: string;
   assignedTo: string;
+  doctorSpecialty?: string;
   status: string;
   checkedInAt: string | null;
 };
@@ -2173,6 +2261,7 @@ function mapVisit(r: Record<string, unknown>): VisitRow {
     visitType: (r.visit_type as string) ?? "",
     department: (r.department as string) ?? "",
     assignedTo: (r.assigned_to as string) ?? "",
+    doctorSpecialty: (r.doctor_specialty as string) ?? "",
     status: (r.status as string) ?? "",
     checkedInAt: (r.checked_in_at as string) ?? null,
   };

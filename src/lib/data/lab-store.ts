@@ -141,6 +141,14 @@ export function subscribeLabStore(fn: () => void) {
 // ─── Supabase sync ────────────────────────────────────────────────────────────
 
 let _lastSync = 0;
+
+function mergeById<T extends { id: string }>(remote: T[], local: T[]) {
+  const merged = new Map<string, T>();
+  for (const item of remote) merged.set(item.id, item);
+  for (const item of local) merged.set(item.id, { ...(merged.get(item.id) ?? {}), ...item });
+  return Array.from(merged.values());
+}
+
 export async function syncLabFromSupabase(force = false) {
   if (typeof window === "undefined") return;
   const now = Date.now();
@@ -149,7 +157,11 @@ export async function syncLabFromSupabase(force = false) {
   try {
     const { fetchLabTests, fetchTestCatalog } = await import("@/lib/supabase/db");
     const [tests, catalog] = await Promise.all([fetchLabTests(), fetchTestCatalog()]);
-    _state = { tests, catalog };
+    const current = getState();
+    _state = {
+      tests: mergeById(tests, current.tests),
+      catalog,
+    };
     saveState(_state);
     listeners.forEach((l) => l());
   } catch (err) { console.error("[lab-store] sync failed:", err); }
@@ -159,17 +171,28 @@ export async function syncLabFromSupabase(force = false) {
 
 export function getLabTests(): LabTest[] { return [...getState().tests]; }
 
-export function addLabTest(t: LabTest) {
+export async function addLabTest(t: LabTest) {
   mutate((s) => { s.tests = [t, ...s.tests]; });
-  import("@/lib/supabase/db").then(({ insertLabTest }) => insertLabTest(t))
-    .catch((err) => console.error("[lab-store] addLabTest failed:", err));
+  try {
+    const { insertLabTest } = await import("@/lib/supabase/db");
+    await insertLabTest(t);
+  } catch (err) {
+    console.error("[lab-store] addLabTest failed:", err);
+    throw err;
+  }
 }
 
-export function updateLabTest(id: string, updates: Partial<LabTest>) {
+export async function updateLabTest(id: string, updates: Partial<LabTest>) {
   mutate((s) => {
     s.tests = s.tests.map((t) => t.id === id ? { ...t, ...updates } : t);
   });
-  import("@/lib/supabase/db").then(({ upsertLabTestResult }) => upsertLabTestResult(id, updates)).catch((err) => console.error('[lab-store] write failed:', err));
+  try {
+    const { upsertLabTestResult } = await import("@/lib/supabase/db");
+    await upsertLabTestResult(id, updates);
+  } catch (err) {
+    console.error("[lab-store] write failed:", err);
+    throw err;
+  }
 }
 
 // ─── Catalog ──────────────────────────────────────────────────────────────────

@@ -11,12 +11,13 @@ import {
   addOnboarding, updateOnboardingStep,
   addOffboarding, updateOffboardingStep,
   addStaffMember, updateStaffSystemAccess,
-  type OnboardingRecord, type OffboardingRecord,
+  type OnboardingRecord, type OffboardingRecord, type StaffDepartment, type ContractType,
 } from "@/lib/data/hr-store";
 import { createStaffAccountAction } from "@/server/actions/hr/create-staff-account";
 import { fetchNonClinicalUnits } from "@/lib/supabase/db";
 import type { DBDepartmentKey } from "@/lib/constants/navigation";
 import type { RoleKey } from "@/lib/auth/session";
+import { DEFAULT_DOCTOR_SPECIALTIES } from "@/lib/utils/doctor-routing";
 
 // Display name → DB key
 const DEPT_OPTIONS: { label: string; value: DBDepartmentKey }[] = [
@@ -90,6 +91,7 @@ export default function OnboardingPage() {
   const [nhDept,     setNhDept]     = useState<DBDepartmentKey>("doctors");
   const [nhRole,     setNhRole]     = useState<RoleKey>("doctor");
   const [nhUnit,     setNhUnit]     = useState("");
+  const [nhSpecialty,setNhSpecialty]= useState("");
   const [nhContract, setNhContract] = useState("Permanent");
   const [nhEmail,    setNhEmail]    = useState("");
   const [nhPhone,    setNhPhone]    = useState("");
@@ -113,6 +115,9 @@ export default function OnboardingPage() {
     } else {
       setNhUnit("");
     }
+    if (nhDept !== "doctors") {
+      setNhSpecialty("");
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [nhDept]);
 
@@ -127,6 +132,10 @@ export default function OnboardingPage() {
 
   async function handleNewHire() {
     if (!nhName || !nhEmail) return;
+    if (nhDept === "doctors" && !nhSpecialty.trim()) {
+      setToast({ message: "Doctor specialty is required for registration.", type: "error" });
+      return;
+    }
     setCreating(true);
 
     // 1. Create Supabase Auth user + staff_profiles row
@@ -136,6 +145,7 @@ export default function OnboardingPage() {
       department: nhDept,
       role:       nhRole,
       ...(nhDept === "non_clinical" && nhUnit ? { unit_name: nhUnit } : {}),
+      ...(nhDept === "doctors" && nhSpecialty.trim() ? { specialty: nhSpecialty.trim() } : {}),
     });
 
     if (!result.success) {
@@ -147,21 +157,22 @@ export default function OnboardingPage() {
     // 2. Add to local HR workflow store
     const id       = `EMP-${Date.now().toString().slice(-5)}`;
     const itReqId  = `IT-ONB-${Date.now().toString().slice(-4)}`;
-    const deptLabel = DEPT_OPTIONS.find((d) => d.value === nhDept)?.label ?? nhDept;
+    const deptLabel = (DEPT_OPTIONS.find((d) => d.value === nhDept)?.label ?? "Doctors") as StaffDepartment;
     const roleLabel = ROLE_OPTIONS.find((r) => r.value === nhRole)?.label ?? nhRole;
 
     addStaffMember({
-      id, name: nhName, department: deptLabel as any, role: roleLabel,
-      contractType: nhContract as any, email: nhEmail,
+      id, name: nhName, department: deptLabel, role: roleLabel,
+      contractType: nhContract as ContractType, email: nhEmail,
       phone: nhPhone, joinDate: nhStart || new Date().toLocaleDateString("en-GB"),
       status: "Probation", salary: parseInt(nhSalary || "0"),
       systemAccessCreated: true,
+      ...(nhSpecialty.trim() ? { specialty: nhSpecialty.trim() } : {}),
       ...(nhUnit ? { unit: nhUnit } : {}),
     });
 
     addOnboarding({
       id: `ONB-${Date.now().toString().slice(-5)}`, staffId: id,
-      staffName: nhName, department: deptLabel as any, role: roleLabel,
+      staffName: nhName, department: deptLabel, role: roleLabel,
       startDate: nhStart || new Date().toLocaleDateString("en-GB"),
       status: "IT Done", itRequestId: itReqId,
       itAccountCreated: true, orientationCompleted: false,
@@ -171,7 +182,7 @@ export default function OnboardingPage() {
 
     setCreating(false);
     setShowNewHire(false);
-    setNhName(""); setNhEmail(""); setNhPhone(""); setNhSalary(""); setNhStart(""); setNhUnit("");
+    setNhName(""); setNhEmail(""); setNhPhone(""); setNhSalary(""); setNhStart(""); setNhUnit(""); setNhSpecialty("");
 
     // 3. Show credentials to HR (once only)
     setCreatedCreds({ email: nhEmail, password: result.tempPassword });
@@ -379,6 +390,17 @@ export default function OnboardingPage() {
                 ))}
               </select>
             </div>
+            {nhDept === "doctors" && (
+              <div className="col-span-2">
+                <label className="block text-xs font-semibold text-slate-600 mb-1">Doctor Specialty *</label>
+                <select value={nhSpecialty} onChange={(e) => setNhSpecialty(e.target.value)} className={inputCls}>
+                  <option value="">- Select doctor specialty -</option>
+                  {DEFAULT_DOCTOR_SPECIALTIES.map((specialty) => (
+                    <option key={specialty} value={specialty}>{specialty}</option>
+                  ))}
+                </select>
+              </div>
+            )}
             {nhDept === "non_clinical" && (
               <div className="col-span-2">
                 <label className="block text-xs font-semibold text-slate-600 mb-1">Unit *</label>
@@ -417,7 +439,11 @@ export default function OnboardingPage() {
         </div>
         <ModalFooter>
           <Button variant="ghost" size="md" onClick={() => setShowNewHire(false)}>Cancel</Button>
-          <Button size="md" onClick={handleNewHire} disabled={!nhName || !nhEmail || (nhDept === "non_clinical" && !nhUnit) || creating}>
+          <Button
+            size="md"
+            onClick={handleNewHire}
+            disabled={!nhName || !nhEmail || (nhDept === "non_clinical" && !nhUnit) || (nhDept === "doctors" && !nhSpecialty) || creating}
+          >
             {creating ? "Creating account…" : "Create Account & Start Onboarding"}
           </Button>
         </ModalFooter>
@@ -473,7 +499,7 @@ export default function OnboardingPage() {
             </div>
             <div>
               <label className="block text-xs font-semibold text-slate-600 mb-1">Reason</label>
-              <select value={exitReason} onChange={(e) => setExitReason(e.target.value as any)} className={inputCls}>
+              <select value={exitReason} onChange={(e) => setExitReason(e.target.value as OffboardingRecord["reason"])} className={inputCls}>
                 {["Resignation", "Retirement", "Termination", "Contract End"].map((r) => <option key={r}>{r}</option>)}
               </select>
             </div>

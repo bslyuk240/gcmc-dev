@@ -156,8 +156,8 @@ export function StaffPortalShell({
     <div className="flex min-h-screen bg-slate-50">
 
       {/* ══ DESKTOP SIDEBAR (hidden on mobile) ════════════════════════════════ */}
-      <aside className="hidden lg:flex lg:w-64 lg:flex-col lg:fixed lg:inset-y-0 lg:z-30">
-        <div className="flex flex-1 flex-col bg-white border-r border-slate-200 shadow-sm overflow-y-auto">
+      <aside className="hidden lg:fixed lg:inset-y-0 lg:z-30 lg:flex lg:w-64 lg:min-h-0 lg:flex-col lg:overflow-hidden">
+        <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden border-r border-slate-200 bg-white shadow-sm">
 
           {/* Brand */}
           <div className="flex items-center gap-3 px-5 py-5 border-b border-slate-100">
@@ -186,7 +186,7 @@ export function StaffPortalShell({
           </div>
 
           {/* Navigation */}
-          <nav className="mt-4 flex-1 px-3 space-y-0.5">
+          <nav className="mt-4 flex-1 overflow-y-auto overscroll-contain px-3 space-y-0.5">
             <p className="px-2 py-1 text-[10px] font-bold uppercase tracking-widest text-slate-400">Menu</p>
             {NAV.map((item) => {
               const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
@@ -247,7 +247,7 @@ export function StaffPortalShell({
             onClick={() => setMobileSidebarOpen(false)}
           />
           {/* Drawer */}
-          <aside className="absolute inset-y-0 left-0 w-72 bg-white shadow-2xl flex flex-col">
+          <aside className="absolute inset-y-0 left-0 flex h-full min-h-0 w-72 flex-col overflow-hidden bg-white shadow-2xl">
             {/* Header */}
             <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
               <div className="flex items-center gap-3">
@@ -261,42 +261,44 @@ export function StaffPortalShell({
               </button>
             </div>
 
-            {/* Staff card */}
-            <div className="mx-4 mt-4 rounded-xl bg-indigo-50 border border-indigo-100 p-3">
-              <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-indigo-600 text-sm font-black text-white">{initials}</div>
-                <div>
-                  <p className="text-sm font-bold text-slate-900">{session.full_name}</p>
-                  <p className="text-[11px] text-indigo-600 font-medium">{deptLabel}</p>
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+              {/* Staff card */}
+              <div className="mx-4 mt-4 rounded-xl bg-indigo-50 border border-indigo-100 p-3">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-indigo-600 text-sm font-black text-white">{initials}</div>
+                  <div>
+                    <p className="text-sm font-bold text-slate-900">{session.full_name}</p>
+                    <p className="text-[11px] text-indigo-600 font-medium">{deptLabel}</p>
+                  </div>
                 </div>
               </div>
-            </div>
 
-            {/* Nav */}
-            <nav className="flex-1 mt-4 px-3 space-y-0.5 overflow-y-auto">
-              {NAV.map((item) => {
-                const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
-                const Icon = item.icon;
-                const isNotif = item.href === "/staff/notifications";
-                return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all ${
-                      active ? "bg-indigo-600 text-white" : "text-slate-600 hover:bg-slate-100"
-                    }`}
-                  >
-                    <Icon active={active} />
-                    <span className="flex-1">{item.label}</span>
-                    {isNotif && notifCount > 0 && (
-                      <span className={`flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-[10px] font-bold ${
-                        active ? "bg-white text-indigo-600" : "bg-red-500 text-white"
-                      }`}>{notifCount > 9 ? "9+" : notifCount}</span>
-                    )}
-                  </Link>
-                );
-              })}
-            </nav>
+              {/* Nav */}
+              <nav className="mt-4 flex-1 overflow-y-auto overscroll-contain px-3 space-y-0.5">
+                {NAV.map((item) => {
+                  const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
+                  const Icon = item.icon;
+                  const isNotif = item.href === "/staff/notifications";
+                  return (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all ${
+                        active ? "bg-indigo-600 text-white" : "text-slate-600 hover:bg-slate-100"
+                      }`}
+                    >
+                      <Icon active={active} />
+                      <span className="flex-1">{item.label}</span>
+                      {isNotif && notifCount > 0 && (
+                        <span className={`flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-[10px] font-bold ${
+                          active ? "bg-white text-indigo-600" : "bg-red-500 text-white"
+                        }`}>{notifCount > 9 ? "9+" : notifCount}</span>
+                      )}
+                    </Link>
+                  );
+                })}
+              </nav>
+            </div>
 
             {/* Footer */}
             <div className="p-3 border-t border-slate-100 space-y-1">

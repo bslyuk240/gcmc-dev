@@ -1,247 +1,339 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
 import { PageHeader } from "@/components/layout/page-header";
-import { INTERNAL_PREFIX } from "@/lib/constants/navigation";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { Modal, ModalFooter } from "@/components/ui/modal";
 import { Toast, type ToastData } from "@/components/ui/toast";
-import {
-  addPrescription,
-  getPharmacyDrugList,
-  type SharedPrescription,
-  type PrescribedDrug,
-} from "@/lib/data/pharmacy-store";
-import { addConsultationFee } from "@/lib/data/accounts-store";
-import { addLabTest, getTestCatalog, type TestPriority } from "@/lib/data/lab-store";
+import { useHMSSession } from "@/modules/rbac/hooks";
 import { useDoctorsStore } from "@/lib/hooks/use-doctors-store";
+import { useAccountsStore } from "@/lib/hooks/use-accounts-store";
+import { addPrescription, getPharmacyDrugList, type PrescribedDrug, type SharedPrescription } from "@/lib/data/pharmacy-store";
+import { addConsultationFee, type ConsultationFee } from "@/lib/data/accounts-store";
+import { addLabTest, getTestCatalog, type TestPriority } from "@/lib/data/lab-store";
+import { updateConsultation } from "@/lib/data/doctors-store";
+import { canDoctorAccessConsultation } from "@/lib/utils/doctor-routing";
 import { useBillingPresets } from "@/lib/hooks/use-billing-presets";
 
-type ConsultStatus = "completed" | "in_progress";
 type ConsultType = "General" | "Specialist" | "Emergency" | "Follow-up" | "Antenatal";
-
-type Consultation = {
-  id: string; patient: string; patientId: string; doctor: string;
-  date: string; status: ConsultStatus; rxWritten?: boolean; labOrdered?: boolean; billed?: boolean;
-};
-
+type DrugLine = { name: string; dosage: string; frequency: string; duration: string; qty: string };
+type LabLine = { testCode: string; priority: TestPriority };
 
 const FREQ_OPTIONS = [
-  "Once daily", "Twice daily (BD)", "3×/day (TDS)", "4×/day (QDS)",
-  "Every 8 hrs (8hrly)", "Every 12 hrs (12hrly)", "Once nightly", "As needed (PRN)",
+  "Once daily",
+  "Twice daily (BD)",
+  "3x/day (TDS)",
+  "4x/day (QDS)",
+  "Every 8 hrs (8hrly)",
+  "Every 12 hrs (12hrly)",
+  "Once nightly",
+  "As needed (PRN)",
 ];
 const DURATION_OPTIONS = ["3 days", "5 days", "7 days", "10 days", "14 days", "30 days", "Ongoing"];
 const QTY_PRESETS = ["6 tabs", "10 tabs", "14 tabs", "21 caps", "30 tabs", "42 tabs", "60 tabs", "1 vial", "1 bag", "5 sachets"];
-
-type DrugLine = { name: string; dosage: string; frequency: string; duration: string; qty: string };
 const BLANK_DRUG: DrugLine = { name: "", dosage: "", frequency: "Once daily", duration: "7 days", qty: "" };
-
-type LabLine = { testCode: string; priority: TestPriority };
 const BLANK_LAB: LabLine = { testCode: "", priority: "Routine" };
+const INPUT_CLASS = "w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-400/20";
 
-const inputCls = "w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-400/20";
+function formatDate(value?: string) {
+  if (!value) return "--";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return parsed.toLocaleString("en-GB", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function isSameCalendarDay(left?: string, right?: string) {
+  if (!left || !right) return false;
+  const leftDate = new Date(left);
+  const rightDate = new Date(right);
+  if (!Number.isNaN(leftDate.getTime()) && !Number.isNaN(rightDate.getTime())) {
+    return (
+      leftDate.getFullYear() === rightDate.getFullYear() &&
+      leftDate.getMonth() === rightDate.getMonth() &&
+      leftDate.getDate() === rightDate.getDate()
+    );
+  }
+  return left.trim().toLowerCase() === right.trim().toLowerCase();
+}
+
+function toErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : "Unknown error";
+}
 
 export default function DoctorsConsultationsPage() {
-  const { consultations: storeConsults } = useDoctorsStore();
+  const session = useHMSSession();
+  const doctorName = session?.full_name ?? "";
+  const { consultations: storeConsultations } = useDoctorsStore();
+  const { consultationFees } = useAccountsStore();
   const { getByCategory, getAmount } = useBillingPresets();
-  const consultPresets = getByCategory("consultation");
-  const consultTypes = (
-    consultPresets.length > 0
-      ? consultPresets.map((p) => p.name)
-      : ["General", "Specialist", "Emergency", "Follow-up", "Antenatal"]
-  ) as ConsultType[];
-  const [consultations, setConsultations] = useState<Consultation[]>(() =>
-    storeConsults.map((c) => ({
-      id: c.id,
-      patient: c.patientName,
-      patientId: c.patientId,
-      doctor: c.doctorName,
-      date: c.date,
-      status: c.status === "Completed" || c.status === "Admitted" ? "completed" : "in_progress",
-      rxWritten: c.rxWritten,
-      labOrdered: c.labOrdered,
-      billed: c.feePaid,
-    }))
-  );
-  const [toast, setToast] = useState<ToastData | null>(null);
-
-  // ── Rx modal ──────────────────────────────────────────────────────────────
-  const [rxTarget, setRxTarget] = useState<Consultation | null>(null);
-  const [urgency, setUrgency] = useState<"Routine" | "Urgent">("Routine");
-  const [drugs, setDrugs] = useState<DrugLine[]>([{ ...BLANK_DRUG }]);
-  const [rxNotes, setRxNotes] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-
-  // ── Consultation fee modal ────────────────────────────────────────────────
-  const [feeTarget, setFeeTarget] = useState<Consultation | null>(null);
-  const [consultType, setConsultType] = useState<ConsultType>("General");
-
-  // ── Lab order modal ───────────────────────────────────────────────────────
-  const [labTarget, setLabTarget] = useState<Consultation | null>(null);
-  const [labLines, setLabLines] = useState<LabLine[]>([{ ...BLANK_LAB }]);
-  const [labClinicalNotes, setLabClinicalNotes] = useState("");
-
   const drugList = getPharmacyDrugList();
   const testCatalog = getTestCatalog();
 
-  // ── Rx helpers ────────────────────────────────────────────────────────────
-  function openRxModal(c: Consultation) {
-    setRxTarget(c);
-    setUrgency("Routine");
-    setDrugs([{ ...BLANK_DRUG }]);
-    setRxNotes("");
+  const consultPresets = getByCategory("consultation");
+  const consultTypes = (
+    consultPresets.length > 0
+      ? consultPresets.map((preset) => preset.name)
+      : ["General", "Specialist", "Emergency", "Follow-up", "Antenatal"]
+  ) as ConsultType[];
+
+  const consultations = [...storeConsultations]
+    .filter((entry) => canDoctorAccessConsultation(entry, doctorName))
+    .sort((left, right) => {
+      const leftTime = new Date(left.date).getTime();
+      const rightTime = new Date(right.date).getTime();
+      if (!Number.isNaN(leftTime) && !Number.isNaN(rightTime)) return rightTime - leftTime;
+      return right.date.localeCompare(left.date);
+    });
+
+  const [toast, setToast] = useState<ToastData | null>(null);
+  const [rxTarget, setRxTarget] = useState<(typeof consultations)[number] | null>(null);
+  const [urgency, setUrgency] = useState<"Routine" | "Urgent">("Routine");
+  const [drugs, setDrugs] = useState<DrugLine[]>([{ ...BLANK_DRUG }]);
+  const [rxNotes, setRxNotes] = useState("");
+  const [rxSubmitting, setRxSubmitting] = useState(false);
+
+  const [feeTarget, setFeeTarget] = useState<(typeof consultations)[number] | null>(null);
+  const [consultType, setConsultType] = useState<ConsultType>("General");
+  const [feeSubmitting, setFeeSubmitting] = useState(false);
+
+  const [labTarget, setLabTarget] = useState<(typeof consultations)[number] | null>(null);
+  const [labLines, setLabLines] = useState<LabLine[]>([{ ...BLANK_LAB }]);
+  const [labClinicalNotes, setLabClinicalNotes] = useState("");
+  const [labSubmitting, setLabSubmitting] = useState(false);
+
+  const stats = {
+    inProgress: consultations.filter((entry) => entry.status === "In Progress").length,
+    completed: consultations.filter((entry) => entry.status === "Completed" || entry.status === "Admitted").length,
+    rxWritten: consultations.filter((entry) => entry.rxWritten).length,
+    labOrdered: consultations.filter((entry) => entry.labOrdered).length,
+  };
+
+  function consultationHasFee(consultationId: string) {
+    const consultation = consultations.find((entry) => entry.id === consultationId);
+    if (!consultation) return false;
+    return consultationFees.some(
+      (entry) =>
+        entry.patientId === consultation.patientId &&
+        entry.doctorName.trim().toLowerCase() === consultation.doctorName.trim().toLowerCase() &&
+        isSameCalendarDay(entry.consultedAt, consultation.date),
+    );
   }
 
-  function updateDrug(idx: number, field: keyof DrugLine, value: string) {
-    setDrugs((prev) => prev.map((d, i) => (i === idx ? { ...d, [field]: value } : d)));
+  function updateDrug(index: number, field: keyof DrugLine, value: string) {
+    setDrugs((prev) => prev.map((entry, itemIndex) => (itemIndex === index ? { ...entry, [field]: value } : entry)));
   }
 
-  function autoFillDosage(idx: number, name: string) {
-    const item = drugList.find((d) => d.name === name);
-    if (item) setDrugs((prev) => prev.map((d, i) => (i === idx ? { ...d, name, dosage: item.defaultDosage } : d)));
-    else updateDrug(idx, "name", name);
+  function updateLabLine(index: number, field: keyof LabLine, value: string) {
+    setLabLines((prev) => prev.map((entry, itemIndex) => (itemIndex === index ? { ...entry, [field]: value } : entry)));
   }
 
-  const totalCost = drugs.reduce((sum, d) => {
-    const qty = parseInt(d.qty) || 0;
-    const item = drugList.find((x) => x.name === d.name);
+  function autoFillDosage(index: number, name: string) {
+    const item = drugList.find((entry) => entry.name === name);
+    if (item) {
+      setDrugs((prev) => prev.map((entry, itemIndex) => (itemIndex === index ? { ...entry, name, dosage: item.defaultDosage } : entry)));
+      return;
+    }
+    updateDrug(index, "name", name);
+  }
+
+  const totalDrugCost = drugs.reduce((sum, drug) => {
+    const qty = parseInt(drug.qty, 10) || 0;
+    const item = drugList.find((entry) => entry.name === drug.name);
     return sum + qty * (item?.unitPrice ?? 0);
   }, 0);
 
-  function handleSubmitRx(e: React.FormEvent) {
-    e.preventDefault();
+  async function handleSubmitRx(event: React.FormEvent) {
+    event.preventDefault();
     if (!rxTarget) return;
-    const filled = drugs.filter((d) => d.name && d.qty);
-    if (!filled.length) { setToast({ message: "Add at least one drug with name and quantity.", type: "error" }); return; }
-    setSubmitting(true);
-    setTimeout(() => {
-      const prescribedDrugs: PrescribedDrug[] = filled.map((d) => {
-        const item = drugList.find((x) => x.name === d.name);
-        return { ...d, unitPrice: item?.unitPrice ?? 1.0 };
-      });
-      const now = new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
-      const rx: SharedPrescription = {
-        id: `RX-${Date.now()}`,
-        patientName: rxTarget.patient,
-        patientId: rxTarget.patientId,
-        doctorName: rxTarget.doctor,
-        department: "Doctors",
-        urgency,
-        drugs: prescribedDrugs,
-        notes: rxNotes || undefined,
-        createdAt: `${now} · ${new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}`,
-        status: "Pending",
-      };
-      addPrescription(rx);
-      setConsultations((prev) => prev.map((c) => (c.id === rxTarget.id ? { ...c, rxWritten: true } : c)));
-      setSubmitting(false);
+    if (!doctorName) {
+      setToast({ message: "Doctor session is missing. Sign in again before writing a prescription.", type: "error" });
+      return;
+    }
+
+    const filled = drugs.filter((drug) => drug.name && drug.qty);
+    if (filled.length === 0) {
+      setToast({ message: "Add at least one medication with a quantity.", type: "error" });
+      return;
+    }
+
+    setRxSubmitting(true);
+    const prescription: SharedPrescription = {
+      id: `RX-${Date.now()}`,
+      patientName: rxTarget.patientName,
+      patientId: rxTarget.patientId,
+      doctorName,
+      department: "Doctors",
+      urgency,
+      drugs: filled.map((drug) => {
+        const item = drugList.find((entry) => entry.name === drug.name);
+        return { ...drug, unitPrice: item?.unitPrice ?? 0 } as PrescribedDrug;
+      }),
+      notes: rxNotes || undefined,
+      createdAt: new Date().toISOString(),
+      status: "Pending",
+      totalCost: totalDrugCost,
+    };
+
+    try {
+      await addPrescription(prescription);
+      try {
+        await updateConsultation(rxTarget.id, { rxWritten: true });
+      } catch (error) {
+        throw new Error(`Pharmacy received the prescription, but the consultation record could not be updated: ${toErrorMessage(error)}`);
+      }
       setRxTarget(null);
-      setToast({ message: `Prescription sent to Pharmacy for ${rxTarget.patient} — ${filled.length} drug(s).`, type: "success" });
-    }, 700);
+      setToast({ message: `Prescription sent to Pharmacy for ${rxTarget.patientName}.`, type: "success" });
+    } catch (error) {
+      setToast({ message: `Could not send prescription for ${rxTarget.patientName}: ${toErrorMessage(error)}`, type: "error" });
+    } finally {
+      setRxSubmitting(false);
+    }
   }
 
-  // ── Fee helpers ───────────────────────────────────────────────────────────
-  function handleSubmitFee() {
+  async function handleSubmitFee() {
     if (!feeTarget) return;
-    const now = new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
-    addConsultationFee({
-      id: `CF-${Date.now()}`,
-      patientName: feeTarget.patient,
+    if (!doctorName) {
+      setToast({ message: "Doctor session is missing. Sign in again before billing a consultation fee.", type: "error" });
+      return;
+    }
+
+    const feeRecord: ConsultationFee = {
+      id: `CF-${feeTarget.id}`,
+      patientName: feeTarget.patientName,
       patientId: feeTarget.patientId,
-      doctorName: feeTarget.doctor,
+      doctorName,
       consultationType: consultType,
       fee: getAmount("consultation", consultType, 100),
-      consultedAt: `${now} · ${new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}`,
+      consultedAt: new Date().toISOString(),
       status: "Pending",
-    });
-    setConsultations((prev) => prev.map((c) => (c.id === feeTarget.id ? { ...c, billed: true } : c)));
-    setToast({ message: `Consultation fee ₦${getAmount("consultation", consultType, 100)} sent to Accounts for ${feeTarget.patient}.`, type: "success" });
-    setFeeTarget(null);
+    };
+
+    setFeeSubmitting(true);
+    try {
+      await addConsultationFee(feeRecord);
+      setFeeTarget(null);
+      setToast({ message: `Consultation fee sent to Accounts for ${feeTarget.patientName}.`, type: "success" });
+    } catch (error) {
+      setToast({ message: `Could not bill consultation fee for ${feeTarget.patientName}: ${toErrorMessage(error)}`, type: "error" });
+    } finally {
+      setFeeSubmitting(false);
+    }
   }
 
-  // ── Lab helpers ───────────────────────────────────────────────────────────
-  function openLabModal(c: Consultation) {
-    setLabTarget(c);
-    setLabLines([{ ...BLANK_LAB }]);
-    setLabClinicalNotes("");
-  }
-
-  function updateLabLine(idx: number, field: keyof LabLine, value: string) {
-    setLabLines((prev) => prev.map((l, i) => (i === idx ? { ...l, [field]: value } : l)));
-  }
-
-  function handleOrderLab() {
+  async function handleOrderLab() {
     if (!labTarget) return;
-    const filled = labLines.filter((l) => l.testCode);
-    if (!filled.length) { setToast({ message: "Select at least one test.", type: "error" }); return; }
-    const now = new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
-    filled.forEach((line) => {
-      const cat = testCatalog.find((t) => t.code === line.testCode);
-      if (!cat) return;
-      addLabTest({
-        id: `LAB-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-        patientName: labTarget.patient,
-        patientId: labTarget.patientId,
-        testName: cat.name,
-        testCode: cat.code,
-        category: cat.category,
-        orderedBy: labTarget.doctor,
-        orderedAt: `${now} · ${new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}`,
-        priority: line.priority,
-        status: "Pending",
-        sampleType: cat.sampleType,
-        price: cat.price,
-        billStatus: "Billed",
-        resultNotes: labClinicalNotes || undefined,
-      });
-    });
-    setConsultations((prev) => prev.map((c) => (c.id === labTarget.id ? { ...c, labOrdered: true } : c)));
-    setToast({ message: `${filled.length} lab test(s) ordered for ${labTarget.patient} — Lab notified.`, type: "success" });
-    setLabTarget(null);
+    if (!doctorName) {
+      setToast({ message: "Doctor session is missing. Sign in again before ordering lab tests.", type: "error" });
+      return;
+    }
+
+    const filled = labLines.filter((line) => line.testCode);
+    if (filled.length === 0) {
+      setToast({ message: "Select at least one test.", type: "error" });
+      return;
+    }
+
+    setLabSubmitting(true);
+    let sentCount = 0;
+
+    try {
+      for (const line of filled) {
+        const catalogItem = testCatalog.find((entry) => entry.code === line.testCode);
+        if (!catalogItem) {
+          throw new Error(`Test catalog entry ${line.testCode} was not found.`);
+        }
+
+        try {
+          await addLabTest({
+            id: `LAB-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+            patientName: labTarget.patientName,
+            patientId: labTarget.patientId,
+            testName: catalogItem.name,
+            testCode: catalogItem.code,
+            category: catalogItem.category,
+            orderedBy: doctorName,
+            orderedAt: new Date().toISOString(),
+            priority: line.priority,
+            status: "Pending",
+            sampleType: catalogItem.sampleType,
+            price: catalogItem.price,
+            billStatus: "Pending",
+            resultNotes: labClinicalNotes || undefined,
+          });
+          sentCount += 1;
+        } catch (error) {
+          if (sentCount > 0) {
+            throw new Error(`${sentCount} test(s) reached Lab before ${catalogItem.name} failed: ${toErrorMessage(error)}`);
+          }
+          throw new Error(`Could not send ${catalogItem.name} to Lab: ${toErrorMessage(error)}`);
+        }
+      }
+
+      try {
+        await updateConsultation(labTarget.id, { labOrdered: true });
+      } catch (error) {
+        throw new Error(`Lab received the order, but the consultation record could not be updated: ${toErrorMessage(error)}`);
+      }
+
+      setLabTarget(null);
+      setToast({ message: `${sentCount} lab test(s) sent to Lab for ${labTarget.patientName}.`, type: "success" });
+    } catch (error) {
+      setToast({ message: `Could not complete lab order for ${labTarget.patientName}: ${toErrorMessage(error)}`, type: "error" });
+    } finally {
+      setLabSubmitting(false);
+    }
   }
 
   return (
     <div className="space-y-6">
       <PageHeader
         title="Consultations"
-        description="Active and recent consultations. Write prescriptions, bill fees, and order lab tests."
+        description={
+          doctorName
+            ? `Consultations assigned to ${doctorName}. Prescriptions, lab orders, and consultation fees are routed from here.`
+            : "Consultations assigned to the logged-in doctor."
+        }
       />
 
-      {/* Billing rates shortcut */}
-      <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-xs text-slate-600 flex items-center justify-between">
-        <span>Consultation fee rates are configured in <strong>Admin → Settings → Billing Rates</strong></span>
-        <Link href={`${INTERNAL_PREFIX}/admin/settings`} className="font-semibold text-[var(--accent)] hover:underline">Manage Rates →</Link>
+      <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-xs text-slate-600">
+        Consultation billing rates are managed centrally and applied here automatically. Doctors cannot edit billing presets from this portal.
       </div>
 
-      {/* Summary strip */}
       <div className="flex flex-wrap gap-3">
         {[
-          { label: "In Progress",    value: consultations.filter((c) => c.status === "in_progress").length,  color: "bg-sky-50 text-sky-700 border border-sky-200" },
-          { label: "Completed Today",value: consultations.filter((c) => c.status === "completed").length,    color: "bg-emerald-50 text-emerald-700 border border-emerald-200" },
-          { label: "Rx Written",     value: consultations.filter((c) => c.rxWritten).length,                 color: "bg-violet-50 text-violet-700 border border-violet-200" },
-          { label: "Lab Ordered",    value: consultations.filter((c) => c.labOrdered).length,                color: "bg-amber-50 text-amber-700 border border-amber-200" },
-        ].map((s) => (
-          <div key={s.label} className={`flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold ${s.color}`}>
-            <span className="text-lg font-bold">{s.value}</span>
-            <span className="font-medium opacity-80">{s.label}</span>
+          { label: "In Progress", value: stats.inProgress, color: "bg-sky-50 text-sky-700 border border-sky-200" },
+          { label: "Completed", value: stats.completed, color: "bg-emerald-50 text-emerald-700 border border-emerald-200" },
+          { label: "Rx Written", value: stats.rxWritten, color: "bg-violet-50 text-violet-700 border border-violet-200" },
+          { label: "Lab Ordered", value: stats.labOrdered, color: "bg-amber-50 text-amber-700 border border-amber-200" },
+        ].map((stat) => (
+          <div key={stat.label} className={`flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold ${stat.color}`}>
+            <span className="text-lg font-bold">{stat.value}</span>
+            <span className="font-medium opacity-80">{stat.label}</span>
           </div>
         ))}
       </div>
 
       <Card className="overflow-hidden p-0">
         <div className="border-b border-slate-100 px-5 py-4">
-          <h3 className="font-bold text-slate-900">Today&apos;s Consultations</h3>
-          <p className="text-xs text-slate-400 mt-0.5">Use the action buttons to write prescriptions, order lab tests, and bill consultation fees.</p>
+          <h3 className="font-bold text-slate-900">My Consultations</h3>
+          <p className="mt-0.5 text-xs text-slate-400">Only your consultations are shown here. Success is only shown after the recipient write completes.</p>
         </div>
         <div className="overflow-x-auto">
           <table className="min-w-full text-left text-sm">
             <thead>
-              <tr className="bg-slate-50 border-b border-slate-100">
-                {["Patient", "Doctor", "Date", "Status", "Rx", "Lab", "Actions"].map((h) => (
-                  <th key={h} className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500 whitespace-nowrap">{h}</th>
+              <tr className="border-b border-slate-100 bg-slate-50">
+                {["Patient", "Complaint", "Date", "Status", "Rx", "Lab", "Billing", "Actions"].map((heading) => (
+                  <th key={heading} className="whitespace-nowrap px-5 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    {heading}
+                  </th>
                 ))}
               </tr>
             </thead>
@@ -249,303 +341,230 @@ export default function DoctorsConsultationsPage() {
               {consultations.map((row) => (
                 <tr key={row.id} className="hover:bg-slate-50">
                   <td className="px-5 py-3">
-                    <p className="font-semibold text-slate-900">{row.patient}</p>
+                    <p className="font-semibold text-slate-900">{row.patientName}</p>
                     <p className="text-xs text-slate-400">{row.patientId}</p>
                   </td>
-                  <td className="px-5 py-3 text-slate-600 text-xs">{row.doctor}</td>
-                  <td className="px-5 py-3 text-slate-500 text-xs whitespace-nowrap">{row.date}</td>
+                  <td className="max-w-[260px] px-5 py-3 text-xs text-slate-500">
+                    <p className="truncate">{row.chiefComplaint || row.diagnosis || "--"}</p>
+                    {row.notes ? <p className="mt-1 line-clamp-2 text-[11px] text-slate-400">{row.notes}</p> : null}
+                  </td>
+                  <td className="px-5 py-3 text-xs text-slate-500 whitespace-nowrap">{formatDate(row.date)}</td>
                   <td className="px-5 py-3">
-                    <StatusBadge variant={row.status === "completed" ? "success" : "info"}>
-                      {row.status.replace("_", " ")}
+                    <StatusBadge variant={row.status === "Completed" || row.status === "Admitted" ? "success" : row.status === "Awaiting Results" ? "warning" : "info"}>
+                      {row.status}
                     </StatusBadge>
                   </td>
+                  <td className="px-5 py-3">{row.rxWritten ? <span className="text-xs font-semibold text-violet-700">Sent</span> : <span className="text-xs text-slate-300">--</span>}</td>
+                  <td className="px-5 py-3">{row.labOrdered ? <span className="text-xs font-semibold text-sky-700">Ordered</span> : <span className="text-xs text-slate-300">--</span>}</td>
+                  <td className="px-5 py-3">{consultationHasFee(row.id) ? <span className="text-xs font-semibold text-emerald-700">Sent</span> : <span className="text-xs text-slate-300">--</span>}</td>
                   <td className="px-5 py-3">
-                    {row.rxWritten
-                      ? <span className="text-xs font-semibold text-violet-700">✓ Sent</span>
-                      : <span className="text-xs text-slate-300">—</span>}
-                  </td>
-                  <td className="px-5 py-3">
-                    {row.labOrdered
-                      ? <span className="text-xs font-semibold text-sky-700">✓ Ordered</span>
-                      : <span className="text-xs text-slate-300">—</span>}
-                  </td>
-                  <td className="px-5 py-3">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <button onClick={() => openRxModal(row)}
-                        className="rounded-lg bg-violet-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-violet-700 transition-colors">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button type="button" onClick={() => { setRxTarget(row); setUrgency("Routine"); setDrugs([{ ...BLANK_DRUG }]); setRxNotes(""); }} className="rounded-lg bg-violet-600 px-2.5 py-1 text-xs font-semibold text-white transition-colors hover:bg-violet-700">
                         {row.rxWritten ? "Re-prescribe" : "Write Rx"}
                       </button>
-                      <button onClick={() => openLabModal(row)}
-                        className="rounded-lg bg-sky-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-sky-700 transition-colors">
+                      <button type="button" onClick={() => { setLabTarget(row); setLabLines([{ ...BLANK_LAB }]); setLabClinicalNotes(""); }} className="rounded-lg bg-sky-600 px-2.5 py-1 text-xs font-semibold text-white transition-colors hover:bg-sky-700">
                         Order Lab
                       </button>
-                      {!row.billed ? (
-                        <button onClick={() => { setFeeTarget(row); setConsultType("General"); }}
-                          className="rounded-lg bg-emerald-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-emerald-700 transition-colors">
+                      {consultationHasFee(row.id) ? (
+                        <span className="text-xs font-semibold text-emerald-700">Fee sent</span>
+                      ) : (
+                        <button type="button" onClick={() => { setFeeTarget(row); setConsultType(["General", "Specialist", "Emergency", "Follow-up", "Antenatal"].includes(row.consultType) ? (row.consultType as ConsultType) : "General"); }} className="rounded-lg bg-emerald-600 px-2.5 py-1 text-xs font-semibold text-white transition-colors hover:bg-emerald-700">
                           Bill Fee
                         </button>
-                      ) : (
-                        <span className="text-xs font-semibold text-emerald-700">✓ Billed</span>
                       )}
                     </div>
                   </td>
                 </tr>
               ))}
+              {consultations.length === 0 ? (
+                <tr>
+                  <td colSpan={8} className="px-6 py-10 text-center text-sm text-slate-400">
+                    No consultations are currently assigned to this doctor.
+                  </td>
+                </tr>
+              ) : null}
             </tbody>
           </table>
         </div>
       </Card>
 
-      {/* ── Prescription Modal ──────────────────────────────────────────────── */}
-      <Modal open={!!rxTarget} onClose={() => !submitting && setRxTarget(null)}
-        title={`Write Prescription — ${rxTarget?.patient ?? ""}`}>
+      <Modal open={!!rxTarget} onClose={() => !rxSubmitting && setRxTarget(null)} title={`Write Prescription - ${rxTarget?.patientName ?? ""}`}>
         <form onSubmit={handleSubmitRx} className="space-y-4">
-          <div className="flex flex-wrap gap-3 rounded-xl bg-slate-50 px-4 py-3 text-sm">
-            <span className="text-slate-500">Patient:</span><span className="font-semibold text-slate-900">{rxTarget?.patient}</span>
-            <span className="mx-2 text-slate-300">|</span>
-            <span className="text-slate-500">Doctor:</span><span className="font-semibold text-slate-900">{rxTarget?.doctor}</span>
+          <div className="rounded-xl bg-slate-50 px-4 py-3 text-sm">
+            <div className="flex flex-wrap gap-3">
+              <span className="text-slate-500">Patient:</span>
+              <span className="font-semibold text-slate-900">{rxTarget?.patientName}</span>
+              <span className="text-slate-300">|</span>
+              <span className="text-slate-500">Doctor:</span>
+              <span className="font-semibold text-slate-900">{doctorName || "--"}</span>
+            </div>
           </div>
 
-          <div className="flex gap-3 items-center">
+          <div className="flex items-center gap-3">
             <span className="text-sm font-semibold text-slate-700">Urgency:</span>
-            {(["Routine", "Urgent"] as const).map((u) => (
-              <button key={u} type="button" onClick={() => setUrgency(u)}
-                className={`rounded-full px-3 py-1 text-xs font-bold transition-colors ${urgency === u
-                  ? u === "Urgent" ? "bg-red-600 text-white" : "bg-sky-600 text-white"
-                  : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}>
-                {u}
+            {(["Routine", "Urgent"] as const).map((entry) => (
+              <button key={entry} type="button" onClick={() => setUrgency(entry)} className={`rounded-full px-3 py-1 text-xs font-bold transition-colors ${urgency === entry ? entry === "Urgent" ? "bg-red-600 text-white" : "bg-sky-600 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}>
+                {entry}
               </button>
             ))}
           </div>
 
-          {/* Drug lines */}
           <div className="space-y-3">
             <div className="flex items-center justify-between">
               <span className="text-sm font-bold text-slate-800">Medications</span>
-              <button type="button" onClick={() => setDrugs((p) => [...p, { ...BLANK_DRUG }])}
-                className="text-xs font-semibold text-violet-600 hover:underline">+ Add medication</button>
+              <button type="button" onClick={() => setDrugs((prev) => [...prev, { ...BLANK_DRUG }])} className="text-xs font-semibold text-violet-600 hover:underline">
+                + Add medication
+              </button>
             </div>
-            {drugs.map((d, i) => {
-              const item = drugList.find((x) => x.name === d.name);
-              const qty = parseInt(d.qty) || 0;
+            {drugs.map((drug, index) => {
+              const item = drugList.find((entry) => entry.name === drug.name);
+              const qty = parseInt(drug.qty, 10) || 0;
               return (
-                <div key={i} className="rounded-xl border border-slate-200 p-3 space-y-2.5 bg-white">
+                <div key={`${drug.name}-${index}`} className="space-y-2.5 rounded-xl border border-slate-200 bg-white p-3">
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Drug {i + 1}</span>
-                    {drugs.length > 1 && (
-                      <button type="button" onClick={() => setDrugs((p) => p.filter((_, j) => j !== i))}
-                        className="text-xs text-red-500 hover:text-red-700">Remove</button>
-                    )}
+                    <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Drug {index + 1}</span>
+                    {drugs.length > 1 ? <button type="button" onClick={() => setDrugs((prev) => prev.filter((_, itemIndex) => itemIndex !== index))} className="text-xs text-red-500 hover:text-red-700">Remove</button> : null}
                   </div>
                   <div className="grid grid-cols-2 gap-2">
                     <div className="col-span-2">
                       <label className="mb-1 block text-xs text-slate-500">Medication *</label>
-                      <select value={d.name} onChange={(e) => autoFillDosage(i, e.target.value)} required
-                        className={inputCls}>
-                        <option value="">— Select from inventory —</option>
-                        {Object.entries(
-                          drugList.reduce<Record<string, typeof drugList>>((acc, drug) => {
-                            (acc[drug.category] = acc[drug.category] || []).push(drug);
-                            return acc;
-                          }, {}),
-                        ).map(([cat, items]) => (
-                          <optgroup key={cat} label={cat}>
-                            {items.map((opt) => (
-                              <option key={opt.id} value={opt.name}>
-                                {opt.name} — ₦{opt.unitPrice.toFixed(2)}/{opt.unit}
-                              </option>
-                            ))}
+                      <select value={drug.name} onChange={(event) => autoFillDosage(index, event.target.value)} required className={INPUT_CLASS}>
+                        <option value="">- Select from inventory -</option>
+                        {Object.entries(drugList.reduce<Record<string, typeof drugList>>((acc, entry) => {
+                          (acc[entry.category] = acc[entry.category] || []).push(entry);
+                          return acc;
+                        }, {})).map(([category, items]) => (
+                          <optgroup key={category} label={category}>
+                            {items.map((option) => <option key={option.id} value={option.name}>{option.name} - N{option.unitPrice.toFixed(2)}/{option.unit}</option>)}
                           </optgroup>
                         ))}
                       </select>
                     </div>
                     <div>
                       <label className="mb-1 block text-xs text-slate-500">Dosage *</label>
-                      <input type="text" placeholder="e.g. 500mg" value={d.dosage}
-                        onChange={(e) => updateDrug(i, "dosage", e.target.value)} required className={inputCls} />
+                      <input type="text" value={drug.dosage} onChange={(event) => updateDrug(index, "dosage", event.target.value)} required className={INPUT_CLASS} />
                     </div>
                     <div>
                       <label className="mb-1 block text-xs text-slate-500">Quantity *</label>
-                      <input type="text" list={`qty-opts-${i}`} placeholder="e.g. 21 caps" value={d.qty}
-                        onChange={(e) => updateDrug(i, "qty", e.target.value)} required className={inputCls} />
-                      <datalist id={`qty-opts-${i}`}>{QTY_PRESETS.map((q) => <option key={q} value={q} />)}</datalist>
+                      <input type="text" list={`qty-opts-${index}`} value={drug.qty} onChange={(event) => updateDrug(index, "qty", event.target.value)} required className={INPUT_CLASS} />
+                      <datalist id={`qty-opts-${index}`}>{QTY_PRESETS.map((preset) => <option key={preset} value={preset} />)}</datalist>
                     </div>
                     <div>
                       <label className="mb-1 block text-xs text-slate-500">Frequency</label>
-                      <select value={d.frequency} onChange={(e) => updateDrug(i, "frequency", e.target.value)} className={inputCls}>
-                        {FREQ_OPTIONS.map((f) => <option key={f} value={f}>{f}</option>)}
+                      <select value={drug.frequency} onChange={(event) => updateDrug(index, "frequency", event.target.value)} className={INPUT_CLASS}>
+                        {FREQ_OPTIONS.map((entry) => <option key={entry} value={entry}>{entry}</option>)}
                       </select>
                     </div>
                     <div>
                       <label className="mb-1 block text-xs text-slate-500">Duration</label>
-                      <select value={d.duration} onChange={(e) => updateDrug(i, "duration", e.target.value)} className={inputCls}>
-                        {DURATION_OPTIONS.map((dur) => <option key={dur} value={dur}>{dur}</option>)}
+                      <select value={drug.duration} onChange={(event) => updateDrug(index, "duration", event.target.value)} className={INPUT_CLASS}>
+                        {DURATION_OPTIONS.map((entry) => <option key={entry} value={entry}>{entry}</option>)}
                       </select>
                     </div>
-                    {item && qty > 0 && (
-                      <div className="col-span-2 flex items-center justify-between rounded-lg bg-violet-50 px-3 py-1.5 text-xs text-violet-800">
-                        <span>₦{item.unitPrice.toFixed(2)} × {qty} {item.unit}s</span>
-                        <strong>= ₦{(item.unitPrice * qty).toFixed(2)}</strong>
-                      </div>
-                    )}
+                    {item && qty > 0 ? <div className="col-span-2 flex items-center justify-between rounded-lg bg-violet-50 px-3 py-1.5 text-xs text-violet-800"><span>N{item.unitPrice.toFixed(2)} x {qty} {item.unit}s</span><strong>= N{(item.unitPrice * qty).toFixed(2)}</strong></div> : null}
                   </div>
                 </div>
               );
             })}
           </div>
 
-          {totalCost > 0 && (
-            <div className="flex items-center justify-between rounded-xl bg-violet-50 border border-violet-100 px-4 py-2">
-              <span className="text-sm font-semibold text-violet-800">Estimated Total</span>
-              <span className="text-lg font-bold text-violet-900">₦ {totalCost.toFixed(2)}</span>
-            </div>
-          )}
+          {totalDrugCost > 0 ? <div className="flex items-center justify-between rounded-xl border border-violet-100 bg-violet-50 px-4 py-2"><span className="text-sm font-semibold text-violet-800">Estimated total</span><span className="text-lg font-bold text-violet-900">N {totalDrugCost.toFixed(2)}</span></div> : null}
 
           <div>
             <label className="mb-1 block text-sm font-semibold text-slate-700">Notes / Instructions</label>
-            <textarea rows={2} placeholder="e.g. Take with food. Avoid alcohol. Complete the full course."
-              value={rxNotes} onChange={(e) => setRxNotes(e.target.value)}
-              className="w-full resize-none rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-400/20" />
-          </div>
-
-          <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2 text-xs font-medium text-emerald-800">
-            ✓ Prescription will be immediately visible in the Pharmacy dispensing queue.
+            <textarea value={rxNotes} onChange={(event) => setRxNotes(event.target.value)} rows={2} className="w-full resize-none rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-400/20" />
           </div>
 
           <ModalFooter>
-            <Button variant="ghost" size="md" type="button" onClick={() => setRxTarget(null)} disabled={submitting}>Cancel</Button>
-            <Button size="md" type="submit" disabled={submitting}>
-              {submitting ? "Sending to Pharmacy…" : "Send Prescription to Pharmacy"}
-            </Button>
+            <Button variant="ghost" size="md" type="button" onClick={() => setRxTarget(null)} disabled={rxSubmitting}>Cancel</Button>
+            <Button size="md" type="submit" disabled={rxSubmitting}>{rxSubmitting ? "Sending..." : "Send Prescription to Pharmacy"}</Button>
           </ModalFooter>
         </form>
       </Modal>
 
-      {/* ── Consultation Fee Modal ──────────────────────────────────────────── */}
-      <Modal open={!!feeTarget} onClose={() => setFeeTarget(null)}
-        title={`Bill Consultation Fee — ${feeTarget?.patient ?? ""}`}>
+      <Modal open={!!feeTarget} onClose={() => !feeSubmitting && setFeeTarget(null)} title={`Bill Consultation Fee - ${feeTarget?.patientName ?? ""}`}>
         <div className="space-y-4">
-          <div className="rounded-lg bg-slate-50 px-4 py-3 text-sm space-y-1">
-            <div className="flex justify-between"><span className="text-slate-500">Patient</span><span className="font-semibold">{feeTarget?.patient}</span></div>
-            <div className="flex justify-between"><span className="text-slate-500">Doctor</span><span>{feeTarget?.doctor}</span></div>
+          <div className="space-y-1 rounded-lg bg-slate-50 px-4 py-3 text-sm">
+            <div className="flex justify-between"><span className="text-slate-500">Patient</span><span className="font-semibold">{feeTarget?.patientName}</span></div>
+            <div className="flex justify-between"><span className="text-slate-500">Doctor</span><span>{doctorName || "--"}</span></div>
           </div>
           <div>
             <label className="mb-2 block text-sm font-semibold text-slate-700">Consultation Type</label>
             <div className="grid grid-cols-2 gap-2">
-              {consultTypes.map((t) => (
-                <button key={t} type="button" onClick={() => setConsultType(t)}
-                  className={`flex items-center justify-between rounded-xl border px-4 py-3 text-left transition-all ${consultType === t ? "border-emerald-500 bg-emerald-50 ring-2 ring-emerald-400/30" : "border-slate-200 hover:border-slate-300 bg-white"}`}>
-                  <span className="text-sm font-medium text-slate-800">{t}</span>
-                  <span className={`text-sm font-bold ${consultType === t ? "text-emerald-700" : "text-slate-600"}`}>₦{getAmount("consultation", t, 100)}</span>
+              {consultTypes.map((entry) => (
+                <button key={entry} type="button" onClick={() => setConsultType(entry)} className={`flex items-center justify-between rounded-xl border px-4 py-3 text-left transition-all ${consultType === entry ? "border-emerald-500 bg-emerald-50 ring-2 ring-emerald-400/30" : "border-slate-200 bg-white hover:border-slate-300"}`}>
+                  <span className="text-sm font-medium text-slate-800">{entry}</span>
+                  <span className={`text-sm font-bold ${consultType === entry ? "text-emerald-700" : "text-slate-600"}`}>N{getAmount("consultation", entry, 100)}</span>
                 </button>
               ))}
             </div>
           </div>
-          <div className="flex items-center justify-between rounded-xl bg-emerald-50 border border-emerald-200 px-4 py-3">
+          <div className="flex items-center justify-between rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3">
             <span className="text-sm font-semibold text-emerald-800">Fee to bill</span>
-            <span className="text-xl font-bold text-emerald-900">₦{getAmount("consultation", consultType, 100)}</span>
+            <span className="text-xl font-bold text-emerald-900">N{getAmount("consultation", consultType, 100)}</span>
           </div>
-          <p className="text-xs text-slate-500">Fee will appear as a pending charge in Accounts for this patient.</p>
+          <p className="text-xs text-slate-500">Accounts will receive this charge only after the write succeeds.</p>
         </div>
         <ModalFooter>
-          <Button variant="ghost" size="md" type="button" onClick={() => setFeeTarget(null)}>Cancel</Button>
-          <Button size="md" type="button" onClick={handleSubmitFee}>Send Fee to Accounts</Button>
+          <Button variant="ghost" size="md" type="button" onClick={() => setFeeTarget(null)} disabled={feeSubmitting}>Cancel</Button>
+          <Button size="md" type="button" onClick={() => void handleSubmitFee()} disabled={feeSubmitting}>{feeSubmitting ? "Sending..." : "Send Fee to Accounts"}</Button>
         </ModalFooter>
       </Modal>
 
-      {/* ── Lab Order Modal (multiple tests) ───────────────────────────────── */}
-      <Modal open={!!labTarget} onClose={() => setLabTarget(null)}
-        title={`Order Lab Tests — ${labTarget?.patient ?? ""}`}>
+      <Modal open={!!labTarget} onClose={() => !labSubmitting && setLabTarget(null)} title={`Order Lab Tests - ${labTarget?.patientName ?? ""}`}>
         <div className="space-y-4">
-          <div className="rounded-lg bg-slate-50 px-4 py-3 text-sm space-y-1">
-            <div className="flex justify-between"><span className="text-slate-500">Patient</span><span className="font-semibold">{labTarget?.patient}</span></div>
-            <div className="flex justify-between"><span className="text-slate-500">Ordered by</span><span>{labTarget?.doctor}</span></div>
+          <div className="space-y-1 rounded-lg bg-slate-50 px-4 py-3 text-sm">
+            <div className="flex justify-between"><span className="text-slate-500">Patient</span><span className="font-semibold">{labTarget?.patientName}</span></div>
+            <div className="flex justify-between"><span className="text-slate-500">Ordered by</span><span>{doctorName || "--"}</span></div>
           </div>
-
-          {/* Test lines */}
           <div className="space-y-2.5">
             <div className="flex items-center justify-between">
               <span className="text-sm font-bold text-slate-800">Tests</span>
-              <button type="button" onClick={() => setLabLines((p) => [...p, { ...BLANK_LAB }])}
-                className="text-xs font-semibold text-sky-600 hover:underline">+ Add test</button>
+              <button type="button" onClick={() => setLabLines((prev) => [...prev, { ...BLANK_LAB }])} className="text-xs font-semibold text-sky-600 hover:underline">
+                + Add test
+              </button>
             </div>
-            {labLines.map((line, i) => {
-              const sel = testCatalog.find((t) => t.code === line.testCode);
+            {labLines.map((line, index) => {
+              const selected = testCatalog.find((entry) => entry.code === line.testCode);
               return (
-                <div key={i} className="rounded-xl border border-slate-200 p-3 space-y-2 bg-white">
+                <div key={`${line.testCode}-${index}`} className="space-y-2 rounded-xl border border-slate-200 bg-white p-3">
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-semibold text-slate-400 uppercase tracking-wide">Test {i + 1}</span>
-                    {labLines.length > 1 && (
-                      <button type="button" onClick={() => setLabLines((p) => p.filter((_, j) => j !== i))}
-                        className="text-xs text-red-500 hover:text-red-700">Remove</button>
-                    )}
+                    <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">Test {index + 1}</span>
+                    {labLines.length > 1 ? <button type="button" onClick={() => setLabLines((prev) => prev.filter((_, itemIndex) => itemIndex !== index))} className="text-xs text-red-500 hover:text-red-700">Remove</button> : null}
                   </div>
                   <div className="grid grid-cols-2 gap-2">
                     <div className="col-span-2">
                       <label className="mb-1 block text-xs text-slate-500">Test *</label>
-                      <select value={line.testCode}
-                        onChange={(e) => updateLabLine(i, "testCode", e.target.value)}
-                        className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-200">
-                        <option value="">— Choose a test —</option>
-                        {testCatalog.map((t) => (
-                          <option key={t.code} value={t.code}>{t.name} — ₦{t.price}</option>
-                        ))}
+                      <select value={line.testCode} onChange={(event) => updateLabLine(index, "testCode", event.target.value)} className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-200">
+                        <option value="">- Choose a test -</option>
+                        {testCatalog.map((entry) => <option key={entry.code} value={entry.code}>{entry.name} - N{entry.price}</option>)}
                       </select>
                     </div>
                     <div>
                       <label className="mb-1 block text-xs text-slate-500">Priority</label>
                       <div className="flex gap-1">
-                        {(["Routine", "Urgent", "STAT"] as const).map((p) => (
-                          <button key={p} type="button" onClick={() => updateLabLine(i, "priority", p)}
-                            className={`flex-1 rounded-lg border px-2 py-2 text-center text-xs font-semibold transition ${
-                              line.priority === p
-                                ? p === "STAT" ? "border-red-400 bg-red-50 text-red-700"
-                                  : p === "Urgent" ? "border-amber-400 bg-amber-50 text-amber-700"
-                                  : "border-sky-400 bg-sky-50 text-sky-700"
-                                : "border-slate-200 text-slate-500 hover:border-slate-300"
-                            }`}>
-                            {p}
+                        {(["Routine", "Urgent", "STAT"] as const).map((entry) => (
+                          <button key={entry} type="button" onClick={() => updateLabLine(index, "priority", entry)} className={`flex-1 rounded-lg border px-2 py-2 text-center text-xs font-semibold transition ${line.priority === entry ? entry === "STAT" ? "border-red-400 bg-red-50 text-red-700" : entry === "Urgent" ? "border-amber-400 bg-amber-50 text-amber-700" : "border-sky-400 bg-sky-50 text-sky-700" : "border-slate-200 text-slate-500 hover:border-slate-300"}`}>
+                            {entry}
                           </button>
                         ))}
                       </div>
                     </div>
-                    {sel && (
-                      <div className="rounded-lg bg-sky-50 px-3 py-2 text-xs text-sky-800 space-y-0.5">
-                        <div><strong>Sample:</strong> {sel.sampleType}</div>
-                        <div><strong>TAT:</strong> {sel.turnaroundHours < 1 ? `${sel.turnaroundHours * 60} min` : `${sel.turnaroundHours} hr`}</div>
-                      </div>
-                    )}
+                    {selected ? <div className="rounded-lg bg-sky-50 px-3 py-2 text-xs text-sky-800"><div><strong>Sample:</strong> {selected.sampleType}</div><div><strong>TAT:</strong> {selected.turnaroundHours < 1 ? `${selected.turnaroundHours * 60} min` : `${selected.turnaroundHours} hr`}</div></div> : null}
                   </div>
                 </div>
               );
             })}
           </div>
 
-          {/* Total cost preview */}
-          {labLines.some((l) => l.testCode) && (
-            <div className="flex items-center justify-between rounded-xl bg-sky-50 border border-sky-100 px-4 py-2 text-sm">
-              <span className="font-semibold text-sky-800">Est. total</span>
-              <span className="font-bold text-sky-900">
-                ₦{labLines.reduce((sum, l) => {
-                  const t = testCatalog.find((x) => x.code === l.testCode);
-                  return sum + (t?.price ?? 0);
-                }, 0).toFixed(2)}
-              </span>
-            </div>
-          )}
-
           <div>
             <label className="mb-1.5 block text-sm font-semibold text-slate-700">Clinical Notes / Indication</label>
-            <textarea rows={2} placeholder="e.g. Suspected malaria, check FBC for anaemia…"
-              value={labClinicalNotes} onChange={(e) => setLabClinicalNotes(e.target.value)}
-              className="w-full resize-none rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-200" />
+            <textarea value={labClinicalNotes} onChange={(event) => setLabClinicalNotes(event.target.value)} rows={2} className="w-full resize-none rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-200" />
           </div>
         </div>
         <ModalFooter>
-          <Button variant="ghost" size="md" onClick={() => setLabTarget(null)}>Cancel</Button>
-          <Button size="md" disabled={!labLines.some((l) => l.testCode)} onClick={handleOrderLab}>
-            Send {labLines.filter((l) => l.testCode).length > 1 ? `${labLines.filter((l) => l.testCode).length} Tests` : "Test"} to Lab
-          </Button>
+          <Button variant="ghost" size="md" onClick={() => setLabTarget(null)} disabled={labSubmitting}>Cancel</Button>
+          <Button size="md" disabled={labSubmitting || !labLines.some((line) => line.testCode)} onClick={() => void handleOrderLab()}>{labSubmitting ? "Sending..." : "Send to Lab"}</Button>
         </ModalFooter>
       </Modal>
 

@@ -38,6 +38,7 @@ export type WardPatient = {
     recordedBy: string;
   };
   doctorInCharge?: string;
+  doctorSpecialty?: string;
   notes?: string;
   lastVitalsAt?: string;
   labTestsOrdered?: number;
@@ -153,6 +154,14 @@ export function subscribeNursesStore(fn: () => void) {
 // ─── Supabase sync ────────────────────────────────────────────────────────────
 
 let _lastSync = 0;
+
+function mergeById<T extends { id: string }>(remote: T[], local: T[]) {
+  const merged = new Map<string, T>();
+  for (const item of remote) merged.set(item.id, item);
+  for (const item of local) merged.set(item.id, { ...(merged.get(item.id) ?? {}), ...item });
+  return Array.from(merged.values());
+}
+
 export async function syncNursesFromSupabase(force = false) {
   if (typeof window === "undefined") return;
   const now = Date.now();
@@ -163,7 +172,13 @@ export async function syncNursesFromSupabase(force = false) {
     const [wardPatients, procedures, sampleRequests, icuVitals] = await Promise.all([
       fetchWardPatients(), fetchNursingProcedures(), fetchNurseSampleRequests(), fetchICUVitals(),
     ]);
-    _state = { wardPatients, procedures, sampleRequests, icuVitals };
+    const current = getState();
+    _state = {
+      wardPatients: mergeById(wardPatients, current.wardPatients),
+      procedures: mergeById(procedures, current.procedures),
+      sampleRequests: mergeById(sampleRequests, current.sampleRequests),
+      icuVitals: mergeById(icuVitals, current.icuVitals),
+    };
     saveState(_state);
     listeners.forEach((l) => l());
   } catch (err) { console.error("[nurses-store] sync failed:", err); }
@@ -180,32 +195,69 @@ export function addWardPatient(p: WardPatient) {
   import("@/lib/supabase/db").then(({ insertWardPatient }) => insertWardPatient(p))
     .catch((err) => console.error("[nurses-store] addWardPatient failed:", err));
 }
-export function updateWardPatient(id: string, updates: Partial<WardPatient>) {
+export async function updateWardPatient(id: string, updates: Partial<WardPatient>) {
   mutate((s) => { s.wardPatients = s.wardPatients.map((p) => p.id === id ? { ...p, ...updates } : p); });
   const updated = getState().wardPatients.find((p) => p.id === id);
-  if (updated) import("@/lib/supabase/db").then(({ insertWardPatient }) => insertWardPatient(updated))
-    .catch((err) => console.error("[nurses-store] updateWardPatient failed:", err));
+  if (!updated) return;
+  try {
+    const { insertWardPatient } = await import("@/lib/supabase/db");
+    await insertWardPatient(updated);
+  } catch (err) {
+    console.error("[nurses-store] updateWardPatient failed:", err);
+    throw err;
+  }
 }
 
 // ─── Procedures ───────────────────────────────────────────────────────────────
 
 export function getNursingProcedures(): NursingProcedure[] { return [...getState().procedures]; }
-export function addNursingProcedure(p: NursingProcedure) {
+export async function addNursingProcedure(p: NursingProcedure) {
   mutate((s) => { s.procedures = [p, ...s.procedures]; });
-  import("@/lib/supabase/db").then(({ insertNursingProcedure }) => insertNursingProcedure(p)).catch(() => {});
+  try {
+    const { insertNursingProcedure } = await import("@/lib/supabase/db");
+    await insertNursingProcedure(p);
+  } catch (err) {
+    console.error("[nurses-store] addNursingProcedure failed:", err);
+    throw err;
+  }
 }
-export function updateProcedureBillStatus(id: string, billStatus: NursingProcedure["billStatus"]) {
+export async function updateProcedureBillStatus(id: string, billStatus: NursingProcedure["billStatus"]) {
   mutate((s) => { s.procedures = s.procedures.map((p) => p.id === id ? { ...p, billStatus } : p); });
+  const updated = getState().procedures.find((p) => p.id === id);
+  if (!updated) return;
+  try {
+    const { insertNursingProcedure } = await import("@/lib/supabase/db");
+    await insertNursingProcedure(updated);
+  } catch (err) {
+    console.error("[nurses-store] updateProcedureBillStatus failed:", err);
+    throw err;
+  }
 }
 
 // ─── Sample Requests ──────────────────────────────────────────────────────────
 
 export function getNurseSampleRequests(): NurseSampleRequest[] { return [...getState().sampleRequests]; }
-export function addNurseSampleRequest(r: NurseSampleRequest) {
+export async function addNurseSampleRequest(r: NurseSampleRequest) {
   mutate((s) => { s.sampleRequests = [r, ...s.sampleRequests]; });
+  try {
+    const { insertNurseSampleRequest } = await import("@/lib/supabase/db");
+    await insertNurseSampleRequest(r);
+  } catch (err) {
+    console.error("[nurses-store] addNurseSampleRequest failed:", err);
+    throw err;
+  }
 }
-export function updateNurseSampleRequest(id: string, updates: Partial<NurseSampleRequest>) {
+export async function updateNurseSampleRequest(id: string, updates: Partial<NurseSampleRequest>) {
   mutate((s) => { s.sampleRequests = s.sampleRequests.map((r) => r.id === id ? { ...r, ...updates } : r); });
+  const updated = getState().sampleRequests.find((r) => r.id === id);
+  if (!updated) return;
+  try {
+    const { insertNurseSampleRequest } = await import("@/lib/supabase/db");
+    await insertNurseSampleRequest(updated);
+  } catch (err) {
+    console.error("[nurses-store] updateNurseSampleRequest failed:", err);
+    throw err;
+  }
 }
 
 // ─── ICU Vitals ───────────────────────────────────────────────────────────────

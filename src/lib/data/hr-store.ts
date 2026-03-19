@@ -134,6 +134,7 @@ export type StaffMember = {
   name: string;
   department: StaffDepartment;
   unit?: string; // e.g. "ICU", "Ward" for Nurses; "Hematology" for Lab
+  specialty?: string; // doctor clinical specialty, e.g. "Paediatrics"
   role: string;  // Human job title, e.g. "Senior Doctor", "Charge Nurse"
   roleKey?: RoleKeyValue; // RBAC system role key, e.g. "doctor", "nurse"
   contractType: ContractType;
@@ -394,6 +395,11 @@ export function getStaffByDepartment(dept: StaffDepartment): StaffMember[] {
 export function addStaffMember(s: StaffMember) {
   mutate((state) => { state.staff = [s, ...state.staff]; });
   import("@/lib/supabase/db").then(({ insertStaffMember }) => insertStaffMember(s)).catch(() => {});
+}
+export function replaceStaffMember(nextStaff: StaffMember) {
+  mutate((state) => {
+    state.staff = state.staff.map((entry) => (entry.id === nextStaff.id ? nextStaff : entry));
+  });
 }
 export function updateStaffStatus(id: string, status: StaffStatus, notes?: string) {
   mutate((state) => {

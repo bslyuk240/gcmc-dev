@@ -19,12 +19,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
-    setMobileSidebarOpen(false);
+    const id = setTimeout(() => setMobileSidebarOpen(false), 0);
+    return () => clearTimeout(id);
   }, [pathname]);
 
   return (
     <div data-department={department} className="h-screen overflow-hidden bg-background">
-      <div className="flex h-full">
+      <div className="flex h-full min-h-0">
         <Sidebar />
         <MobileSidebar open={mobileSidebarOpen} onClose={() => setMobileSidebarOpen(false)} />
         <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">

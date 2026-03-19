@@ -8,10 +8,8 @@ import { Toast, type ToastData } from "@/components/ui/toast";
 import { useHRStore } from "@/lib/hooks/use-hr-store";
 import {
   addStaffMember,
+  replaceStaffMember,
   updateStaffStatus,
-  updateStaffRole,
-  updateStaffDept,
-  updateStaffUnit,
   ROLE_KEY_LABELS,
   DEPT_ROLE_KEYS,
   DEPT_UNITS,
@@ -20,6 +18,8 @@ import {
   type RoleKeyValue,
 } from "@/lib/data/hr-store";
 import { formatStaffDisplayId } from "@/lib/staff-id";
+import { insertStaffMember } from "@/lib/supabase/db";
+import { DEFAULT_DOCTOR_SPECIALTIES } from "@/lib/utils/doctor-routing";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -60,6 +60,10 @@ const STATUS_STYLES: Record<string, string> = {
   Probation: "bg-violet-50 text-violet-700",
 };
 
+function createLocalStaffId() {
+  return `EMP-${globalThis.crypto.randomUUID().replace(/-/g, "").slice(0, 5).toUpperCase()}`;
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function StaffDirectoryPage() {
@@ -79,6 +83,7 @@ export default function StaffDirectoryPage() {
   const [editRoleKey, setEditRoleKey] = useState<RoleKeyValue>("doctor");
   const [editJobTitle,setEditJobTitle]= useState("");
   const [editUnit,    setEditUnit]    = useState("");
+  const [editSpecialty, setEditSpecialty] = useState("");
 
   // ── Add modal ──────────────────────────────────────────────────────────────
   const [showAdd,    setShowAdd]    = useState(false);
@@ -87,6 +92,7 @@ export default function StaffDirectoryPage() {
   const [addRoleKey, setAddRoleKey] = useState<RoleKeyValue>("doctor");
   const [addJobTitle,setAddJobTitle]= useState("");
   const [addUnit,    setAddUnit]    = useState("");
+  const [addSpecialty, setAddSpecialty] = useState("");
   const [addEmail,   setAddEmail]   = useState("");
   const [addPhone,   setAddPhone]   = useState("");
   const [addSalary,  setAddSalary]  = useState("");
@@ -119,29 +125,46 @@ export default function StaffDirectoryPage() {
     setEditRoleKey(s.roleKey ?? (DEPT_ROLE_KEYS[s.department][0]));
     setEditJobTitle(s.role);
     setEditUnit(s.unit ?? "");
+    setEditSpecialty(s.specialty ?? "");
   }
 
-  function handleSaveEdit() {
+  async function handleSaveEdit() {
     if (!viewStaff) return;
-    if (editDept !== viewStaff.department) {
-      updateStaffDept(viewStaff.id, editDept, editUnit || undefined);
-    } else if (editUnit !== (viewStaff.unit ?? "")) {
-      updateStaffUnit(viewStaff.id, editUnit || undefined);
+    if (editDept === "Doctors" && !editSpecialty.trim()) {
+      showToast("Doctor specialty is required.", "error");
+      return;
     }
-    if (editRoleKey !== viewStaff.roleKey || editJobTitle !== viewStaff.role) {
-      updateStaffRole(viewStaff.id, editRoleKey, editJobTitle || undefined);
+    const updatedStaff: StaffMember = {
+      ...viewStaff,
+      department: editDept,
+      unit: editDept === "Doctors" ? (editUnit || undefined) : (editUnit || undefined),
+      roleKey: editRoleKey,
+      role: editJobTitle || ROLE_KEY_LABELS[editRoleKey],
+      specialty: editDept === "Doctors" ? editSpecialty.trim() : undefined,
+    };
+    try {
+      await insertStaffMember(updatedStaff);
+      replaceStaffMember(updatedStaff);
+      showToast(`${viewStaff.name}'s role and assignment updated.`, "success");
+      setViewStaff(null);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Staff profile update failed.";
+      showToast(`Could not save ${viewStaff.name}'s profile: ${message}`, "error");
     }
-    showToast(`${viewStaff.name}'s role and assignment updated.`, "success");
-    setViewStaff(null);
   }
 
   function handleAdd() {
     if (!addName) return;
-    const id = `EMP-${Date.now().toString().slice(-5)}`;
+    if (addDept === "Doctors" && !addSpecialty.trim()) {
+      showToast("Doctor specialty is required.", "error");
+      return;
+    }
+    const id = createLocalStaffId();
     addStaffMember({
       id, name: addName,
       department: addDept,
       unit: addUnit || undefined,
+      specialty: addDept === "Doctors" ? addSpecialty.trim() : undefined,
       role: addJobTitle || ROLE_KEY_LABELS[addRoleKey],
       roleKey: addRoleKey,
       contractType: "Permanent",
@@ -155,7 +178,7 @@ export default function StaffDirectoryPage() {
     showToast(`${addName} added to ${addDept}. Raise onboarding in HR → Onboarding.`, "success");
     setShowAdd(false);
     setAddName(""); setAddDept("Doctors"); setAddRoleKey("doctor");
-    setAddJobTitle(""); setAddUnit(""); setAddEmail(""); setAddPhone(""); setAddSalary("");
+    setAddJobTitle(""); setAddUnit(""); setAddSpecialty(""); setAddEmail(""); setAddPhone(""); setAddSalary("");
   }
 
   function handleSuspendToggle() {
@@ -175,12 +198,14 @@ export default function StaffDirectoryPage() {
     setAddDept(dept);
     setAddRoleKey(DEPT_ROLE_KEYS[dept][0]);
     setAddUnit("");
+    if (dept !== "Doctors") setAddSpecialty("");
   }
 
   function handleEditDeptChange(dept: StaffDepartment) {
     setEditDept(dept);
     setEditRoleKey(DEPT_ROLE_KEYS[dept][0]);
     setEditUnit("");
+    if (dept !== "Doctors") setEditSpecialty("");
   }
 
   const inputCls = "w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-200";
@@ -341,13 +366,14 @@ export default function StaffDirectoryPage() {
 
             {/* Detail grid */}
             <div className="grid grid-cols-2 gap-2 text-xs">
-              {[
-                { label: "Staff ID",       value: viewStaff.id },
-                { label: "Department",     value: viewStaff.department },
-                { label: "Unit",           value: viewStaff.unit || "—" },
-                { label: "Contract",       value: viewStaff.contractType },
-                { label: "Email",          value: viewStaff.email },
-                { label: "Phone",          value: viewStaff.phone || "—" },
+                {[
+                  { label: "Staff ID",       value: viewStaff.id },
+                  { label: "Department",     value: viewStaff.department },
+                  { label: "Unit",           value: viewStaff.unit || "—" },
+                  { label: "Specialty",      value: viewStaff.specialty || "—" },
+                  { label: "Contract",       value: viewStaff.contractType },
+                  { label: "Email",          value: viewStaff.email },
+                  { label: "Phone",          value: viewStaff.phone || "—" },
                 { label: "Joined",         value: viewStaff.joinDate },
                 { label: "Salary",         value: `₦${viewStaff.salary.toLocaleString()}` },
                 { label: "Licence",        value: viewStaff.licenseNumber || "—" },
@@ -416,6 +442,18 @@ export default function StaffDirectoryPage() {
                 <select value={editUnit} onChange={(e) => setEditUnit(e.target.value)} className={inputCls}>
                   <option value="">— No specific unit —</option>
                   {DEPT_UNITS[editDept]!.map((u) => <option key={u}>{u}</option>)}
+                </select>
+              </div>
+            )}
+
+            {editDept === "Doctors" && (
+              <div>
+                <label className="mb-1 block text-xs font-semibold text-slate-600">Doctor Specialty</label>
+                <select value={editSpecialty} onChange={(e) => setEditSpecialty(e.target.value)} className={inputCls}>
+                  <option value="">— Select specialty —</option>
+                  {DEFAULT_DOCTOR_SPECIALTIES.map((specialty) => (
+                    <option key={specialty} value={specialty}>{specialty}</option>
+                  ))}
                 </select>
               </div>
             )}
@@ -489,6 +527,18 @@ export default function StaffDirectoryPage() {
                 </select>
               </div>
             ) : <div />}
+
+            {addDept === "Doctors" && (
+              <div>
+                <label className="mb-1 block text-xs font-semibold text-slate-600">Doctor Specialty *</label>
+                <select value={addSpecialty} onChange={(e) => setAddSpecialty(e.target.value)} className={inputCls}>
+                  <option value="">— Select specialty —</option>
+                  {DEFAULT_DOCTOR_SPECIALTIES.map((specialty) => (
+                    <option key={specialty} value={specialty}>{specialty}</option>
+                  ))}
+                </select>
+              </div>
+            )}
 
             {/* Email */}
             <div>

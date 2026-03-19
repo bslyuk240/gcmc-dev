@@ -113,6 +113,12 @@ export function subscribeDoctorsStore(fn: () => void) {
 // ─── Supabase sync ────────────────────────────────────────────────────────────
 
 let _lastSync = 0;
+function mergeById<T extends { id: string }>(remote: T[], local: T[]) {
+  const merged = new Map<string, T>();
+  for (const item of remote) merged.set(item.id, item);
+  for (const item of local) merged.set(item.id, { ...(merged.get(item.id) ?? {}), ...item });
+  return Array.from(merged.values());
+}
 export async function syncDoctorsFromSupabase(force = false) {
   if (typeof window === "undefined") return;
   const now = Date.now();
@@ -125,7 +131,14 @@ export async function syncDoctorsFromSupabase(force = false) {
       fetchConsultations(),
       fetchAdmissionOrders(),
     ]);
-    _state = { doctors, consultations, admissionOrders };
+    const current = getState();
+    _state = {
+      // Doctor profiles are authoritative from the DB. Keeping stale local doctors
+      // here causes dashboards to show doctors that are no longer actually registered.
+      doctors,
+      consultations: mergeById(consultations, current.consultations),
+      admissionOrders: mergeById(admissionOrders, current.admissionOrders),
+    };
     saveState(_state);
     listeners.forEach((l) => l());
   } catch (err) { console.error("[doctors-store] sync failed:", err); }
@@ -138,23 +151,60 @@ export function getDoctors(): DoctorProfile[] { return [...getState().doctors]; 
 // ─── Consultations ────────────────────────────────────────────────────────────
 
 export function getConsultations(): ConsultationRecord[] { return [...getState().consultations]; }
-export function addConsultation(c: ConsultationRecord) {
-  mutate((s) => { s.consultations = [c, ...s.consultations]; });
-  import("@/lib/supabase/db").then(({ insertConsultation }) => insertConsultation(c)).catch((err) => console.error('[doctors-store] write failed:', err));
+export async function addConsultation(c: ConsultationRecord) {
+  try {
+    const { insertConsultation } = await import("@/lib/supabase/db");
+    await insertConsultation(c);
+    mutate((s) => { s.consultations = [c, ...s.consultations]; });
+  } catch (err) {
+    console.error("[doctors-store] write failed:", err);
+    throw err;
+  }
 }
-export function updateConsultation(id: string, updates: Partial<ConsultationRecord>) {
-  mutate((s) => {
-    s.consultations = s.consultations.map((c) => c.id === id ? { ...c, ...updates } : c);
-  });
-  import("@/lib/supabase/db").then(({ upsertConsultation }) => upsertConsultation(id, updates)).catch((err) => console.error('[doctors-store] write failed:', err));
+export async function updateConsultation(id: string, updates: Partial<ConsultationRecord>) {
+  try {
+    const { upsertConsultation } = await import("@/lib/supabase/db");
+    await upsertConsultation(id, updates);
+    mutate((s) => {
+      s.consultations = s.consultations.map((c) => c.id === id ? { ...c, ...updates } : c);
+    });
+  } catch (err) {
+    console.error("[doctors-store] write failed:", err);
+    throw err;
+  }
 }
 
 // ─── Admissions ───────────────────────────────────────────────────────────────
 
 export function getAdmissionOrders(): AdmissionOrder[] { return [...getState().admissionOrders]; }
-export function addAdmissionOrder(a: AdmissionOrder) {
-  mutate((s) => { s.admissionOrders = [a, ...s.admissionOrders]; });
-  import("@/lib/supabase/db").then(({ insertAdmissionOrder }) => insertAdmissionOrder(a)).catch((err) => console.error('[doctors-store] write failed:', err));
+export async function addAdmissionOrder(a: AdmissionOrder) {
+  try {
+    const { insertAdmissionOrder } = await import("@/lib/supabase/db");
+    await insertAdmissionOrder(a);
+    mutate((s) => { s.admissionOrders = [a, ...s.admissionOrders]; });
+  } catch (err) {
+    console.error("[doctors-store] write failed:", err);
+    throw err;
+  }
+}
+export async function updateAdmissionOrder(id: string, updates: Partial<AdmissionOrder>) {
+  const current = getState().admissionOrders.find((order) => order.id === id);
+  if (!current) {
+    throw new Error(`Admission order ${id} was not found.`);
+  }
+
+  const updated = { ...current, ...updates };
+
+  try {
+    const { insertAdmissionOrder } = await import("@/lib/supabase/db");
+    await insertAdmissionOrder(updated);
+    mutate((s) => {
+      s.admissionOrders = s.admissionOrders.map((order) => order.id === id ? updated : order);
+    });
+  } catch (err) {
+    console.error("[doctors-store] write failed:", err);
+    throw err;
+  }
 }
 
 // ─── Metrics ──────────────────────────────────────────────────────────────────

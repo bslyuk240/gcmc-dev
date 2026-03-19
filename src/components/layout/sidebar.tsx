@@ -56,7 +56,7 @@ function SidebarInner({
         </div>
       </div>
 
-      <nav className="min-h-0 flex-1 overflow-y-auto px-2 pb-4">
+      <nav className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 pb-4">
         {sections.map((section, sectionIndex) => (
           <div key={section.section} className={cn(sectionIndex > 0 && "mt-4")}>
             {sectionIndex > 0 ? (
@@ -166,8 +166,8 @@ export function Sidebar() {
   const pathname = usePathname();
 
   return (
-    <aside className="hidden h-full w-60 shrink-0 border-r border-slate-200 bg-white xl:sticky xl:top-0 xl:flex xl:self-start">
-      <div className="flex h-full w-full flex-col">
+    <aside className="hidden h-screen min-h-0 w-60 shrink-0 overflow-hidden border-r border-slate-200 bg-white xl:sticky xl:top-0 xl:flex xl:self-start">
+      <div className="flex h-full min-h-0 w-full flex-col overflow-hidden">
         <SidebarInner pathname={pathname} />
       </div>
     </aside>
@@ -194,7 +194,7 @@ export function MobileSidebar({
         aria-label="Close menu"
       />
 
-      <aside className="absolute inset-y-0 left-0 flex w-72 max-w-[86vw] flex-col bg-white shadow-2xl">
+      <aside className="absolute inset-y-0 left-0 flex h-full min-h-0 w-72 max-w-[86vw] flex-col overflow-hidden bg-white shadow-2xl">
         <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
           <div className="flex items-center gap-3">
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent text-white">
@@ -216,7 +216,7 @@ export function MobileSidebar({
           </button>
         </div>
 
-        <div className="flex min-h-0 flex-1 flex-col">
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
           <SidebarInner pathname={pathname} onNavigate={onClose} />
         </div>
       </aside>

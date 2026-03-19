@@ -8,6 +8,7 @@ import { Modal, ModalFooter } from "@/components/ui/modal";
 import { Toast, type ToastData } from "@/components/ui/toast";
 import { useAccountsStore } from "@/lib/hooks/use-accounts-store";
 import { updateNursingChargeStatus } from "@/lib/data/accounts-store";
+import { updateProcedureBillStatus } from "@/lib/data/nurses-store";
 import { printReceipt } from "@/lib/utils/print-receipt";
 
 const STATUS_STYLES: Record<string, string> = {
@@ -36,20 +37,34 @@ export default function NursingBillingPage() {
     filter === "Pending" ? (c.status === "Pending" || c.status === "Billed" as string) : c.status === filter
   );
 
-  function handlePayment() {
-    if (!payTarget) return;
-    const charge = nursingCharges.find((c) => c.id === payTarget);
-    updateNursingChargeStatus(payTarget, "Paid");
-    setToast({ message: `Payment received for ${charge?.patientName ?? "patient"}.`, type: "success" });
-    setPayTarget(null);
+  function getErrorMessage(error: unknown) {
+    return error instanceof Error ? error.message : "The action could not be completed.";
   }
 
-  function handleWaive() {
+  async function handlePayment() {
+    if (!payTarget) return;
+    const charge = nursingCharges.find((c) => c.id === payTarget);
+    try {
+      await updateNursingChargeStatus(payTarget, "Paid");
+      await updateProcedureBillStatus(payTarget, "Paid");
+      setToast({ message: `Payment received for ${charge?.patientName ?? "patient"}.`, type: "success" });
+      setPayTarget(null);
+    } catch (error) {
+      setToast({ message: `Nursing payment update failed: ${getErrorMessage(error)}`, type: "error" });
+    }
+  }
+
+  async function handleWaive() {
     if (!waiveTarget) return;
     const charge = nursingCharges.find((c) => c.id === waiveTarget);
-    updateNursingChargeStatus(waiveTarget, "Waived");
-    setToast({ message: `Nursing charge waived for ${charge?.patientName ?? "patient"}.`, type: "info" });
-    setWaiveTarget(null);
+    try {
+      await updateNursingChargeStatus(waiveTarget, "Waived");
+      await updateProcedureBillStatus(waiveTarget, "Waived");
+      setToast({ message: `Nursing charge waived for ${charge?.patientName ?? "patient"}.`, type: "info" });
+      setWaiveTarget(null);
+    } catch (error) {
+      setToast({ message: `Nursing charge waive failed: ${getErrorMessage(error)}`, type: "error" });
+    }
   }
 
   const payCharge = nursingCharges.find((c) => c.id === payTarget);
@@ -170,7 +185,7 @@ export default function NursingBillingPage() {
         )}
         <ModalFooter>
           <Button variant="ghost" size="md" onClick={() => setPayTarget(null)}>Cancel</Button>
-          <Button size="md" onClick={handlePayment}>Confirm Payment Received</Button>
+          <Button size="md" onClick={() => void handlePayment()}>Confirm Payment Received</Button>
         </ModalFooter>
       </Modal>
 
@@ -184,7 +199,7 @@ export default function NursingBillingPage() {
         )}
         <ModalFooter>
           <Button variant="ghost" size="md" onClick={() => setWaiveTarget(null)}>Cancel</Button>
-          <Button size="md" onClick={handleWaive}>Confirm Waive</Button>
+          <Button size="md" onClick={() => void handleWaive()}>Confirm Waive</Button>
         </ModalFooter>
       </Modal>
 

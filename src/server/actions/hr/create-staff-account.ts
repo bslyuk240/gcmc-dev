@@ -10,6 +10,7 @@ export type CreateStaffAccountInput = {
   department: DBDepartmentKey;
   role: RoleKey;
   unit_name?: string; // non-clinical staff only
+  specialty?: string; // doctor clinical specialty
 };
 
 export type CreateStaffAccountResult =
@@ -29,10 +30,13 @@ function generateTempPassword(): string {
 export async function createStaffAccountAction(
   input: CreateStaffAccountInput,
 ): Promise<CreateStaffAccountResult> {
-  const { full_name, email, department, role, unit_name } = input;
+  const { full_name, email, department, role, unit_name, specialty } = input;
 
   if (!full_name || !email || !department || !role) {
     return { success: false, error: "All fields are required." };
+  }
+  if (department === "doctors" && !specialty?.trim()) {
+    return { success: false, error: "Doctor specialty is required." };
   }
 
   const admin = createAdminClient();
@@ -69,6 +73,7 @@ export async function createStaffAccountAction(
       must_change_password: true,  // force password change on first login
       system_setup_done: false,    // IT must confirm workstation setup
       ...(unit_name ? { unit_name } : {}),
+      ...(specialty?.trim() ? { specialty: specialty.trim() } : {}),
     });
 
   if (profileError) {

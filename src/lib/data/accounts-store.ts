@@ -241,6 +241,12 @@ export function subscribeAccountsStore(fn: () => void) {
 // ─── Supabase sync ────────────────────────────────────────────────────────────
 
 let _lastSync = 0;
+function mergeById<T extends { id: string }>(remote: T[], local: T[]) {
+  const merged = new Map<string, T>();
+  for (const item of remote) merged.set(item.id, item);
+  for (const item of local) merged.set(item.id, { ...(merged.get(item.id) ?? {}), ...item });
+  return Array.from(merged.values());
+}
 export async function syncAccountsFromSupabase(force = false) {
   if (typeof window === "undefined") return;
   const now = Date.now();
@@ -252,7 +258,16 @@ export async function syncAccountsFromSupabase(force = false) {
       fetchFrontDeskCharges(), fetchConsultationFees(), fetchSupplierPayments(),
       fetchPayrollBatches(), fetchKioskSales(), fetchLabCharges(), fetchNursingCharges(),
     ]);
-    _state = { frontDeskCharges, consultationFees, supplierPayments, payrollBatches, kioskSales, labCharges, nursingCharges };
+    const current = getState();
+    _state = {
+      frontDeskCharges: mergeById(frontDeskCharges, current.frontDeskCharges),
+      consultationFees: mergeById(consultationFees, current.consultationFees),
+      supplierPayments: mergeById(supplierPayments, current.supplierPayments),
+      payrollBatches: mergeById(payrollBatches, current.payrollBatches),
+      kioskSales: mergeById(kioskSales, current.kioskSales),
+      labCharges: mergeById(labCharges, current.labCharges),
+      nursingCharges: mergeById(nursingCharges, current.nursingCharges),
+    };
     saveState(_state);
     listeners.forEach((l) => l());
   } catch (err) { console.error("[accounts-store] sync failed:", err); }
@@ -274,15 +289,25 @@ export function updateFrontDeskChargeStatus(id: string, status: ChargeStatus) {
 // ─── Consultation Fees ────────────────────────────────────────────────────────
 
 export function getConsultationFees(): ConsultationFee[] { return [...getState().consultationFees]; }
-export function addConsultationFee(f: ConsultationFee) {
-  mutate((s) => { s.consultationFees = [f, ...s.consultationFees]; });
-  import("@/lib/supabase/db").then(({ insertConsultationFee }) => insertConsultationFee(f))
-    .catch((err) => console.error("[accounts-store] addConsultationFee failed:", err));
+export async function addConsultationFee(f: ConsultationFee) {
+  try {
+    const { insertConsultationFee } = await import("@/lib/supabase/db");
+    await insertConsultationFee(f);
+    mutate((s) => { s.consultationFees = [f, ...s.consultationFees]; });
+  } catch (err) {
+    console.error("[accounts-store] addConsultationFee failed:", err);
+    throw err;
+  }
 }
-export function updateConsultationFeeStatus(id: string, status: ChargeStatus) {
-  mutate((s) => { s.consultationFees = s.consultationFees.map((f) => f.id === id ? { ...f, status } : f); });
-  import("@/lib/supabase/db").then(({ upsertConsultationFeeStatus }) => upsertConsultationFeeStatus(id, status))
-    .catch((err) => console.error("[accounts-store] updateConsultationFeeStatus failed:", err));
+export async function updateConsultationFeeStatus(id: string, status: ChargeStatus) {
+  try {
+    const { upsertConsultationFeeStatus } = await import("@/lib/supabase/db");
+    await upsertConsultationFeeStatus(id, status);
+    mutate((s) => { s.consultationFees = s.consultationFees.map((f) => f.id === id ? { ...f, status } : f); });
+  } catch (err) {
+    console.error("[accounts-store] updateConsultationFeeStatus failed:", err);
+    throw err;
+  }
 }
 
 // ─── Supplier Payments ────────────────────────────────────────────────────────
@@ -330,29 +355,49 @@ export function updateKioskSaleStatus(id: string, status: KioskSale["status"]) {
 // ─── Lab Charges ──────────────────────────────────────────────────────────────
 
 export function getLabCharges(): LabCharge[] { return [...(getState().labCharges ?? [])]; }
-export function addLabCharge(c: LabCharge) {
-  mutate((s) => { s.labCharges = [c, ...(s.labCharges ?? [])]; });
-  import("@/lib/supabase/db").then(({ insertLabCharge }) => insertLabCharge(c))
-    .catch((err) => console.error("[accounts-store] addLabCharge failed:", err));
+export async function addLabCharge(c: LabCharge) {
+  try {
+    const { insertLabCharge } = await import("@/lib/supabase/db");
+    await insertLabCharge(c);
+    mutate((s) => { s.labCharges = [c, ...(s.labCharges ?? [])]; });
+  } catch (err) {
+    console.error("[accounts-store] addLabCharge failed:", err);
+    throw err;
+  }
 }
-export function updateLabChargeStatus(id: string, status: ChargeStatus) {
-  mutate((s) => { s.labCharges = (s.labCharges ?? []).map((c) => c.id === id ? { ...c, status } : c); });
-  import("@/lib/supabase/db").then(({ upsertLabChargeStatus }) => upsertLabChargeStatus(id, status))
-    .catch((err) => console.error("[accounts-store] updateLabChargeStatus failed:", err));
+export async function updateLabChargeStatus(id: string, status: ChargeStatus) {
+  try {
+    const { upsertLabChargeStatus } = await import("@/lib/supabase/db");
+    await upsertLabChargeStatus(id, status);
+    mutate((s) => { s.labCharges = (s.labCharges ?? []).map((c) => c.id === id ? { ...c, status } : c); });
+  } catch (err) {
+    console.error("[accounts-store] updateLabChargeStatus failed:", err);
+    throw err;
+  }
 }
 
 // ─── Nursing Charges ─────────────────────────────────────────────────────────
 
 export function getNursingCharges(): NursingCharge[] { return [...(getState().nursingCharges ?? [])]; }
-export function addNursingCharge(c: NursingCharge) {
+export async function addNursingCharge(c: NursingCharge) {
   mutate((s) => { s.nursingCharges = [c, ...(s.nursingCharges ?? [])]; });
-  import("@/lib/supabase/db").then(({ insertNursingCharge }) => insertNursingCharge(c))
-    .catch((err) => console.error("[accounts-store] addNursingCharge failed:", err));
+  try {
+    const { insertNursingCharge } = await import("@/lib/supabase/db");
+    await insertNursingCharge(c);
+  } catch (err) {
+    console.error("[accounts-store] addNursingCharge failed:", err);
+    throw err;
+  }
 }
-export function updateNursingChargeStatus(id: string, status: ChargeStatus) {
+export async function updateNursingChargeStatus(id: string, status: ChargeStatus) {
   mutate((s) => { s.nursingCharges = (s.nursingCharges ?? []).map((c) => c.id === id ? { ...c, status } : c); });
-  import("@/lib/supabase/db").then(({ upsertNursingChargeStatus }) => upsertNursingChargeStatus(id, status))
-    .catch((err) => console.error("[accounts-store] updateNursingChargeStatus failed:", err));
+  try {
+    const { upsertNursingChargeStatus } = await import("@/lib/supabase/db");
+    await upsertNursingChargeStatus(id, status);
+  } catch (err) {
+    console.error("[accounts-store] updateNursingChargeStatus failed:", err);
+    throw err;
+  }
 }
 
 // ─── Financial Metrics (for Admin and Accounts dashboard) ────────────────────
