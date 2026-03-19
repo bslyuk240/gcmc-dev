@@ -16,13 +16,10 @@ import {
 import { addConsultationFee } from "@/lib/data/accounts-store";
 import { addLabTest, getTestCatalog, type TestPriority } from "@/lib/data/lab-store";
 import { useDoctorsStore } from "@/lib/hooks/use-doctors-store";
+import { useBillingPresets } from "@/lib/hooks/use-billing-presets";
 
 type ConsultStatus = "completed" | "in_progress";
 type ConsultType = "General" | "Specialist" | "Emergency" | "Follow-up" | "Antenatal";
-
-const CONSULT_FEES: Record<ConsultType, number> = {
-  General: 100, Specialist: 250, Emergency: 200, "Follow-up": 60, Antenatal: 120,
-};
 
 type Consultation = {
   id: string; patient: string; patientId: string; doctor: string;
@@ -47,6 +44,13 @@ const inputCls = "w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5
 
 export default function DoctorsConsultationsPage() {
   const { consultations: storeConsults } = useDoctorsStore();
+  const { getByCategory, getAmount } = useBillingPresets();
+  const consultPresets = getByCategory("consultation");
+  const consultTypes = (
+    consultPresets.length > 0
+      ? consultPresets.map((p) => p.name)
+      : ["General", "Specialist", "Emergency", "Follow-up", "Antenatal"]
+  ) as ConsultType[];
   const [consultations, setConsultations] = useState<Consultation[]>(() =>
     storeConsults.map((c) => ({
       id: c.id,
@@ -147,12 +151,12 @@ export default function DoctorsConsultationsPage() {
       patientId: feeTarget.patientId,
       doctorName: feeTarget.doctor,
       consultationType: consultType,
-      fee: CONSULT_FEES[consultType],
-      consultedAt: `${now} · Mar 15, 2026`,
+      fee: getAmount("consultation", consultType, 100),
+      consultedAt: `${now} · ${new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}`,
       status: "Pending",
     });
     setConsultations((prev) => prev.map((c) => (c.id === feeTarget.id ? { ...c, billed: true } : c)));
-    setToast({ message: `Consultation fee ₦${CONSULT_FEES[consultType]} sent to Accounts for ${feeTarget.patient}.`, type: "success" });
+    setToast({ message: `Consultation fee ₦${getAmount("consultation", consultType, 100)} sent to Accounts for ${feeTarget.patient}.`, type: "success" });
     setFeeTarget(null);
   }
 
@@ -420,18 +424,18 @@ export default function DoctorsConsultationsPage() {
           <div>
             <label className="mb-2 block text-sm font-semibold text-slate-700">Consultation Type</label>
             <div className="grid grid-cols-2 gap-2">
-              {(Object.keys(CONSULT_FEES) as ConsultType[]).map((t) => (
+              {consultTypes.map((t) => (
                 <button key={t} type="button" onClick={() => setConsultType(t)}
                   className={`flex items-center justify-between rounded-xl border px-4 py-3 text-left transition-all ${consultType === t ? "border-emerald-500 bg-emerald-50 ring-2 ring-emerald-400/30" : "border-slate-200 hover:border-slate-300 bg-white"}`}>
                   <span className="text-sm font-medium text-slate-800">{t}</span>
-                  <span className={`text-sm font-bold ${consultType === t ? "text-emerald-700" : "text-slate-600"}`}>₦{CONSULT_FEES[t]}</span>
+                  <span className={`text-sm font-bold ${consultType === t ? "text-emerald-700" : "text-slate-600"}`}>₦{getAmount("consultation", t, 100)}</span>
                 </button>
               ))}
             </div>
           </div>
           <div className="flex items-center justify-between rounded-xl bg-emerald-50 border border-emerald-200 px-4 py-3">
             <span className="text-sm font-semibold text-emerald-800">Fee to bill</span>
-            <span className="text-xl font-bold text-emerald-900">₦{CONSULT_FEES[consultType]}</span>
+            <span className="text-xl font-bold text-emerald-900">₦{getAmount("consultation", consultType, 100)}</span>
           </div>
           <p className="text-xs text-slate-500">Fee will appear as a pending charge in Accounts for this patient.</p>
         </div>

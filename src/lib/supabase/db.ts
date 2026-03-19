@@ -1828,3 +1828,65 @@ export async function fetchMyShiftToday(staffId: string): Promise<NcShift | null
     createdAt: data.created_at as string,
   };
 }
+
+// ─── Billing Presets ──────────────────────────────────────────────────────────
+
+export type BillingPreset = {
+  id: string;
+  category: string;  // 'visit' | 'frontdesk' | 'consultation' | 'procedure'
+  name: string;
+  amount: number;
+  description?: string;
+  isActive: boolean;
+};
+
+function mapBillingPreset(r: Record<string, unknown>): BillingPreset {
+  return {
+    id:          r.id as string,
+    category:    r.category as string,
+    name:        r.name as string,
+    amount:      Number(r.amount ?? 0),
+    description: r.description as string | undefined,
+    isActive:    r.is_active as boolean,
+  };
+}
+
+export async function fetchBillingPresets(): Promise<BillingPreset[]> {
+  const sb = getSupabase();
+  if (!sb) return [];
+  const { data } = await sb
+    .from("billing_presets")
+    .select("*")
+    .order("category")
+    .order("name");
+  return (data ?? []).map(mapBillingPreset);
+}
+
+export async function upsertBillingPreset(
+  preset: Omit<BillingPreset, "id"> & { id?: string },
+): Promise<BillingPreset | null> {
+  const sb = getSupabase();
+  if (!sb) return null;
+  const payload: Record<string, unknown> = {
+    category:    preset.category,
+    name:        preset.name,
+    amount:      preset.amount,
+    description: preset.description ?? null,
+    is_active:   preset.isActive,
+  };
+  if (preset.id) payload.id = preset.id;
+  const { data, error } = await sb
+    .from("billing_presets")
+    .upsert(payload, { onConflict: "category,name" })
+    .select()
+    .single();
+  if (error || !data) return null;
+  return mapBillingPreset(data as Record<string, unknown>);
+}
+
+export async function deleteBillingPreset(id: string): Promise<boolean> {
+  const sb = getSupabase();
+  if (!sb) return false;
+  const { error } = await sb.from("billing_presets").delete().eq("id", id);
+  return !error;
+}

@@ -8,11 +8,7 @@ import { Toast, type ToastData } from "@/components/ui/toast";
 import { useNursesStore } from "@/lib/hooks/use-nurses-store";
 import { addConsultation, type ConsultType } from "@/lib/data/doctors-store";
 import { addConsultationFee } from "@/lib/data/accounts-store";
-
-const CONSULT_FEES: Record<string, number> = {
-  General: 100, Specialist: 250, Emergency: 200, "Follow-up": 60,
-  Antenatal: 120, Paediatric: 100,
-};
+import { useBillingPresets } from "@/lib/hooks/use-billing-presets";
 
 const PRIORITY_STYLES: Record<string, string> = {
   Critical: "bg-red-100 text-red-700 font-bold",
@@ -23,6 +19,7 @@ const PRIORITY_STYLES: Record<string, string> = {
 
 export default function DoctorsQueuePage() {
   const { allPatients } = useNursesStore();
+  const { getAmount } = useBillingPresets();
   const [toast, setToast] = useState<ToastData | null>(null);
   const [consultingId, setConsultingId] = useState<string | null>(null);
   const [consultType, setConsultType] = useState<ConsultType>("General");
@@ -34,7 +31,7 @@ export default function DoctorsQueuePage() {
 
   function handleStartConsult(patient: typeof outpatientQueue[0]) {
     const type: ConsultType = consultType;
-    const fee = CONSULT_FEES[type] ?? 100;
+    const fee = getAmount("consultation", type, 100);
     const consultId = `CON-${Date.now().toString().slice(-5)}`;
 
     addConsultation({

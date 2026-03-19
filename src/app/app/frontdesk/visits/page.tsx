@@ -17,16 +17,7 @@ import {
 import type { StaffMember } from "@/lib/data/hr-store";
 import { addFrontDeskCharge } from "@/lib/data/accounts-store";
 import { addWardPatient } from "@/lib/data/nurses-store";
-
-const VISIT_TYPES = [
-  "Outpatient Consultation", "Emergency", "Follow-up",
-  "Routine Check-up", "Specialist Referral", "Antenatal", "Lab/Diagnostics",
-];
-
-const FEE_MAP: Record<string, number> = {
-  "Outpatient Consultation": 80, "Emergency": 150, "Follow-up": 40,
-  "Routine Check-up": 60, "Specialist Referral": 200, "Antenatal": 120, "Lab/Diagnostics": 100,
-};
+import { useBillingPresets } from "@/lib/hooks/use-billing-presets";
 
 const STATUS_STYLES: Record<string, string> = {
   "Checked In": "bg-sky-50 text-sky-700",
@@ -50,6 +41,12 @@ const selCls =
 export default function FrontdeskVisitsPage() {
   const searchParams = useSearchParams();
   const preselectedId = searchParams.get("patient") ?? "";  // P-XXXXX from patient detail
+
+  const { getByCategory, getAmount } = useBillingPresets();
+  const visitPresets = getByCategory("visit");
+  const visitTypes   = visitPresets.length > 0
+    ? visitPresets.map((p) => p.name)
+    : ["Outpatient Consultation", "Emergency", "Follow-up", "Routine Check-up", "Specialist Referral", "Antenatal", "Lab/Diagnostics"];
 
   // Real data
   const [patients,   setPatients]   = useState<PatientRegistration[]>([]);
@@ -128,7 +125,7 @@ export default function FrontdeskVisitsPage() {
       patientName: patientRecord.patientName,
       patientId:   patientRecord.patientId,
       chargeType:  chargeType as import("@/lib/data/accounts-store").FrontDeskCharge["chargeType"],
-      amount: FEE_MAP[visitType] ?? 80,
+      amount: getAmount("visit", visitType, 80),
       description: `${visitType}${complaint ? ` — ${complaint}` : ""}`,
       createdAt: `${now} · ${todayStr}`,
       createdBy: "Front Desk (Auto)",
@@ -203,7 +200,7 @@ export default function FrontdeskVisitsPage() {
                 </label>
                 <select value={visitType} onChange={(e) => setVisitType(e.target.value)} required className={selCls}>
                   <option value="">— Select type —</option>
-                  {VISIT_TYPES.map((t) => <option key={t}>{t}</option>)}
+                  {visitTypes.map((t) => <option key={t}>{t}</option>)}
                 </select>
               </div>
 
@@ -241,7 +238,7 @@ export default function FrontdeskVisitsPage() {
               {/* Fee preview */}
               {visitType && (
                 <div className="rounded-xl border border-sky-100 bg-sky-50 px-4 py-2.5 text-xs text-sky-800">
-                  Visit fee: <strong>₦{FEE_MAP[visitType] ?? 80}</strong> — will be sent to Accounts automatically.
+                  Visit fee: <strong>₦{getAmount("visit", visitType, 80)}</strong> — will be sent to Accounts automatically.
                 </div>
               )}
 

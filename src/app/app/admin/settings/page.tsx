@@ -4,12 +4,24 @@ import { useState, useRef } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Toast, type ToastData } from "@/components/ui/toast";
+import { useBillingPresets, invalidateBillingPresetsCache } from "@/lib/hooks/use-billing-presets";
+import type { BillingPreset } from "@/lib/supabase/db";
 
 const TABS = [
-  { id: "general", label: "General" },
-  { id: "security", label: "Security" },
+  { id: "general",       label: "General" },
+  { id: "billing-rates", label: "Billing Rates" },
+  { id: "security",      label: "Security" },
   { id: "notifications", label: "Notifications" },
 ];
+
+const CATEGORY_LABELS: Record<string, string> = {
+  visit:        "Visit / Check-in Fees (Front Desk)",
+  frontdesk:    "Manual Front Desk Charges",
+  consultation: "Doctor Consultation Fees",
+  procedure:    "Nursing Procedure Charges",
+};
+
+const CATEGORY_ORDER = ["visit", "consultation", "procedure", "frontdesk"];
 
 const TIMEZONES = [
   "(GMT+00:00) Coordinated Universal Time",
@@ -26,13 +38,63 @@ export default function AdminSettingsPage() {
   const [toast, setToast] = useState<ToastData | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // ── Billing Rates tab ────────────────────────────────────────────────────
+  const { presets, loading: presetsLoading, savePreset, removePreset } = useBillingPresets();
+  const [editingId, setEditingId]   = useState<string | null>(null);
+  const [editAmount, setEditAmount] = useState("");
+  const [editDesc,   setEditDesc]   = useState("");
+  const [addCategory, setAddCategory] = useState<string>("visit");
+  const [addName,     setAddName]     = useState("");
+  const [addAmount,   setAddAmount]   = useState("");
+  const [addDesc,     setAddDesc]     = useState("");
+  const [saving,      setSaving]      = useState(false);
+
+  function startEdit(p: BillingPreset) {
+    setEditingId(p.id);
+    setEditAmount(String(p.amount));
+    setEditDesc(p.description ?? "");
+  }
+
+  async function commitEdit(p: BillingPreset) {
+    setSaving(true);
+    await savePreset({ ...p, amount: parseFloat(editAmount) || 0, description: editDesc });
+    setEditingId(null);
+    setSaving(false);
+    setToast({ message: `"${p.name}" updated.`, type: "success" });
+  }
+
+  async function handleDelete(p: BillingPreset) {
+    if (!confirm(`Delete "${p.name}" from ${CATEGORY_LABELS[p.category] ?? p.category}?`)) return;
+    await removePreset(p.id);
+    setToast({ message: `"${p.name}" deleted.`, type: "info" });
+  }
+
+  async function handleAdd(e: React.FormEvent) {
+    e.preventDefault();
+    if (!addName.trim() || !addAmount) return;
+    setSaving(true);
+    const result = await savePreset({
+      category: addCategory, name: addName.trim(),
+      amount: parseFloat(addAmount) || 0, description: addDesc.trim(),
+      isActive: true,
+    });
+    setSaving(false);
+    if (result) {
+      invalidateBillingPresetsCache();
+      setAddName(""); setAddAmount(""); setAddDesc("");
+      setToast({ message: `"${result.name}" added to ${CATEGORY_LABELS[addCategory] ?? addCategory}.`, type: "success" });
+    } else {
+      setToast({ message: "Failed to add — name may already exist in that category.", type: "error" });
+    }
+  }
+
   // General tab state
   const [hospitalName, setHospitalName] = useState("St. Mary's General Hospital");
   const [contactEmail, setContactEmail] = useState("admin@stmarys-hospital.org");
   const [timezone, setTimezone] = useState(TIMEZONES[0]);
   const [switchboard, setSwitchboard] = useState("+1 (555) 0123-4567");
   const [address, setAddress] = useState("123 Medical Center Way, Healthcare District, North Avenue, 56789");
-  const [saving, setSaving] = useState(false);
+  const [generalSaving, setGeneralSaving] = useState(false);
 
   // Security tab state
   const [require2FA, setRequire2FA] = useState(true);
@@ -50,8 +112,8 @@ export default function AdminSettingsPage() {
 
   function handleSaveGeneral(e: React.FormEvent) {
     e.preventDefault();
-    setSaving(true);
-    setTimeout(() => { setSaving(false); setToast({ message: "General settings saved.", type: "success" }); }, 600);
+    setGeneralSaving(true);
+    setTimeout(() => { setGeneralSaving(false); setToast({ message: "General settings saved.", type: "success" }); }, 600);
   }
   function handleDiscard() {
     setHospitalName("St. Mary's General Hospital");
@@ -151,7 +213,7 @@ export default function AdminSettingsPage() {
               <p className="text-xs text-slate-500">Last updated on Oct 24, 2023 at 14:30 PM</p>
               <div className="flex gap-3">
                 <Button variant="outline" size="md" type="button" onClick={handleDiscard}>Discard Changes</Button>
-                <Button size="md" type="submit" className="bg-[var(--accent)] text-white hover:opacity-95" disabled={saving}>{saving ? "Saving…" : "Save Changes"}</Button>
+                <Button size="md" type="submit" className="bg-[var(--accent)] text-white hover:opacity-95" disabled={generalSaving}>{generalSaving ? "Saving…" : "Save Changes"}</Button>
               </div>
             </div>
             </form>
@@ -187,6 +249,133 @@ export default function AdminSettingsPage() {
               </div>
             </Card>
           </div>
+        </div>
+      )}
+
+      {/* ── Billing Rates tab ── */}
+      {activeTab === "billing-rates" && (
+        <div className="space-y-8">
+          <div className="rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-xs text-sky-800">
+            <strong>How this works:</strong> These rates are used system-wide — by Front Desk check-ins, Doctors' consultation fees, Nursing procedure charges, and manual Front Desk billing. Changes take effect immediately across all departments.
+          </div>
+
+          {presetsLoading ? (
+            <div className="flex items-center justify-center py-16">
+              <div className="h-7 w-7 animate-spin rounded-full border-4 border-slate-200 border-t-[var(--accent)]" />
+            </div>
+          ) : (
+            CATEGORY_ORDER.map((cat) => {
+              const rows = presets.filter((p) => p.category === cat);
+              return (
+                <Card key={cat} className="overflow-hidden p-0">
+                  <div className="border-b border-slate-100 px-5 py-4 flex items-center justify-between">
+                    <div>
+                      <h3 className="font-bold text-slate-900">{CATEGORY_LABELS[cat] ?? cat}</h3>
+                      <p className="text-xs text-slate-500 mt-0.5">{rows.length} rate{rows.length !== 1 ? "s" : ""}</p>
+                    </div>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-slate-100 bg-slate-50">
+                          {["Name", "Description", "Amount (₦)", ""].map((h) => (
+                            <th key={h} className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {rows.map((p) => (
+                          <tr key={p.id} className="hover:bg-slate-50">
+                            <td className="px-5 py-3 font-semibold text-slate-900 whitespace-nowrap">{p.name}</td>
+                            <td className="px-5 py-3 text-slate-500 text-xs">
+                              {editingId === p.id
+                                ? <input value={editDesc} onChange={(e) => setEditDesc(e.target.value)}
+                                    className="w-full rounded border border-slate-200 px-2 py-1 text-xs outline-none focus:border-[var(--accent)]" />
+                                : (p.description || <span className="text-slate-300">—</span>)
+                              }
+                            </td>
+                            <td className="px-5 py-3 font-bold text-slate-900 whitespace-nowrap">
+                              {editingId === p.id
+                                ? <input type="number" min="0" step="0.01" value={editAmount}
+                                    onChange={(e) => setEditAmount(e.target.value)}
+                                    className="w-24 rounded border border-slate-200 px-2 py-1 text-sm font-bold outline-none focus:border-[var(--accent)]" />
+                                : `₦${p.amount.toFixed(2)}`
+                              }
+                            </td>
+                            <td className="px-5 py-3">
+                              <div className="flex items-center gap-2">
+                                {editingId === p.id ? (
+                                  <>
+                                    <Button size="sm" onClick={() => commitEdit(p)} disabled={saving}>
+                                      {saving ? "Saving…" : "Save"}
+                                    </Button>
+                                    <Button size="sm" variant="ghost" onClick={() => setEditingId(null)}>Cancel</Button>
+                                  </>
+                                ) : (
+                                  <>
+                                    <button onClick={() => startEdit(p)}
+                                      className="text-xs font-semibold text-[var(--accent)] hover:underline">Edit</button>
+                                    <button onClick={() => handleDelete(p)}
+                                      className="text-xs font-semibold text-red-500 hover:underline">Delete</button>
+                                  </>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                        {rows.length === 0 && (
+                          <tr>
+                            <td colSpan={4} className="px-5 py-6 text-center text-sm text-slate-400">
+                              No rates configured. Add one below.
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </Card>
+              );
+            })
+          )}
+
+          {/* Add new preset */}
+          <Card className="p-6">
+            <h3 className="mb-4 font-bold text-slate-900">Add New Rate</h3>
+            <form onSubmit={handleAdd} className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 lg:items-end">
+              <div>
+                <label className="mb-1.5 block text-sm font-semibold text-slate-700">Category</label>
+                <select value={addCategory} onChange={(e) => setAddCategory(e.target.value)}
+                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-[var(--accent)]">
+                  {CATEGORY_ORDER.map((c) => (
+                    <option key={c} value={c}>{CATEGORY_LABELS[c] ?? c}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="mb-1.5 block text-sm font-semibold text-slate-700">Name <span className="text-red-500">*</span></label>
+                <input type="text" required value={addName} onChange={(e) => setAddName(e.target.value)}
+                  placeholder="e.g. Ultrasound"
+                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/20" />
+              </div>
+              <div>
+                <label className="mb-1.5 block text-sm font-semibold text-slate-700">Amount (₦) <span className="text-red-500">*</span></label>
+                <input type="number" required min="0" step="0.01" value={addAmount} onChange={(e) => setAddAmount(e.target.value)}
+                  placeholder="0.00"
+                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/20" />
+              </div>
+              <div>
+                <label className="mb-1.5 block text-sm font-semibold text-slate-700">Description</label>
+                <input type="text" value={addDesc} onChange={(e) => setAddDesc(e.target.value)}
+                  placeholder="Optional"
+                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/20" />
+              </div>
+              <div className="sm:col-span-2 lg:col-span-4 flex justify-end">
+                <Button type="submit" size="md" disabled={saving}>
+                  {saving ? "Adding…" : "+ Add Rate"}
+                </Button>
+              </div>
+            </form>
+          </Card>
         </div>
       )}
 

@@ -15,22 +15,12 @@ import {
   type FrontDeskCharge,
 } from "@/lib/data/accounts-store";
 import { fetchPatientRegistrations, type PatientRegistration } from "@/lib/supabase/db";
+import { useBillingPresets } from "@/lib/hooks/use-billing-presets";
 
-const CHARGE_TYPES: FrontDeskCharge["chargeType"][] = [
+const FALLBACK_CHARGE_TYPES: FrontDeskCharge["chargeType"][] = [
   "Registration", "Consultation", "Emergency", "Follow-up",
   "Procedure", "Lab", "Antenatal", "Other",
 ];
-
-const CHARGE_PRESETS: Record<FrontDeskCharge["chargeType"], number> = {
-  Registration: 50,
-  Consultation: 80,
-  Emergency: 150,
-  "Follow-up": 40,
-  Procedure: 200,
-  Lab: 100,
-  Antenatal: 120,
-  Other: 50,
-};
 
 const CHARGE_STATUS_STYLES: Record<string, string> = {
   Pending: "bg-amber-50 text-amber-700",
@@ -42,6 +32,12 @@ const CHARGE_STATUS_STYLES: Record<string, string> = {
 export default function FrontDeskBillingPage() {
   const { frontDeskCharges, metrics } = useAccountsStore();
 
+  const { getByCategory, getAmount } = useBillingPresets();
+  const chargePresets  = getByCategory("frontdesk");
+  const chargeTypes = chargePresets.length > 0
+    ? (chargePresets.map((p) => p.name) as FrontDeskCharge["chargeType"][])
+    : FALLBACK_CHARGE_TYPES;
+
   const [patients, setPatients] = useState<PatientRegistration[]>([]);
   const [loadingPatients, setLoadingPatients] = useState(true);
 
@@ -52,7 +48,7 @@ export default function FrontDeskBillingPage() {
   // New charge form
   const [newPatientId, setNewPatientId] = useState("");
   const [newChargeType, setNewChargeType] = useState<FrontDeskCharge["chargeType"]>("Consultation");
-  const [newAmount, setNewAmount] = useState(String(CHARGE_PRESETS["Consultation"]));
+  const [newAmount, setNewAmount] = useState("80");
   const [newDescription, setNewDescription] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
@@ -85,7 +81,7 @@ export default function FrontDeskBillingPage() {
       setToast({ message: `Charge of ₦${newAmount} added for ${patientRecord.patientName}. Sent to Accounts.`, type: "success" });
       setShowNew(false);
       setNewPatientId(""); setNewChargeType("Consultation"); setNewDescription("");
-      setNewAmount(String(CHARGE_PRESETS["Consultation"]));
+      setNewAmount(String(getAmount("frontdesk", "Consultation", 80)));
       setSubmitting(false);
     }, 400);
   }
@@ -245,9 +241,9 @@ export default function FrontDeskBillingPage() {
               <select value={newChargeType} onChange={(e) => {
                 const t = e.target.value as FrontDeskCharge["chargeType"];
                 setNewChargeType(t);
-                setNewAmount(String(CHARGE_PRESETS[t]));
+                setNewAmount(String(getAmount("frontdesk", t, 50)));
               }} className={inputCls}>
-                {CHARGE_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+                {chargeTypes.map((t) => <option key={t} value={t}>{t}</option>)}
               </select>
             </div>
             <div>
