@@ -137,14 +137,23 @@ export default function DoctorsQueuePage() {
 
       <div className="flex gap-3">
         {[
-          { label: "Outpatient Queue", value: outpatientQueue.length, color: outpatientQueue.length > 0 ? "text-amber-600" : "text-slate-400" },
-          { label: "Emergency Queue", value: emergencyQueue.length, color: emergencyQueue.length > 0 ? "text-red-700" : "text-slate-400" },
-          { label: "Visible To You", value: outpatientQueue.length + emergencyQueue.length, color: "text-slate-900" },
-          { label: "My Specialty", value: doctorSpecialty || "Direct Assignment Only", color: "text-indigo-700" },
+          { label: "Outpatient Queue", value: outpatientQueue.length, color: outpatientQueue.length > 0 ? "text-amber-600" : "text-slate-400", kind: "metric" as const },
+          { label: "Emergency Queue", value: emergencyQueue.length, color: emergencyQueue.length > 0 ? "text-red-700" : "text-slate-400", kind: "metric" as const },
+          { label: "Visible To You", value: outpatientQueue.length + emergencyQueue.length, color: "text-slate-900", kind: "metric" as const },
+          { label: doctorSpecialty ? "My Specialty" : "Routing Mode", value: doctorSpecialty || "Direct Assignment Only", color: "text-indigo-700", kind: "text" as const },
         ].map((stat) => (
           <Card key={stat.label} className="flex flex-1 items-center gap-3 px-4 py-3">
-            <p className={`shrink-0 text-2xl font-bold ${stat.color}`}>{stat.value}</p>
-            <p className="text-xs font-semibold leading-tight text-slate-500">{stat.label}</p>
+            {stat.kind === "metric" ? (
+              <>
+                <p className={`shrink-0 text-2xl font-bold ${stat.color}`}>{stat.value}</p>
+                <p className="text-xs font-semibold leading-tight text-slate-500">{stat.label}</p>
+              </>
+            ) : (
+              <div className="min-w-0">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">{stat.label}</p>
+                <p className={`truncate text-xl font-bold ${stat.color}`}>{stat.value}</p>
+              </div>
+            )}
           </Card>
         ))}
       </div>

@@ -41,6 +41,10 @@ function chargeSource(c: AnyCharge): string {
   return "Nursing";
 }
 
+function chargeAmount(c: AnyCharge): number {
+  return c._source === "consult" ? c.fee : c.amount;
+}
+
 export default function ReceivePaymentPage() {
   const { frontDeskCharges, consultationFees, labCharges, nursingCharges } = useAccountsStore();
   const session = useHMSSession();
@@ -92,7 +96,7 @@ export default function ReceivePaymentPage() {
     if (target._source === "nursing") updateNursingChargeStatus(id, "Paid");
 
     setToast({
-      message: `₦${target.amount.toFixed(2)} received from ${target.patientName} via ${method}. Marked as Paid.`,
+      message: `₦${chargeAmount(target).toFixed(2)} received from ${target.patientName} via ${method}. Marked as Paid.`,
       type: "success",
     });
     setTarget(null);
@@ -151,7 +155,7 @@ export default function ReceivePaymentPage() {
                         <td className="px-4 py-3 text-xs text-slate-500 max-w-[180px] truncate">
                           {"description" in c ? c.description : ("testName" in c ? c.testName : ("procedure" in c ? c.procedure : ""))}
                         </td>
-                        <td className="px-4 py-3 font-bold text-slate-900">₦{c.amount.toFixed(2)}</td>
+                        <td className="px-4 py-3 font-bold text-slate-900">₦{chargeAmount(c).toFixed(2)}</td>
                         <td className="px-4 py-3 text-xs text-slate-400 whitespace-nowrap">
                           {fmtDate("createdAt" in c ? c.createdAt ?? "" : "")}
                         </td>
@@ -185,7 +189,7 @@ export default function ReceivePaymentPage() {
                 <div key={c.id} className="rounded-lg bg-slate-50 p-3 text-xs">
                   <div className="flex items-center justify-between">
                     <span className="font-semibold text-slate-900">{c.patientName}</span>
-                    <span className="font-bold text-emerald-700">₦{c.amount.toFixed(2)}</span>
+                    <span className="font-bold text-emerald-700">₦{chargeAmount(c).toFixed(2)}</span>
                   </div>
                   <p className="mt-0.5 text-slate-400">{chargeSource(c)}</p>
                 </div>
@@ -196,7 +200,7 @@ export default function ReceivePaymentPage() {
             <div className="flex justify-between">
               <span>Total collected today</span>
               <span className="font-bold text-slate-900">
-                ₦{paidToday.reduce((s, c) => s + c.amount, 0).toFixed(2)}
+                ₦{paidToday.reduce((s, c) => s + chargeAmount(c), 0).toFixed(2)}
               </span>
             </div>
           </div>
@@ -224,7 +228,7 @@ export default function ReceivePaymentPage() {
               </div>
               <div className="flex justify-between border-t border-slate-200 pt-2">
                 <span className="font-semibold text-slate-700">Amount Due</span>
-                <span className="text-lg font-black text-slate-900">₦{target.amount.toFixed(2)}</span>
+                <span className="text-lg font-black text-slate-900">₦{chargeAmount(target).toFixed(2)}</span>
               </div>
             </div>
 
