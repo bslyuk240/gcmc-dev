@@ -37,10 +37,16 @@ const FALLBACK_CHARGE_TYPES: FrontDeskCharge["chargeType"][] = [
 
 const CHARGE_STATUS_STYLES: Record<string, string> = {
   Pending: "bg-amber-50 text-amber-700",
+  Billed: "bg-amber-50 text-amber-700",   // sent to accounts, still pending payment
   Paid: "bg-emerald-50 text-emerald-700",
   Waived: "bg-slate-100 text-slate-500",
   Partial: "bg-sky-50 text-sky-700",
 };
+
+// From FD's view: "Billed" (sent to Accounts) still shows as "Pending" until patient pays
+function displayStatus(status: string): string {
+  return status === "Billed" ? "Pending" : status;
+}
 
 export default function FrontDeskBillingPage() {
   const { frontDeskCharges, metrics } = useAccountsStore();
@@ -59,6 +65,8 @@ export default function FrontDeskBillingPage() {
   const [showNew, setShowNew] = useState(false);
   const [payTarget, setPayTarget] = useState<FrontDeskCharge | null>(null);
   const [toast, setToast] = useState<ToastData | null>(null);
+  // Optimistic tracking: charges sent to Accounts disappear immediately
+  const [sentIds, setSentIds] = useState<Set<string>>(new Set());
 
   // New charge form
   const [newPatientId, setNewPatientId] = useState("");
@@ -102,6 +110,7 @@ export default function FrontDeskBillingPage() {
   }
 
   function handleSendToAccounts(charge: FrontDeskCharge) {
+    setSentIds((prev) => { const next = new Set(prev); next.add(charge.id); return next; });
     updateFrontDeskChargeStatus(charge.id, "Billed");
     setPayTarget(null);
     setToast({ message: `Charge for ${charge.patientName} sent to Accounts. They will collect payment.`, type: "success" });
@@ -112,7 +121,7 @@ export default function FrontDeskBillingPage() {
     setToast({ message: `Charge for ${charge.patientName} waived.`, type: "info" });
   }
 
-  const pending = frontDeskCharges.filter((c) => c.status === "Pending");
+  const pending = frontDeskCharges.filter((c) => c.status === "Pending" && !sentIds.has(c.id));
   const collected = frontDeskCharges.filter((c) => c.status === "Paid");
 
   const inputCls = "w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/20";
@@ -216,8 +225,8 @@ export default function FrontDeskBillingPage() {
                   <td className="px-5 py-3 text-xs text-slate-500">{c.createdBy}</td>
                   <td className="px-5 py-3 text-xs text-slate-500">{fmtCreatedAt(c.createdAt)}</td>
                   <td className="px-5 py-3">
-                    <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${CHARGE_STATUS_STYLES[c.status]}`}>
-                      {c.status}
+                    <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${CHARGE_STATUS_STYLES[c.status] ?? "bg-slate-100 text-slate-500"}`}>
+                      {displayStatus(c.status)}
                     </span>
                   </td>
                 </tr>
