@@ -729,6 +729,12 @@ export async function insertFrontDeskCharge(c: FrontDeskCharge): Promise<void> {
   });
 }
 
+export async function upsertFrontDeskChargeStatus(id: string, status: string): Promise<void> {
+  const sb = getSupabase(); if (!sb) return;
+  const { error } = await sb.from("front_desk_charges").update({ status }).eq("id", id);
+  if (error) console.error("[db] upsertFrontDeskChargeStatus:", error.message);
+}
+
 export async function insertConsultationFee(f: ConsultationFee): Promise<void> {
   const sb = getSupabase(); if (!sb) return;
   const { error } = await sb.from("consultation_fees").upsert({

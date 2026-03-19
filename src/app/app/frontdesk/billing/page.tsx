@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { PageHeader } from "@/components/layout/page-header";
-import { INTERNAL_PREFIX } from "@/lib/constants/navigation";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Modal, ModalFooter } from "@/components/ui/modal";
@@ -17,6 +16,19 @@ import {
 import { fetchPatientRegistrations, type PatientRegistration } from "@/lib/supabase/db";
 import { useBillingPresets } from "@/lib/hooks/use-billing-presets";
 import { useHMSSession } from "@/modules/rbac/hooks";
+
+function fmtCreatedAt(s: string) {
+  if (!s) return "—";
+  // Already formatted like "13:05 · 19 Mar 2026"
+  if (!s.includes("T")) return s;
+  // ISO string — format it
+  const d = new Date(s);
+  if (isNaN(d.getTime())) return s;
+  return d.toLocaleString("en-GB", {
+    hour: "2-digit", minute: "2-digit",
+    day: "numeric", month: "short", year: "numeric",
+  });
+}
 
 const FALLBACK_CHARGE_TYPES: FrontDeskCharge["chargeType"][] = [
   "Registration", "Consultation", "Emergency", "Follow-up",
@@ -113,10 +125,9 @@ export default function FrontDeskBillingPage() {
         action={<Button onClick={() => setShowNew(true)}>+ Add Charge</Button>}
       />
 
-      {/* Billing rates shortcut */}
-      <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-xs text-slate-600 flex items-center justify-between">
-        <span>Visit and charge rates are configured in <strong>Admin → Settings → Billing Rates</strong></span>
-        <Link href={`${INTERNAL_PREFIX}/admin/settings`} className="font-semibold text-[var(--accent)] hover:underline">Manage Rates →</Link>
+      {/* Billing rates info */}
+      <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-xs text-slate-600">
+        <span>Visit and charge rates are configured by Admin in <strong>Admin → Settings → Billing Rates</strong></span>
       </div>
 
       {/* Info note */}
@@ -166,7 +177,7 @@ export default function FrontDeskBillingPage() {
                     </td>
                     <td className="px-4 py-3 text-slate-500 text-xs">{c.description}</td>
                     <td className="px-4 py-3 font-bold text-slate-900">₦{c.amount.toFixed(2)}</td>
-                    <td className="px-4 py-3 text-xs text-slate-500">{c.createdAt}</td>
+                    <td className="px-4 py-3 text-xs text-slate-500">{fmtCreatedAt(c.createdAt)}</td>
                     <td className="px-4 py-3">
                       <div className="flex gap-2">
                         <Button size="sm" onClick={() => setPayTarget(c)}>Send to Accounts</Button>
@@ -185,9 +196,7 @@ export default function FrontDeskBillingPage() {
       <Card className="overflow-hidden p-0">
         <div className="border-b border-slate-100 px-5 py-4 flex items-center justify-between">
           <h3 className="font-bold text-slate-900">All Charges</h3>
-          <Link href={`${INTERNAL_PREFIX}/accounts/invoices`} className="text-sm font-semibold text-accent hover:underline">
-            View in Accounts →
-          </Link>
+          <span className="text-xs text-slate-400">Payments collected by Accounts dept.</span>
         </div>
         <div className="overflow-x-auto">
           <table className="min-w-full text-sm text-left">
@@ -205,7 +214,7 @@ export default function FrontDeskBillingPage() {
                   <td className="px-5 py-3 text-slate-600">{c.chargeType}</td>
                   <td className="px-5 py-3 font-bold text-slate-900">₦{c.amount.toFixed(2)}</td>
                   <td className="px-5 py-3 text-xs text-slate-500">{c.createdBy}</td>
-                  <td className="px-5 py-3 text-xs text-slate-500">{c.createdAt}</td>
+                  <td className="px-5 py-3 text-xs text-slate-500">{fmtCreatedAt(c.createdAt)}</td>
                   <td className="px-5 py-3">
                     <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${CHARGE_STATUS_STYLES[c.status]}`}>
                       {c.status}

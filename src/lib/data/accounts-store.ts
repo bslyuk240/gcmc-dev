@@ -267,6 +267,8 @@ export function addFrontDeskCharge(c: FrontDeskCharge) {
 }
 export function updateFrontDeskChargeStatus(id: string, status: ChargeStatus) {
   mutate((s) => { s.frontDeskCharges = s.frontDeskCharges.map((c) => c.id === id ? { ...c, status } : c); });
+  import("@/lib/supabase/db").then(({ upsertFrontDeskChargeStatus }) => upsertFrontDeskChargeStatus(id, status))
+    .catch((err) => console.error("[accounts-store] updateFrontDeskChargeStatus failed:", err));
 }
 
 // ─── Consultation Fees ────────────────────────────────────────────────────────
