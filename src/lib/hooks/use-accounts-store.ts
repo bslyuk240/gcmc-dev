@@ -20,7 +20,8 @@ export function useAccountsStore() {
   useEffect(() => {
     syncAccountsFromSupabase();
     const unsub = subscribeAccountsStore(rerender);
-    return () => { unsub(); };
+    const poll = setInterval(() => syncAccountsFromSupabase(true), 30_000);
+    return () => { unsub(); clearInterval(poll); };
   }, []);
 
   return {

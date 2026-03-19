@@ -135,15 +135,17 @@ export function subscribeLabStore(fn: () => void) {
 
 // ─── Supabase sync ────────────────────────────────────────────────────────────
 
-let _synced = false;
-export async function syncLabFromSupabase() {
-  if (typeof window === "undefined" || _synced) return;
+let _lastSync = 0;
+export async function syncLabFromSupabase(force = false) {
+  if (typeof window === "undefined") return;
+  const now = Date.now();
+  if (!force && now - _lastSync < 30_000) return;
+  _lastSync = now;
   try {
     const { fetchLabTests, fetchTestCatalog } = await import("@/lib/supabase/db");
     const [tests, catalog] = await Promise.all([fetchLabTests(), fetchTestCatalog()]);
     _state = { tests, catalog };
     listeners.forEach((l) => l());
-    _synced = true;
   } catch { /* keep localStorage/seed */ }
 }
 

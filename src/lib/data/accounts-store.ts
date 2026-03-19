@@ -235,9 +235,12 @@ export function subscribeAccountsStore(fn: () => void) {
 
 // ─── Supabase sync ────────────────────────────────────────────────────────────
 
-let _synced = false;
-export async function syncAccountsFromSupabase() {
-  if (typeof window === "undefined" || _synced) return;
+let _lastSync = 0;
+export async function syncAccountsFromSupabase(force = false) {
+  if (typeof window === "undefined") return;
+  const now = Date.now();
+  if (!force && now - _lastSync < 30_000) return;
+  _lastSync = now;
   try {
     const { fetchFrontDeskCharges, fetchConsultationFees, fetchSupplierPayments, fetchPayrollBatches, fetchKioskSales, fetchLabCharges, fetchNursingCharges } = await import("@/lib/supabase/db");
     const [frontDeskCharges, consultationFees, supplierPayments, payrollBatches, kioskSales, labCharges, nursingCharges] = await Promise.all([
@@ -246,7 +249,6 @@ export async function syncAccountsFromSupabase() {
     ]);
     _state = { frontDeskCharges, consultationFees, supplierPayments, payrollBatches, kioskSales, labCharges, nursingCharges };
     listeners.forEach((l) => l());
-    _synced = true;
   } catch { /* keep localStorage/seed */ }
 }
 
@@ -326,6 +328,9 @@ export function updateNursingChargeStatus(id: string, status: ChargeStatus) {
 export function getAccountsMetrics() {
   const s = getState();
 
+  const todayLabel = new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short" }); // e.g. "19 Mar"
+  const todayDate  = new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }); // e.g. "19 Mar 2026"
+
   const fdPending = s.frontDeskCharges.filter((c) => c.status === "Pending");
   const fdPaid = s.frontDeskCharges.filter((c) => c.status === "Paid");
   const cfPending = s.consultationFees.filter((f) => f.status === "Pending");
@@ -334,7 +339,7 @@ export function getAccountsMetrics() {
   const spPaid = s.supplierPayments.filter((p) => p.status === "Paid");
   const payrollPending = s.payrollBatches.filter((b) => b.status === "Submitted");
   const payrollPaid = s.payrollBatches.filter((b) => b.status === "Paid");
-  const kioskToday = s.kioskSales.filter((k) => k.date === "Mar 15, 2026" && k.status === "Confirmed");
+  const kioskToday = s.kioskSales.filter((k) => k.date === todayDate && k.status === "Confirmed");
   const labCharges = s.labCharges ?? [];
   const labPending = labCharges.filter((c) => c.status === "Pending");
   const labPaid = labCharges.filter((c) => c.status === "Paid");
@@ -344,16 +349,16 @@ export function getAccountsMetrics() {
   const nursingPaid = nursingCharges.filter((c) => c.status === "Paid");
 
   const revenueToday =
-    fdPaid.filter((c) => c.createdAt.includes("Mar 15")).reduce((s, c) => s + c.amount, 0) +
-    cfPaid.filter((f) => f.consultedAt.includes("Mar 15")).reduce((s, f) => s + f.fee, 0) +
+    fdPaid.filter((c) => c.createdAt.includes(todayLabel)).reduce((s, c) => s + c.amount, 0) +
+    cfPaid.filter((f) => f.consultedAt.includes(todayLabel)).reduce((s, f) => s + f.fee, 0) +
     kioskToday.reduce((s, k) => s + k.totalRevenue, 0) +
-    labPaid.filter((c) => c.completedAt.includes("Mar 15")).reduce((s, c) => s + c.amount, 0) +
-    nursingPaid.filter((c) => c.performedAt.includes("Mar 15")).reduce((s, c) => s + c.amount, 0);
+    labPaid.filter((c) => c.completedAt.includes(todayLabel)).reduce((s, c) => s + c.amount, 0) +
+    nursingPaid.filter((c) => c.performedAt.includes(todayLabel)).reduce((s, c) => s + c.amount, 0);
 
   return {
     frontDeskPendingCount: fdPending.length,
     frontDeskPendingValue: fdPending.reduce((sum, c) => sum + c.amount, 0),
-    frontDeskPaidToday: fdPaid.filter((c) => c.createdAt.includes("Mar 15")).reduce((s, c) => s + c.amount, 0),
+    frontDeskPaidToday: fdPaid.filter((c) => c.createdAt.includes(todayLabel)).reduce((s, c) => s + c.amount, 0),
 
     consultationPendingCount: cfPending.length,
     consultationPendingValue: cfPending.reduce((sum, f) => sum + f.fee, 0),
@@ -371,11 +376,11 @@ export function getAccountsMetrics() {
 
     labPendingCount: labPending.length,
     labPendingValue: labPending.reduce((sum, c) => sum + c.amount, 0),
-    labPaidToday: labPaid.filter((c) => c.completedAt.includes("Mar 15")).reduce((s, c) => s + c.amount, 0),
+    labPaidToday: labPaid.filter((c) => c.completedAt.includes(todayLabel)).reduce((s, c) => s + c.amount, 0),
 
     nursingPendingCount: nursingPending.length,
     nursingPendingValue: nursingPending.reduce((sum, c) => sum + c.amount, 0),
-    nursingPaidToday: nursingPaid.filter((c) => c.performedAt.includes("Mar 15")).reduce((s, c) => s + c.amount, 0),
+    nursingPaidToday: nursingPaid.filter((c) => c.performedAt.includes(todayLabel)).reduce((s, c) => s + c.amount, 0),
 
     revenueToday,
   };

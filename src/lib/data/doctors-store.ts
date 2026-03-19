@@ -107,9 +107,12 @@ export function subscribeDoctorsStore(fn: () => void) {
 
 // ─── Supabase sync ────────────────────────────────────────────────────────────
 
-let _synced = false;
-export async function syncDoctorsFromSupabase() {
-  if (typeof window === "undefined" || _synced) return;
+let _lastSync = 0;
+export async function syncDoctorsFromSupabase(force = false) {
+  if (typeof window === "undefined") return;
+  const now = Date.now();
+  if (!force && now - _lastSync < 30_000) return;
+  _lastSync = now;
   try {
     const { fetchDoctors, fetchConsultations, fetchAdmissionOrders } = await import("@/lib/supabase/db");
     const [doctors, consultations, admissionOrders] = await Promise.all([
@@ -119,7 +122,6 @@ export async function syncDoctorsFromSupabase() {
     ]);
     _state = { doctors, consultations, admissionOrders };
     listeners.forEach((l) => l());
-    _synced = true;
   } catch { /* Supabase unavailable — keep localStorage/seed data */ }
 }
 
@@ -153,7 +155,8 @@ export function addAdmissionOrder(a: AdmissionOrder) {
 
 export function getDoctorsMetrics() {
   const s = getState();
-  const today = s.consultations.filter((c) => c.date === "Mar 15, 2026");
+  const todayDate = new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+  const today = s.consultations.filter((c) => c.date === todayDate);
   const inProgress = today.filter((c) => c.status === "In Progress");
   const awaitingResults = today.filter((c) => c.status === "Awaiting Results");
   const completed = today.filter((c) => c.status === "Completed" || c.status === "Admitted");

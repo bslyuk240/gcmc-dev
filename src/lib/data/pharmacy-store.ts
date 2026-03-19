@@ -151,9 +151,12 @@ export function subscribePharmacyStore(fn: () => void) {
 
 // ─── Supabase sync ────────────────────────────────────────────────────────────
 
-let _synced = false;
-export async function syncPharmacyFromSupabase() {
-  if (typeof window === "undefined" || _synced) return;
+let _lastSync = 0;
+export async function syncPharmacyFromSupabase(force = false) {
+  if (typeof window === "undefined") return;
+  const now = Date.now();
+  if (!force && now - _lastSync < 30_000) return;
+  _lastSync = now;
   try {
     const { fetchPrescriptions, fetchNurseMedRequests, fetchPharmacyRestockRequests, fetchPharmacyBills } = await import("@/lib/supabase/db");
     const [prescriptions, nurseRequests, restockRequests, bills] = await Promise.all([
@@ -164,7 +167,6 @@ export async function syncPharmacyFromSupabase() {
     ]);
     _state = { prescriptions, nurseRequests, restockRequests, bills };
     listeners.forEach((l) => l());
-    _synced = true;
   } catch { /* keep localStorage/seed */ }
 }
 

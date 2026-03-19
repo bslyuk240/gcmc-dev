@@ -16,7 +16,8 @@ export function useDoctorsStore() {
   useEffect(() => {
     syncDoctorsFromSupabase();
     const unsub = subscribeDoctorsStore(rerender);
-    return () => { unsub(); };
+    const poll = setInterval(() => syncDoctorsFromSupabase(true), 30_000);
+    return () => { unsub(); clearInterval(poll); };
   }, []);
 
   return {

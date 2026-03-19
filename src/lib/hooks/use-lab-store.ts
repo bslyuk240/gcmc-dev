@@ -15,7 +15,8 @@ export function useLabStore() {
   useEffect(() => {
     syncLabFromSupabase();
     const unsub = subscribeLabStore(rerender);
-    return () => { unsub(); };
+    const poll = setInterval(() => syncLabFromSupabase(true), 30_000);
+    return () => { unsub(); clearInterval(poll); };
   }, []);
 
   return {

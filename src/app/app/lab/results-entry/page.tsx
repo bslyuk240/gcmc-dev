@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { PageHeader } from "@/components/layout/page-header";
 import { INTERNAL_PREFIX } from "@/lib/constants/navigation";
@@ -11,6 +11,7 @@ import { Toast, type ToastData } from "@/components/ui/toast";
 import { useLabStore } from "@/lib/hooks/use-lab-store";
 import { updateLabTest, type LabTest } from "@/lib/data/lab-store";
 import { addLabCharge } from "@/lib/data/accounts-store";
+import { fetchStaffMembers } from "@/lib/supabase/db";
 
 const PRIORITY_STYLES: Record<string, string> = {
   Routine: "bg-slate-100 text-slate-600",
@@ -18,25 +19,33 @@ const PRIORITY_STYLES: Record<string, string> = {
   STAT: "bg-red-100 text-red-700 font-bold",
 };
 
-const TECH_OPTIONS = ["Lab Tech James", "Lab Tech Abena", "Lab Tech Kofi"];
-
 export default function LabResultsEntryPage() {
   const { tests } = useLabStore();
+  const [techOptions, setTechOptions] = useState<string[]>(["Lab Technician"]);
   const [entryTarget, setEntryTarget] = useState<LabTest | null>(null);
   const [resultValue, setResultValue] = useState("");
   const [resultUnit, setResultUnit] = useState("");
   const [refRange, setRefRange] = useState("");
   const [interpretation, setInterpretation] = useState<"Normal" | "Abnormal" | "Critical">("Normal");
   const [notes, setNotes] = useState("");
-  const [enteredBy, setEnteredBy] = useState(TECH_OPTIONS[0]);
+  const [enteredBy, setEnteredBy] = useState("Lab Technician");
   const [toast, setToast] = useState<ToastData | null>(null);
+
+  useEffect(() => {
+    fetchStaffMembers().then((staff) => {
+      const labStaff = staff.filter((s) => s.department === "Lab");
+      const names = labStaff.length > 0 ? labStaff.map((s) => s.name) : ["Lab Technician"];
+      setTechOptions(names);
+      setEnteredBy(names[0]);
+    }).catch(() => {});
+  }, []);
 
   const inProgress = tests.filter((t) => t.status === "In Progress");
 
   function handleSubmitResult() {
     if (!entryTarget || !resultValue) return;
     const now = new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
-    const today = "Mar 15, 2026";
+    const today = new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
     updateLabTest(entryTarget.id, {
       status: "Completed",
       resultValue,
@@ -71,7 +80,7 @@ export default function LabResultsEntryPage() {
     setRefRange("");
     setInterpretation("Normal");
     setNotes("");
-    setEnteredBy(TECH_OPTIONS[0]);
+    setEnteredBy(techOptions[0] ?? "Lab Technician");
   }
 
   const inputCls = "w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/20";
@@ -193,7 +202,7 @@ export default function LabResultsEntryPage() {
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Result Entered By</label>
               <select value={enteredBy} onChange={(e) => setEnteredBy(e.target.value)} className={inputCls}>
-                {TECH_OPTIONS.map((o) => <option key={o}>{o}</option>)}
+                {techOptions.map((o) => <option key={o}>{o}</option>)}
               </select>
             </div>
           </div>

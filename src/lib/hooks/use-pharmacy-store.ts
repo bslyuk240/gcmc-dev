@@ -17,7 +17,8 @@ export function usePharmacyStore() {
   useEffect(() => {
     syncPharmacyFromSupabase();
     const unsub = subscribePharmacyStore(rerender);
-    return () => { unsub(); };
+    const poll = setInterval(() => syncPharmacyFromSupabase(true), 30_000);
+    return () => { unsub(); clearInterval(poll); };
   }, []);
 
   return {
