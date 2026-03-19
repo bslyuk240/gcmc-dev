@@ -130,7 +130,7 @@ export default function NursesSampleCollectionPage() {
   const derivedRequests = tests
     .filter((test) => test.status === "Pending" || test.status === "Sample Collected" || test.status === "In Progress" || test.status === "Completed")
     .filter((test) => !sampleRequestById.has(test.id))
-    .map((test) => ({
+    .map<RequestRow>((test) => ({
       id: test.id,
       patientName: test.patientName,
       patientId: test.patientId,
@@ -140,7 +140,7 @@ export default function NursesSampleCollectionPage() {
       sampleType: test.sampleType,
       collectedBy: test.sampleCollectedBy,
       collectedAt: test.sampleCollectedAt,
-      status: test.status === "Pending" ? "Ordered" : "Sent to Lab",
+      status: (test.status === "Pending" ? "Ordered" : "Sent to Lab") as NurseSampleRequest["status"],
       priority: test.priority,
       orderedBy: test.orderedBy,
       orderedAt: test.orderedAt,
@@ -151,6 +151,7 @@ export default function NursesSampleCollectionPage() {
   const requestRows = sortByOrderedAt([
     ...visibleSampleRequests.map((request) => ({
       ...request,
+      status: request.status as NurseSampleRequest["status"],
       linkedLabTest: tests.find((test) => test.id === request.id || (test.patientId === request.patientId && test.testCode === request.testCode)),
       source: "nurse" as const,
     })),
