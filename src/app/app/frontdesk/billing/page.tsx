@@ -110,6 +110,12 @@ export default function FrontDeskBillingPage() {
         action={<Button onClick={() => setShowNew(true)}>+ Add Charge</Button>}
       />
 
+      {/* Billing rates shortcut */}
+      <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-xs text-slate-600 flex items-center justify-between">
+        <span>Visit and charge rates are configured in <strong>Admin → Settings → Billing Rates</strong></span>
+        <Link href={`${INTERNAL_PREFIX}/admin/settings`} className="font-semibold text-[var(--accent)] hover:underline">Manage Rates →</Link>
+      </div>
+
       {/* Info note */}
       <div className="rounded-xl border border-teal-200 bg-teal-50 px-4 py-3 text-xs text-teal-800">
         <strong>Role:</strong> Front Desk creates charges (registration, visit fees). The <strong>Accounts department</strong> collects all payments.

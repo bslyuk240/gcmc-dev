@@ -1,10 +1,12 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Toast, type ToastData } from "@/components/ui/toast";
+import { INTERNAL_PREFIX } from "@/lib/constants/navigation";
 import { useNursesStore } from "@/lib/hooks/use-nurses-store";
 import { updateProcedureBillStatus } from "@/lib/data/nurses-store";
 import { addNursingCharge } from "@/lib/data/accounts-store";
@@ -57,6 +59,12 @@ export default function NursesProcedureChargesPage() {
         title="Procedure Charges"
         description="Nursing procedure billing — injections, dressings, IV access, and more. Send charges to Accounts."
       />
+
+      {/* Billing rates shortcut */}
+      <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-xs text-slate-600 flex items-center justify-between">
+        <span>Procedure rates are configured in <strong>Admin → Settings → Billing Rates</strong></span>
+        <Link href={`${INTERNAL_PREFIX}/admin/settings`} className="font-semibold text-[var(--accent)] hover:underline">Manage Rates →</Link>
+      </div>
 
       <div className="flex gap-3">
         {[

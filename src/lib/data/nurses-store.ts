@@ -147,9 +147,12 @@ export function subscribeNursesStore(fn: () => void) {
 
 // ─── Supabase sync ────────────────────────────────────────────────────────────
 
-let _synced = false;
-export async function syncNursesFromSupabase() {
-  if (typeof window === "undefined" || _synced) return;
+let _lastSync = 0;
+export async function syncNursesFromSupabase(force = false) {
+  if (typeof window === "undefined") return;
+  const now = Date.now();
+  if (!force && now - _lastSync < 30_000) return;
+  _lastSync = now;
   try {
     const { fetchWardPatients, fetchNursingProcedures, fetchNurseSampleRequests, fetchICUVitals } = await import("@/lib/supabase/db");
     const [wardPatients, procedures, sampleRequests, icuVitals] = await Promise.all([
@@ -157,7 +160,6 @@ export async function syncNursesFromSupabase() {
     ]);
     _state = { wardPatients, procedures, sampleRequests, icuVitals };
     listeners.forEach((l) => l());
-    _synced = true;
   } catch { /* keep localStorage/seed */ }
 }
 
@@ -173,6 +175,9 @@ export function addWardPatient(p: WardPatient) {
 }
 export function updateWardPatient(id: string, updates: Partial<WardPatient>) {
   mutate((s) => { s.wardPatients = s.wardPatients.map((p) => p.id === id ? { ...p, ...updates } : p); });
+  // persist to Supabase
+  const updated = getState().wardPatients.find((p) => p.id === id);
+  if (updated) import("@/lib/supabase/db").then(({ insertWardPatient }) => insertWardPatient(updated)).catch(() => {});
 }
 
 // ─── Procedures ───────────────────────────────────────────────────────────────

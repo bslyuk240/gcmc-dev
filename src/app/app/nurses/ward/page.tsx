@@ -10,6 +10,7 @@ import { Toast, type ToastData } from "@/components/ui/toast";
 import { INTERNAL_PREFIX } from "@/lib/constants/navigation";
 import { useNursesStore } from "@/lib/hooks/use-nurses-store";
 import { updateWardPatient, addNursingProcedure, type WardPatient } from "@/lib/data/nurses-store";
+import { addNursingCharge } from "@/lib/data/accounts-store";
 import { useBillingPresets } from "@/lib/hooks/use-billing-presets";
 
 const PRIORITY_STYLES: Record<string, string> = {
@@ -88,6 +89,25 @@ export default function NursesWardPage() {
     setDischargeTarget(null);
   }
 
+  function handleChargeBedFee(p: WardPatient) {
+    const amount = getAmount("inpatient", "Daily Bed Fee", 50);
+    const now = new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+    const todayStr = new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+    addNursingCharge({
+      id: `BED-${Date.now()}`,
+      patientName: p.patientName,
+      patientId: p.patientId,
+      procedureType: "Bed Fee",
+      description: `Daily bed fee — ${p.unit} ward`,
+      amount,
+      performedBy: "Nursing (Auto)",
+      performedAt: `${now} · ${todayStr}`,
+      unit: p.unit,
+      status: "Pending",
+    });
+    setToast({ message: `Bed fee ₦${amount} charged for ${p.patientName}. Sent to Accounts.`, type: "success" });
+  }
+
   const inputCls = "w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/20";
 
   return (
@@ -156,6 +176,7 @@ export default function NursesWardPage() {
                       <Button size="sm" variant="outline" onClick={() => { setProcTarget(p); setProcDesc(""); setProcType("Injection"); setProcNurse(NURSES[0]); }}>
                         Procedure
                       </Button>
+                      <Button size="sm" variant="ghost" onClick={() => handleChargeBedFee(p)}>Bed Fee</Button>
                       <Button size="sm" variant="ghost" onClick={() => setDischargeTarget(p)}>Discharge</Button>
                     </div>
                   </td>

@@ -11,6 +11,7 @@ import { usePharmacyStore } from "@/lib/hooks/use-pharmacy-store";
 import { fetchPharmacyInventory, upsertPharmacyInventoryItem } from "@/lib/supabase/db";
 import {
   addRestockRequest,
+  addPharmacyBill,
   getRestockRequests,
   updateNurseRequestStatus,
   type NurseMedRequest,
@@ -89,6 +90,12 @@ export default function PharmacyInventoryPage() {
   const [restockUrgency, setRestockUrgency] = useState<"Routine" | "Urgent" | "Critical">("Urgent");
   const [restockNotes, setRestockNotes] = useState("");
   const [toast, setToast] = useState<ToastData | null>(null);
+
+  // Counter sale state
+  const [saleItem, setSaleItem] = useState<InventoryItem | null>(null);
+  const [salePatient, setSalePatient] = useState("");
+  const [salePatientId, setSalePatientId] = useState("");
+  const [saleQty, setSaleQty] = useState(1);
 
   // Add medication form state
   const [showAdd, setShowAdd] = useState(false);
@@ -245,6 +252,34 @@ export default function PharmacyInventoryPage() {
     setToast({ message: `${req.drug} for ${req.patientName} is ready for collection by Nursing.`, type: "success" });
   }
 
+  function handleSell(e: React.FormEvent) {
+    e.preventDefault();
+    if (!saleItem) return;
+    const qty = Math.max(1, saleQty);
+    const total = qty * saleItem.unitPrice;
+    const now = new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+    const todayStr = new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+    addPharmacyBill({
+      id: `SALE-${Date.now()}`,
+      prescriptionId: `WALKIN-${Date.now()}`,
+      patientName: salePatient || "Walk-in Customer",
+      patientId: salePatientId || "WALK-IN",
+      drugs: `${saleItem.product} × ${qty} @ ₦${saleItem.unitPrice.toFixed(2)}/unit`,
+      totalCost: total,
+      dispensedAt: `${now} · ${todayStr}`,
+      billStatus: "Pending",
+      source: "walk-in",
+    });
+    // Decrement stock
+    const newStock = Math.max(0, saleItem.stock - qty);
+    setItems((prev) => prev.map((i) => i.id === saleItem.id ? { ...i, stock: newStock, status: calcStockStatus(newStock, i.reorderLevel) } : i));
+    setToast({ message: `Sold ${qty}× ${saleItem.product} for ₦${total.toFixed(2)} — bill sent to Accounts.`, type: "success" });
+    setSaleItem(null);
+    setSalePatient("");
+    setSalePatientId("");
+    setSaleQty(1);
+  }
+
   const inputCls = "w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/20";
 
   const lowItems = items.filter((i) => i.status === "low" || i.status === "critical" || i.status === "out");
@@ -338,6 +373,7 @@ export default function PharmacyInventoryPage() {
                     <td className="px-5 py-3">
                       <div className="flex gap-2">
                         <Button size="sm" onClick={() => { setDispenseItem(item); setDispenseQty("1"); }} disabled={item.status === "out"}>Dispense</Button>
+                        <Button size="sm" variant="outline" onClick={() => { setSaleItem(item); setSalePatient(""); setSalePatientId(""); setSaleQty(1); }} disabled={item.status === "out"}>Sell</Button>
                         <Button size="sm" variant="outline" onClick={() => openEdit(item)}>Edit</Button>
                         {item.status !== "ok" && (
                           <Button size="sm" variant="ghost" onClick={() => openRestock(item)} className="text-orange-600 hover:text-orange-700">
@@ -572,6 +608,40 @@ export default function PharmacyInventoryPage() {
               <Button size="md" type="submit">Send Restock Request to Store</Button>
             </ModalFooter>
           </form>
+        </Modal>
+      )}
+
+      {/* Counter Sale modal */}
+      {saleItem && (
+        <Modal open={true} onClose={() => setSaleItem(null)} title={`Counter Sale — ${saleItem.product}`}>
+          <form id="sale-form" onSubmit={handleSell} className="space-y-4">
+            <div className="rounded-lg bg-slate-50 p-3 text-sm space-y-1">
+              <div className="flex justify-between"><span className="text-slate-500">Product</span><span className="font-semibold text-slate-900">{saleItem.product}</span></div>
+              <div className="flex justify-between"><span className="text-slate-500">Unit Price</span><span className="font-bold text-slate-900">₦{saleItem.unitPrice.toFixed(2)}</span></div>
+              <div className="flex justify-between"><span className="text-slate-500">In Stock</span><span className={saleItem.stock < 10 ? "font-bold text-orange-600" : "text-slate-700"}>{saleItem.stock} units</span></div>
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-semibold text-slate-700">Patient Name</label>
+              <input value={salePatient} onChange={(e) => setSalePatient(e.target.value)} placeholder="e.g. John Doe (or leave blank for walk-in)" className={inputCls} />
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-semibold text-slate-700">Patient ID</label>
+              <input value={salePatientId} onChange={(e) => setSalePatientId(e.target.value)} placeholder="e.g. P-00123 (or leave blank)" className={inputCls} />
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-semibold text-slate-700">Quantity</label>
+              <input type="number" min="1" max={saleItem.stock} required value={saleQty}
+                onChange={(e) => setSaleQty(Math.max(1, parseInt(e.target.value) || 1))} className={inputCls} />
+            </div>
+            <div className="flex items-center justify-between rounded-xl bg-emerald-50 border border-emerald-200 px-4 py-3">
+              <span className="text-sm font-semibold text-emerald-800">Total</span>
+              <span className="text-xl font-bold text-emerald-900">₦{(saleQty * saleItem.unitPrice).toFixed(2)}</span>
+            </div>
+          </form>
+          <ModalFooter>
+            <Button variant="ghost" size="md" type="button" onClick={() => setSaleItem(null)}>Cancel</Button>
+            <Button size="md" type="submit" form="sale-form">Confirm Sale → Bill to Accounts</Button>
+          </ModalFooter>
         </Modal>
       )}
 

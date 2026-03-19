@@ -267,7 +267,6 @@ export const sidebarNavigationByDepartment: Record<
         { label: "Patients", href: `${INTERNAL_PREFIX}/frontdesk/patients`, icon: "patients" },
         { label: "Visits / Check-in", href: `${INTERNAL_PREFIX}/frontdesk/visits`, icon: "calendar" },
         { label: "Front Desk Billing", href: `${INTERNAL_PREFIX}/frontdesk/billing`, icon: "money" },
-        { label: "Search", href: `${INTERNAL_PREFIX}/frontdesk/search`, icon: "search" },
         { label: "Rota Management", href: `${INTERNAL_PREFIX}/frontdesk/rota`, icon: "calendar" },
         { label: "Leave Requests", href: `${INTERNAL_PREFIX}/frontdesk/leave`, icon: "calendar" },
         { label: "Staff Performance", href: `${INTERNAL_PREFIX}/frontdesk/performance`, icon: "reports" },

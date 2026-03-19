@@ -1,7 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { PageHeader } from "@/components/layout/page-header";
+import { INTERNAL_PREFIX } from "@/lib/constants/navigation";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/ui/status-badge";
@@ -207,6 +209,12 @@ export default function DoctorsConsultationsPage() {
         title="Consultations"
         description="Active and recent consultations. Write prescriptions, bill fees, and order lab tests."
       />
+
+      {/* Billing rates shortcut */}
+      <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-xs text-slate-600 flex items-center justify-between">
+        <span>Consultation fee rates are configured in <strong>Admin → Settings → Billing Rates</strong></span>
+        <Link href={`${INTERNAL_PREFIX}/admin/settings`} className="font-semibold text-[var(--accent)] hover:underline">Manage Rates →</Link>
+      </div>
 
       {/* Summary strip */}
       <div className="flex flex-wrap gap-3">

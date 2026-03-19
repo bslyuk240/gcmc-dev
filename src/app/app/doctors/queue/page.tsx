@@ -40,7 +40,7 @@ export default function DoctorsQueuePage() {
       patientId: patient.patientId,
       doctorName: assignedDoctor,
       consultType: type,
-      date: "Mar 15, 2026",
+      date: new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }),
       time: new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }),
       status: "In Progress",
       chiefComplaint: patient.diagnosis,
@@ -60,7 +60,7 @@ export default function DoctorsQueuePage() {
       consultationType: accountsType,
       fee,
       status: "Pending",
-      consultedAt: "Mar 15, 2026",
+      consultedAt: new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }),
     });
 
     setToast({ message: `Consultation started for ${patient.patientName} — fee ₦${fee} sent to Accounts.`, type: "success" });

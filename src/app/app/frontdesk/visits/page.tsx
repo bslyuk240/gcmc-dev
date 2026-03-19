@@ -141,7 +141,7 @@ export default function FrontdeskVisitsPage() {
       unit:        isEmergency ? "Emergency" : "Outpatient",
       bed:         isEmergency ? `ER-${Date.now() % 10}` : `OPD-${Date.now() % 100}`,
       diagnosis:   `${visitType}${complaint ? ` — ${complaint}` : ""}`,
-      admittedAt:  todayStr,
+      admittedAt:  new Date().toISOString(),
       assignedNurse: "Triage Nurse",
       priority:    isEmergency ? "High" : "Stable",
       status:      "Active",
