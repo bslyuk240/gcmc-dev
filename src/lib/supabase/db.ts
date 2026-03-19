@@ -1355,16 +1355,18 @@ export async function insertVisit(params: {
 }): Promise<string | null> {
   const sb = getSupabase();
   if (!sb) return null;
-  const today = new Date().toISOString().slice(0, 10);
+  const id = `VIS-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+  const now = new Date();
   const { data, error } = await sb.from("visits").insert({
+    id,
     patient_id:   params.patientId,
     patient_name: params.patientName,
-    visit_date:   today,
+    visit_date:   now.toISOString(),
     visit_type:   params.visitType,
     department:   params.department,
     assigned_to:  params.assignedTo,
     status:       "Checked In",
-    checked_in_at: new Date().toISOString(),
+    checked_in_at: now.toISOString(),
   }).select("id").single();
   if (error) { console.error("insertVisit:", error.message); return null; }
   return (data as { id: string }).id;
@@ -1794,12 +1796,15 @@ function mapVisit(r: Record<string, unknown>): VisitRow {
 export async function fetchTodayVisits(): Promise<VisitRow[]> {
   const sb = getSupabase();
   if (!sb) return [];
-  const today = new Date().toISOString().slice(0, 10);
+  const start = new Date();
+  start.setHours(0, 0, 0, 0);
+  const end = new Date();
+  end.setHours(23, 59, 59, 999);
   const { data } = await sb
     .from("visits")
     .select("*")
-    .gte("visit_date", today + "T00:00:00")
-    .lte("visit_date", today + "T23:59:59")
+    .gte("visit_date", start.toISOString())
+    .lte("visit_date", end.toISOString())
     .order("visit_date", { ascending: false });
   return (data ?? []).map(mapVisit);
 }

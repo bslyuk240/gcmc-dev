@@ -19,7 +19,10 @@ export function useNursesStore() {
   useEffect(() => {
     syncNursesFromSupabase();
     const unsub = subscribeNursesStore(rerender);
-    return () => { unsub(); };
+    // Poll every 30 s so cross-device updates (e.g. front-desk adding a patient)
+    // appear automatically without a manual page refresh.
+    const poll = setInterval(() => syncNursesFromSupabase(true), 30_000);
+    return () => { unsub(); clearInterval(poll); };
   }, []);
 
   return {
