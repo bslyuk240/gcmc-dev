@@ -1,56 +1,408 @@
-import { PageHeader } from "@/components/layout/page-header";
+"use client";
 
-export default function NewPatientPage() {
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import Link from "next/link";
+import { useHMSSession } from "@/modules/rbac/hooks";
+import { insertPatientRegistration } from "@/lib/supabase/db";
+import { Toast, type ToastData } from "@/components/ui/toast";
+
+// ── helpers ──────────────────────────────────────────────────────────────────
+function getInitials(first: string, last: string) {
+  return `${first[0] ?? ""}${last[0] ?? ""}`.toUpperCase();
+}
+
+function generatePatientId() {
+  const n = Math.floor(10000 + Math.random() * 90000);
+  return `P-${n}`;
+}
+
+// ── constants ─────────────────────────────────────────────────────────────────
+const BLOOD_GROUPS = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-", "Unknown"];
+const GENDERS     = ["Male", "Female", "Other"];
+
+const inputCls =
+  "w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 " +
+  "placeholder:text-slate-400 outline-none transition " +
+  "focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/20";
+
+const labelCls = "block text-xs font-semibold text-slate-600 mb-1.5";
+
+// ── component ─────────────────────────────────────────────────────────────────
+export default function RegisterNewPatientPage() {
+  const router  = useRouter();
+  const session = useHMSSession();
+
+  // ── form state ──
+  const [firstName,      setFirstName]      = useState("");
+  const [lastName,       setLastName]        = useState("");
+  const [dob,            setDob]             = useState("");
+  const [gender,         setGender]          = useState("");
+  const [phone,          setPhone]           = useState("");
+  const [email,          setEmail]           = useState("");
+  const [address,        setAddress]         = useState("");
+  const [nationality,    setNationality]     = useState("Ghanaian");
+  const [occupation,     setOccupation]      = useState("");
+  const [bloodGroup,     setBloodGroup]      = useState("");
+  const [nokName,        setNokName]         = useState("");
+  const [nokPhone,       setNokPhone]        = useState("");
+  const [nokRelation,    setNokRelation]     = useState("");
+
+  // ── ui state ──
+  const [saving,         setSaving]          = useState(false);
+  const [toast,          setToast]           = useState<ToastData | null>(null);
+  const [errors,         setErrors]          = useState<Record<string, string>>({});
+
+  // ── validation ──
+  function validate() {
+    const e: Record<string, string> = {};
+    if (!firstName.trim())  e.firstName = "First name is required";
+    if (!lastName.trim())   e.lastName  = "Last name is required";
+    if (!phone.trim())      e.phone     = "Phone number is required";
+    if (!gender)            e.gender    = "Please select a gender";
+    return e;
+  }
+
+  // ── save ──────────────────────────────────────────────────────────────────
+  async function handleSave(andCreateVisit = false) {
+    const errs = validate();
+    if (Object.keys(errs).length) { setErrors(errs); return; }
+    setErrors({});
+    setSaving(true);
+
+    const fullName  = `${firstName.trim()} ${lastName.trim()}`;
+    const patientId = generatePatientId();
+    const initials  = getInitials(firstName.trim(), lastName.trim());
+    const nokFull   = nokName.trim()
+      ? `${nokName.trim()}${nokRelation ? ` (${nokRelation})` : ""}`
+      : "";
+
+    const result = await insertPatientRegistration({
+      patientName:    fullName,
+      patientId,
+      registeredAt:   new Date().toISOString(),
+      contact:        phone.trim(),
+      email:          email.trim(),
+      initials,
+      status:         "Waiting",
+      registeredBy:   session?.full_name ?? "Front Desk",
+      dateOfBirth:    dob || undefined,
+      gender:         gender || undefined,
+      address:        address.trim() || undefined,
+      nextOfKinName:  nokFull || undefined,
+      nextOfKinPhone: nokPhone.trim() || undefined,
+      bloodGroup:     bloodGroup || undefined,
+      nationality:    nationality.trim() || "Ghanaian",
+      occupation:     occupation.trim() || undefined,
+    });
+
+    setSaving(false);
+
+    if (!result) {
+      setToast({ message: "Failed to register patient. Please try again.", type: "error" });
+      return;
+    }
+
+    if (andCreateVisit) {
+      router.push(`/app/frontdesk/visits?newPatient=${result.id}`);
+    } else {
+      router.push(`/app/frontdesk/patients/${result.id}`);
+    }
+  }
+
+  // ── render ────────────────────────────────────────────────────────────────
   return (
-    <div className="space-y-6">
-      <PageHeader
-        title="Register New Patient"
-        description="Capture demographics; on save, redirect to patient detail or create visit."
-      />
+    <div className="space-y-6 pb-24">
+      {/* Header */}
+      <div className="flex items-center gap-3">
+        <Link
+          href="/app/frontdesk/patients"
+          className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 shadow-sm hover:bg-slate-50"
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M19 12H5M12 19l-7-7 7-7" />
+          </svg>
+        </Link>
+        <div>
+          <h1 className="text-xl font-bold tracking-tight text-slate-900">Register New Patient</h1>
+          <p className="text-xs text-slate-500">Capture patient demographics and create a hospital record</p>
+        </div>
+      </div>
 
-      <section className="grid gap-6 xl:grid-cols-[minmax(0,1.4fr)_360px]">
-        <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-          <div className="grid gap-4 md:grid-cols-2">
-            {[
-              "First name",
-              "Last name",
-              "Date of birth",
-              "Gender",
-              "Phone number",
-              "Address",
-              "Next of kin",
-              "Patient identifier",
-            ].map((field) => (
-              <div
-                key={field}
-                className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-500"
-              >
-                {field}
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_300px]">
+        {/* ── Main form ── */}
+        <div className="space-y-5">
+
+          {/* Personal Information */}
+          <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+            <h2 className="mb-4 text-sm font-bold text-slate-900 flex items-center gap-2">
+              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[var(--accent)] text-[10px] font-bold text-white">1</span>
+              Personal Information
+            </h2>
+            <div className="grid gap-4 sm:grid-cols-2">
+              {/* First name */}
+              <div>
+                <label className={labelCls}>First Name <span className="text-red-500">*</span></label>
+                <input
+                  value={firstName}
+                  onChange={(e) => { setFirstName(e.target.value); setErrors((p) => ({ ...p, firstName: "" })); }}
+                  placeholder="e.g. Kwame"
+                  className={`${inputCls} ${errors.firstName ? "border-red-400 ring-1 ring-red-400/30" : ""}`}
+                />
+                {errors.firstName && <p className="mt-1 text-xs text-red-600">{errors.firstName}</p>}
               </div>
-            ))}
-          </div>
-          <div className="mt-6 flex gap-3">
-            <button className="rounded-lg bg-[var(--accent)] px-5 py-2.5 text-sm font-bold text-white">
+
+              {/* Last name */}
+              <div>
+                <label className={labelCls}>Last Name <span className="text-red-500">*</span></label>
+                <input
+                  value={lastName}
+                  onChange={(e) => { setLastName(e.target.value); setErrors((p) => ({ ...p, lastName: "" })); }}
+                  placeholder="e.g. Mensah"
+                  className={`${inputCls} ${errors.lastName ? "border-red-400 ring-1 ring-red-400/30" : ""}`}
+                />
+                {errors.lastName && <p className="mt-1 text-xs text-red-600">{errors.lastName}</p>}
+              </div>
+
+              {/* Date of birth */}
+              <div>
+                <label className={labelCls}>Date of Birth</label>
+                <input
+                  type="date"
+                  value={dob}
+                  max={new Date().toISOString().slice(0, 10)}
+                  onChange={(e) => setDob(e.target.value)}
+                  className={inputCls}
+                />
+              </div>
+
+              {/* Gender */}
+              <div>
+                <label className={labelCls}>Gender <span className="text-red-500">*</span></label>
+                <select
+                  value={gender}
+                  onChange={(e) => { setGender(e.target.value); setErrors((p) => ({ ...p, gender: "" })); }}
+                  className={`${inputCls} ${errors.gender ? "border-red-400 ring-1 ring-red-400/30" : ""}`}
+                >
+                  <option value="">— Select gender —</option>
+                  {GENDERS.map((g) => <option key={g}>{g}</option>)}
+                </select>
+                {errors.gender && <p className="mt-1 text-xs text-red-600">{errors.gender}</p>}
+              </div>
+
+              {/* Blood group */}
+              <div>
+                <label className={labelCls}>Blood Group</label>
+                <select value={bloodGroup} onChange={(e) => setBloodGroup(e.target.value)} className={inputCls}>
+                  <option value="">— Select blood group —</option>
+                  {BLOOD_GROUPS.map((b) => <option key={b}>{b}</option>)}
+                </select>
+              </div>
+
+              {/* Nationality */}
+              <div>
+                <label className={labelCls}>Nationality</label>
+                <input
+                  value={nationality}
+                  onChange={(e) => setNationality(e.target.value)}
+                  placeholder="e.g. Ghanaian"
+                  className={inputCls}
+                />
+              </div>
+
+              {/* Occupation */}
+              <div className="sm:col-span-2">
+                <label className={labelCls}>Occupation</label>
+                <input
+                  value={occupation}
+                  onChange={(e) => setOccupation(e.target.value)}
+                  placeholder="e.g. Teacher, Trader, Civil servant"
+                  className={inputCls}
+                />
+              </div>
+            </div>
+          </section>
+
+          {/* Contact Details */}
+          <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+            <h2 className="mb-4 text-sm font-bold text-slate-900 flex items-center gap-2">
+              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[var(--accent)] text-[10px] font-bold text-white">2</span>
+              Contact Details
+            </h2>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div>
+                <label className={labelCls}>Phone Number <span className="text-red-500">*</span></label>
+                <input
+                  type="tel"
+                  value={phone}
+                  onChange={(e) => { setPhone(e.target.value); setErrors((p) => ({ ...p, phone: "" })); }}
+                  placeholder="e.g. 0244 000 000"
+                  className={`${inputCls} ${errors.phone ? "border-red-400 ring-1 ring-red-400/30" : ""}`}
+                />
+                {errors.phone && <p className="mt-1 text-xs text-red-600">{errors.phone}</p>}
+              </div>
+
+              <div>
+                <label className={labelCls}>Email Address</label>
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="patient@email.com"
+                  className={inputCls}
+                />
+              </div>
+
+              <div className="sm:col-span-2">
+                <label className={labelCls}>Home Address</label>
+                <textarea
+                  rows={2}
+                  value={address}
+                  onChange={(e) => setAddress(e.target.value)}
+                  placeholder="House number, street, area / city"
+                  className={`${inputCls} resize-none`}
+                />
+              </div>
+            </div>
+          </section>
+
+          {/* Next of Kin */}
+          <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+            <h2 className="mb-4 text-sm font-bold text-slate-900 flex items-center gap-2">
+              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[var(--accent)] text-[10px] font-bold text-white">3</span>
+              Next of Kin
+            </h2>
+            <div className="grid gap-4 sm:grid-cols-3">
+              <div className="sm:col-span-2">
+                <label className={labelCls}>Full Name</label>
+                <input
+                  value={nokName}
+                  onChange={(e) => setNokName(e.target.value)}
+                  placeholder="e.g. Mrs. Adaeze Mensah"
+                  className={inputCls}
+                />
+              </div>
+              <div>
+                <label className={labelCls}>Relationship</label>
+                <input
+                  value={nokRelation}
+                  onChange={(e) => setNokRelation(e.target.value)}
+                  placeholder="e.g. Spouse, Parent"
+                  className={inputCls}
+                />
+              </div>
+              <div>
+                <label className={labelCls}>Phone Number</label>
+                <input
+                  type="tel"
+                  value={nokPhone}
+                  onChange={(e) => setNokPhone(e.target.value)}
+                  placeholder="e.g. 0244 111 222"
+                  className={inputCls}
+                />
+              </div>
+            </div>
+          </section>
+
+          {/* Action buttons */}
+          <div className="flex flex-wrap gap-3 pt-1">
+            <button
+              type="button"
+              disabled={saving}
+              onClick={() => handleSave(false)}
+              className="flex items-center gap-2 rounded-xl bg-[var(--accent)] px-6 py-3 text-sm font-bold text-white shadow-md shadow-[var(--accent)]/20 transition hover:-translate-y-0.5 active:opacity-90 disabled:opacity-60"
+            >
+              {saving ? (
+                <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" />
+              ) : (
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
+                  <polyline points="17 21 17 13 7 13 7 21" />
+                  <polyline points="7 3 7 8 15 8" />
+                </svg>
+              )}
               Save Patient
             </button>
-            <button className="rounded-lg border border-slate-200 bg-white px-5 py-2.5 text-sm font-bold text-slate-700">
-              Save and Create Visit
+
+            <button
+              type="button"
+              disabled={saving}
+              onClick={() => handleSave(true)}
+              className="flex items-center gap-2 rounded-xl border border-[var(--accent)] bg-white px-6 py-3 text-sm font-bold text-[var(--accent)] transition hover:bg-[var(--accent)]/5 active:opacity-90 disabled:opacity-60"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 5v14M5 12l7 7 7-7" />
+              </svg>
+              Save & Create Visit
             </button>
+
+            <Link
+              href="/app/frontdesk/patients"
+              className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-6 py-3 text-sm font-bold text-slate-600 transition hover:bg-slate-50"
+            >
+              Cancel
+            </Link>
           </div>
         </div>
 
-        <aside className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-          <h3 className="text-sm font-bold uppercase tracking-wider text-slate-500">
-            Registration flow
-          </h3>
-          <ol className="mt-4 space-y-3 text-sm leading-6 text-slate-600">
-            <li>1. Capture patient demographics.</li>
-            <li>2. Check duplicates before save.</li>
-            <li>3. Save master record.</li>
-            <li>4. Redirect to patient detail or create visit.</li>
-          </ol>
+        {/* ── Sidebar ── */}
+        <aside className="space-y-4 xl:sticky xl:top-6 xl:self-start">
+          {/* Preview card */}
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <h3 className="mb-3 text-xs font-bold uppercase tracking-wider text-slate-500">Patient Preview</h3>
+            <div className="flex items-center gap-3">
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[var(--accent)]/10 text-base font-bold text-[var(--accent)]">
+                {firstName || lastName
+                  ? getInitials(firstName || "?", lastName || "?")
+                  : "?"}
+              </div>
+              <div>
+                <p className="font-semibold text-slate-900">
+                  {firstName || lastName
+                    ? `${firstName} ${lastName}`.trim()
+                    : <span className="text-slate-400 italic">Enter name above</span>}
+                </p>
+                {phone && <p className="text-xs text-slate-500">{phone}</p>}
+                {gender && <p className="text-xs text-slate-400 capitalize">{gender}</p>}
+              </div>
+            </div>
+
+            {dob && (
+              <div className="mt-3 border-t border-slate-100 pt-3 text-xs text-slate-500">
+                DOB: {new Date(dob).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}
+                {bloodGroup && <span className="ml-2 rounded bg-red-50 px-1.5 py-0.5 font-semibold text-red-700">{bloodGroup}</span>}
+              </div>
+            )}
+          </div>
+
+          {/* Registration flow */}
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <h3 className="mb-3 text-xs font-bold uppercase tracking-wider text-slate-500">Registration Flow</h3>
+            <ol className="space-y-2.5 text-xs text-slate-600">
+              {[
+                "Fill in patient demographics",
+                "Required: Name, Phone & Gender",
+                "Click Save Patient → view patient record",
+                "Or Save & Create Visit → start consultation",
+              ].map((step, i) => (
+                <li key={i} className="flex items-start gap-2">
+                  <span className="flex h-4 w-4 shrink-0 translate-y-0.5 items-center justify-center rounded-full bg-[var(--accent)]/10 text-[9px] font-bold text-[var(--accent)]">
+                    {i + 1}
+                  </span>
+                  {step}
+                </li>
+              ))}
+            </ol>
+          </div>
+
+          {/* Required fields reminder */}
+          <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">
+            <span className="font-bold">Required:</span> First Name, Last Name, Phone Number, and Gender must be filled before saving.
+          </div>
         </aside>
-      </section>
+      </div>
+
+      <Toast toast={toast} onDismiss={() => setToast(null)} />
     </div>
   );
 }

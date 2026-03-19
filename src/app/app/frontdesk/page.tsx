@@ -94,7 +94,7 @@ export default function FrontdeskPage() {
     },
   ];
 
-  const recentRegs = registrations.slice(0, 5);
+  const recentRegs = todayRegs.slice(0, 5);
 
   return (
     <div className="space-y-5 sm:space-y-6">
@@ -133,7 +133,7 @@ export default function FrontdeskPage() {
               <span className="rounded-lg bg-[var(--accent)]/10 p-1.5 text-[var(--accent)]">
                 <Icon name="patients" className="h-4 w-4" />
               </span>
-              Recent Registrations
+              Today&apos;s Registrations
             </h3>
             <Link href="/app/frontdesk/patients"
               className="text-xs font-semibold text-[var(--accent)] hover:underline sm:text-sm">
@@ -148,8 +148,8 @@ export default function FrontdeskPage() {
               </div>
             ) : recentRegs.length === 0 ? (
               <div className="px-6 py-10 text-center text-sm text-slate-400">
-                No registrations yet today.{" "}
-                <Link href="/app/frontdesk/patients" className="text-[var(--accent)] underline">
+                No registrations today.{" "}
+                <Link href="/app/frontdesk/patients/new" className="text-[var(--accent)] underline">
                   Register a patient
                 </Link>
               </div>

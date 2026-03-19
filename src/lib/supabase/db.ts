@@ -1238,9 +1238,18 @@ export type PatientRegistration = {
   patientId: string;
   registeredAt: string;
   contact: string;
+  email: string;
   initials: string;
-  status: "Waiting" | "In Consultation" | "Discharged" | "Referred";
+  status: "Waiting" | "In Consultation" | "Discharged" | "Referred" | "Billing";
   registeredBy: string;
+  dateOfBirth?: string;
+  gender?: string;
+  address?: string;
+  nextOfKinName?: string;
+  nextOfKinPhone?: string;
+  bloodGroup?: string;
+  nationality?: string;
+  occupation?: string;
 };
 
 function mapPatientRegistration(r: Record<string, unknown>): PatientRegistration {
@@ -1250,9 +1259,18 @@ function mapPatientRegistration(r: Record<string, unknown>): PatientRegistration
     patientId: (r.patient_id as string) ?? "",
     registeredAt: (r.registered_at as string) ?? "",
     contact: (r.contact as string) ?? "",
+    email: (r.email as string) ?? "",
     initials: (r.initials as string) ?? "",
     status: (r.status as PatientRegistration["status"]) ?? "Waiting",
     registeredBy: (r.registered_by as string) ?? "",
+    dateOfBirth: (r.date_of_birth as string) ?? undefined,
+    gender: (r.gender as string) ?? undefined,
+    address: (r.address as string) ?? undefined,
+    nextOfKinName: (r.next_of_kin_name as string) ?? undefined,
+    nextOfKinPhone: (r.next_of_kin_phone as string) ?? undefined,
+    bloodGroup: (r.blood_group as string) ?? undefined,
+    nationality: (r.nationality as string) ?? "Ghanaian",
+    occupation: (r.occupation as string) ?? undefined,
   };
 }
 
@@ -1260,18 +1278,37 @@ export async function fetchPatientRegistrations(): Promise<PatientRegistration[]
   const sb = getSupabase();
   if (!sb) return [];
   const { data } = await sb.from("patient_registrations").select("*")
-    .order("created_at", { ascending: false }).limit(20);
+    .order("created_at", { ascending: false }).limit(50);
   return (data ?? []).map(mapPatientRegistration);
 }
 
-export async function insertPatientRegistration(reg: PatientRegistration): Promise<void> {
+export async function insertPatientRegistration(
+  reg: Omit<PatientRegistration, "id"> & { id?: string }
+): Promise<{ id: string } | null> {
   const sb = getSupabase();
-  if (!sb) return;
-  await sb.from("patient_registrations").upsert({
-    id: reg.id, patient_name: reg.patientName, patient_id: reg.patientId,
-    registered_at: reg.registeredAt, contact: reg.contact, initials: reg.initials,
-    status: reg.status, registered_by: reg.registeredBy,
-  });
+  if (!sb) return null;
+  const id = reg.id ?? crypto.randomUUID();
+  const { data, error } = await sb.from("patient_registrations").insert({
+    id,
+    patient_name: reg.patientName,
+    patient_id: reg.patientId,
+    registered_at: reg.registeredAt ?? new Date().toISOString(),
+    contact: reg.contact,
+    email: reg.email,
+    initials: reg.initials,
+    status: reg.status ?? "Waiting",
+    registered_by: reg.registeredBy,
+    date_of_birth: reg.dateOfBirth ?? null,
+    gender: reg.gender ?? null,
+    address: reg.address ?? null,
+    next_of_kin_name: reg.nextOfKinName ?? null,
+    next_of_kin_phone: reg.nextOfKinPhone ?? null,
+    blood_group: reg.bloodGroup ?? null,
+    nationality: reg.nationality ?? "Ghanaian",
+    occupation: reg.occupation ?? null,
+  }).select("id").single();
+  if (error) { console.error("insertPatientRegistration:", error.message); return null; }
+  return data as { id: string };
 }
 
 // ─── IT System Status ─────────────────────────────────────────────────────────

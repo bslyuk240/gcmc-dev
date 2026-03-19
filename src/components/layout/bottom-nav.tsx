@@ -94,10 +94,10 @@ export function BottomNav() {
       activeTest: (p: string) => p === chatHref || p.startsWith(`${chatHref}/`),
     },
     {
-      href: "/staff/profile",
+      href: `${INTERNAL_PREFIX}/profile`,
       label: "Profile",
       Icon: UserIcon,
-      activeTest: (p: string) => p === "/staff/profile" || p.startsWith("/staff/profile/"),
+      activeTest: (p: string) => p === `${INTERNAL_PREFIX}/profile` || p.startsWith(`${INTERNAL_PREFIX}/profile/`),
     },
   ];
 
