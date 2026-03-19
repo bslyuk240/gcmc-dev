@@ -8,8 +8,18 @@ import { Modal, ModalFooter } from "@/components/ui/modal";
 import { Toast, type ToastData } from "@/components/ui/toast";
 import { sendPasswordResetAction } from "@/server/actions/it/send-password-reset";
 import { fetchStaffMembers } from "@/lib/supabase/db";
+import type { StaffMember } from "@/lib/data/hr-store";
 
 type UserStatus = "Active" | "Suspended" | "Inactive";
+
+const ROLES = ["Admin", "Doctor", "Nurse", "Pharmacist", "Front Desk", "Accountant", "Store Keeper", "IT Officer", "HR Officer"];
+const DEPARTMENTS = ["Admin", "Doctors", "Nurses", "Pharmacy", "Front Desk", "Accounts", "Store", "IT", "HR"];
+
+const STATUS_STYLES: Record<UserStatus, string> = {
+  Active: "bg-emerald-50 text-emerald-700",
+  Suspended: "bg-red-50 text-red-700",
+  Inactive: "bg-slate-100 text-slate-500",
+};
 
 type UserRecord = {
   id: string;
@@ -21,37 +31,21 @@ type UserRecord = {
   lastLogin: string;
 };
 
-const ROLES = ["Admin", "Doctor", "Nurse", "Pharmacist", "Front Desk", "Accountant", "Store Keeper", "IT Officer", "HR Officer"];
-const DEPARTMENTS = ["Admin", "Doctors", "Nurses", "Pharmacy", "Front Desk", "Accounts", "Store", "IT", "HR"];
-
-const STATUS_STYLES: Record<UserStatus, string> = {
-  Active: "bg-emerald-50 text-emerald-700",
-  Suspended: "bg-red-50 text-red-700",
-  Inactive: "bg-slate-100 text-slate-500",
-};
+function staffToUserRecord(s: StaffMember): UserRecord {
+  return {
+    id: s.id,
+    name: s.name,
+    email: s.email,
+    role: s.role,
+    department: s.department,
+    status: s.status === "Active" ? "Active" : s.status === "Terminated" ? "Inactive" : "Inactive",
+    lastLogin: "—",
+  };
+}
 
 export default function ITUserAccessPage() {
   const [users, setUsers] = useState<UserRecord[]>([]);
-  const [loadingUsers, setLoadingUsers] = useState(true);
-
-  useEffect(() => {
-    fetchStaffMembers().then((staff) => {
-      setUsers(
-        staff.map((s, i) => ({
-          id: `USR-${String(i + 1).padStart(3, "0")}`,
-          name: s.name,
-          email: s.email,
-          role: s.role,
-          department: s.department,
-          status: (s.status === "Active" || s.status === "Suspended" || s.status === "Terminated")
-            ? (s.status === "Terminated" ? "Inactive" : s.status)
-            : "Active",
-          lastLogin: "—",
-        }))
-      );
-      setLoadingUsers(false);
-    }).catch(() => setLoadingUsers(false));
-  }, []);
+  const [loading, setLoading] = useState(true);
   const [showInvite, setShowInvite] = useState(false);
   const [manageUser, setManageUser] = useState<UserRecord | null>(null);
   const [toast, setToast] = useState<ToastData | null>(null);
@@ -63,10 +57,17 @@ export default function ITUserAccessPage() {
   // Manage form
   const [editRole, setEditRole] = useState(""); const [editStatus, setEditStatus] = useState<UserStatus>("Active");
 
+  useEffect(() => {
+    fetchStaffMembers().then((staff) => {
+      setUsers(staff.map(staffToUserRecord));
+      setLoading(false);
+    });
+  }, []);
+
   function handleInvite(e: React.FormEvent) {
     e.preventDefault();
     const user: UserRecord = {
-      id: `USR-${String(users.length + 1).padStart(3, "0")}`,
+      id: `USR-${Date.now()}`,
       name: inviteName, email: inviteEmail, role: inviteRole,
       department: inviteDept, status: "Active", lastLogin: "Never",
     };
@@ -118,41 +119,42 @@ export default function ITUserAccessPage() {
         <div className="border-b border-slate-100 px-5 py-4">
           <h3 className="font-bold text-slate-900">All Users <span className="text-sm font-normal text-slate-400">({users.length})</span></h3>
         </div>
-        {loadingUsers ? (
-          <div className="flex items-center justify-center py-16">
+        {loading ? (
+          <div className="flex items-center justify-center py-12">
             <div className="h-7 w-7 animate-spin rounded-full border-4 border-slate-200 border-t-[var(--accent)]" />
           </div>
+        ) : users.length === 0 ? (
+          <div className="px-5 py-10 text-center">
+            <p className="text-sm font-medium text-slate-500">No records yet.</p>
+            <p className="mt-1 text-xs text-slate-400">Data will appear here once entries are created.</p>
+          </div>
         ) : (
-        <div className="overflow-x-auto">
-          <table className="min-w-full text-left text-sm">
-            <thead>
-              <tr className="border-b border-slate-100 bg-slate-50">
-                {["ID", "Name", "Email", "Role", "Department", "Status", "Last Login", ""].map((h) => (
-                  <th key={h} className="whitespace-nowrap px-5 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {users.length === 0 && (
-                <tr><td colSpan={8} className="px-6 py-10 text-center text-sm text-slate-400">No staff accounts found.</td></tr>
-              )}
-              {users.map((row) => (
-                <tr key={row.id} className="hover:bg-slate-50">
-                  <td className="px-5 py-3 font-mono text-xs text-slate-400">{row.id}</td>
-                  <td className="px-5 py-3 font-semibold text-slate-900">{row.name}</td>
-                  <td className="px-5 py-3 text-slate-500">{row.email}</td>
-                  <td className="px-5 py-3 text-slate-600">{row.role}</td>
-                  <td className="px-5 py-3 text-slate-600">{row.department}</td>
-                  <td className="px-5 py-3"><span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${STATUS_STYLES[row.status]}`}>{row.status}</span></td>
-                  <td className="px-5 py-3 text-slate-400 text-xs">{row.lastLogin}</td>
-                  <td className="px-5 py-3">
-                    <Button size="sm" variant="outline" onClick={() => openManage(row)}>Manage</Button>
-                  </td>
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-left text-sm">
+              <thead>
+                <tr className="border-b border-slate-100 bg-slate-50">
+                  {["Name", "Email", "Role", "Department", "Status", "Last Login", ""].map((h) => (
+                    <th key={h} className="whitespace-nowrap px-5 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">{h}</th>
+                  ))}
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {users.map((row) => (
+                  <tr key={row.id} className="hover:bg-slate-50">
+                    <td className="px-5 py-3 font-semibold text-slate-900">{row.name}</td>
+                    <td className="px-5 py-3 text-slate-500">{row.email}</td>
+                    <td className="px-5 py-3 text-slate-600">{row.role}</td>
+                    <td className="px-5 py-3 text-slate-600">{row.department}</td>
+                    <td className="px-5 py-3"><span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${STATUS_STYLES[row.status]}`}>{row.status}</span></td>
+                    <td className="px-5 py-3 text-slate-400 text-xs">{row.lastLogin}</td>
+                    <td className="px-5 py-3">
+                      <Button size="sm" variant="outline" onClick={() => openManage(row)}>Manage</Button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </Card>
 

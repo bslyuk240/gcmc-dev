@@ -36,6 +36,7 @@ type MarEntry = {
   source?: "doctor" | "nurse";
 };
 
+
 const STATUS_BADGE: Record<MedStatus, "success" | "warning" | "destructive" | "neutral"> = {
   administered: "success", due: "warning", overdue: "destructive", skipped: "neutral",
 };
@@ -197,7 +198,7 @@ export default function NursesMedicationAdministrationPage() {
         qty: reqQty,
         urgency: reqUrgency,
         notes: reqNotes || undefined,
-        requestedAt: `${now} · ${new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}`,
+        requestedAt: `${now} · Mar 15, 2026`,
         status: "Requested",
       };
       addNurseRequest(req);

@@ -18,6 +18,7 @@ const PRIORITY_STYLES: Record<string, string> = {
   Stable: "bg-emerald-50 text-emerald-700",
 };
 
+
 export default function NursesEmergencyPage() {
   const { getByUnit, procedures } = useNursesStore();
   const erPatients = getByUnit("Emergency").filter((p) => p.status === "Active");
@@ -41,10 +42,9 @@ export default function NursesEmergencyPage() {
     if (!name || !diagnosis) return;
     addWardPatient({
       id: `WP-ER-${Date.now()}`, patientName: name, patientId: pid || `PT-ER-${Date.now()}`,
-      unit: "Emergency", bed: `ER-${erPatients.length + 1}`, diagnosis,
-      admittedAt: new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }),
-      assignedNurse: nurse || "Unassigned", priority,
-      status: "Active", doctorInCharge: doctor || undefined,
+      unit: "Emergency", bed: `ER-${erPatients.length + 3}`, diagnosis,
+      admittedAt: "Mar 15, 2026", assignedNurse: nurse, priority,
+      status: "Active", doctorInCharge: doctor,
     });
     setToast({ message: `${name} admitted to Emergency Unit.`, type: "success" });
     setNewPatientModal(false);
@@ -55,8 +55,8 @@ export default function NursesEmergencyPage() {
     if (!vitalsTarget || !bp) return;
     const now = new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
     updateWardPatient(vitalsTarget.id, {
-      vitals: { bp, pulse, temp, spo2, recordedAt: `${now}`, recordedBy: "Nurse (You)" },
-      lastVitalsAt: `${now} · ${new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short" })}`,
+      vitals: { bp, pulse, temp, spo2, recordedAt: `${now}`, recordedBy: "Nurse" },
+      lastVitalsAt: `${now} · Mar 15`,
     });
     setToast({ message: `Emergency vitals recorded for ${vitalsTarget.patientName}.`, type: "success" });
     setVitalsTarget(null);
@@ -204,10 +204,10 @@ export default function NursesEmergencyPage() {
                 {["Critical", "High", "Watch", "Stable"].map((p) => <option key={p}>{p}</option>)}
               </select></div>
             <div><label className="block text-xs font-semibold text-slate-600 mb-1">Assigned Nurse</label>
-              <input value={nurse} onChange={(e) => setNurse(e.target.value)} placeholder="e.g. Nurse Grace" className={inputCls} /></div>
+              <input value={nurse} onChange={(e) => setNurse(e.target.value)} placeholder="Nurse name" className={inputCls} /></div>
           </div>
           <div><label className="block text-xs font-semibold text-slate-600 mb-1">Doctor in Charge</label>
-            <input value={doctor} onChange={(e) => setDoctor(e.target.value)} placeholder="e.g. Dr. Mensah" className={inputCls} /></div>
+            <input value={doctor} onChange={(e) => setDoctor(e.target.value)} placeholder="e.g. Dr. Smith" className={inputCls} /></div>
         </div>
         <ModalFooter>
           <Button variant="ghost" size="md" onClick={() => setNewPatientModal(false)}>Cancel</Button>

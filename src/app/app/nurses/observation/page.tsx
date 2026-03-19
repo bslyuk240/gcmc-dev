@@ -27,6 +27,7 @@ const FLAG_STYLES: Record<string, string> = {
   Urgent: "bg-red-50 text-red-700 font-bold",
 };
 
+
 export default function NursesObservationPage() {
   const { allPatients } = useNursesStore();
   const [obs, setObs] = useState<ObsEntry[]>([]);
@@ -52,7 +53,7 @@ export default function NursesObservationPage() {
       bed: patient?.bed ?? "—",
       observation, actionTaken,
       nurse: obsNurse,
-      time: `${now} · ${new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}`,
+      time: `${now} · Mar 15, 2026`,
       flag,
     }, ...obs]);
     setToast({ message: "Observation recorded.", type: "success" });
@@ -150,7 +151,7 @@ export default function NursesObservationPage() {
             </div>
             <div>
               <label className="block text-xs font-semibold text-slate-600 mb-1">Nurse</label>
-              <input value={obsNurse} onChange={(e) => setObsNurse(e.target.value)} placeholder="e.g. Nurse Grace" className={inputCls} />
+              <input value={obsNurse} onChange={(e) => setObsNurse(e.target.value)} placeholder="Your name" className={inputCls} />
             </div>
           </div>
         </div>

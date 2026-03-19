@@ -10,8 +10,6 @@ import { Toast, type ToastData } from "@/components/ui/toast";
 import { INTERNAL_PREFIX } from "@/lib/constants/navigation";
 import { useNursesStore } from "@/lib/hooks/use-nurses-store";
 import { updateWardPatient, addNursingProcedure, type WardPatient } from "@/lib/data/nurses-store";
-import { addNursingCharge } from "@/lib/data/accounts-store";
-import { useBillingPresets } from "@/lib/hooks/use-billing-presets";
 
 const PRIORITY_STYLES: Record<string, string> = {
   Critical: "bg-red-50 text-red-700 font-bold",
@@ -20,18 +18,13 @@ const PRIORITY_STYLES: Record<string, string> = {
   Stable: "bg-emerald-50 text-emerald-700",
 };
 
-const NURSES: string[] = [];
-
+const PROCEDURE_TYPES = ["Injection", "Dressing", "IV Access", "Catheter", "Observation", "Wound Care", "Blood Draw", "Procedure", "Other"] as const;
+const PROCEDURE_PRICES: Record<string, number> = {
+  Injection: 25, Dressing: 20, "IV Access": 30, Catheter: 60, Observation: 15,
+  "Wound Care": 40, "Blood Draw": 15, Procedure: 50, Other: 20,
+};
 export default function NursesWardPage() {
   const { getByUnit, procedures } = useNursesStore();
-  const { getByCategory, getAmount } = useBillingPresets();
-  const procedurePresets = getByCategory("procedure");
-  const procedureTypes = (
-    procedurePresets.length > 0
-      ? procedurePresets.map((p) => p.name)
-      : ["Injection", "Dressing", "IV Access", "Catheter", "Observation", "Wound Care", "Blood Draw", "Procedure", "Other"]
-  ) as string[];
-
   const wardPatients = getByUnit("Ward").filter((p) => p.status === "Active");
   const wardProcedures = procedures.filter((p) => p.unit === "Ward");
 
@@ -43,12 +36,12 @@ export default function NursesWardPage() {
   // Vitals form
   const [bp, setBp] = useState(""); const [pulse, setPulse] = useState("");
   const [temp, setTemp] = useState(""); const [spo2, setSpo2] = useState("");
-  const [vitalsNurse, setVitalsNurse] = useState(NURSES[0]);
+  const [vitalsNurse, setVitalsNurse] = useState("");
 
   // Procedure form
-  const [procType, setProcType] = useState<string>("Injection");
+  const [procType, setProcType] = useState<typeof PROCEDURE_TYPES[number]>("Injection");
   const [procDesc, setProcDesc] = useState("");
-  const [procNurse, setProcNurse] = useState(NURSES[0]);
+  const [procNurse, setProcNurse] = useState("");
 
   function handleRecordVitals() {
     if (!vitalsTarget || !bp || !pulse) return;
@@ -70,11 +63,11 @@ export default function NursesWardPage() {
       patientName: procTarget.patientName,
       patientId: procTarget.patientId,
       unit: "Ward",
-      procedureType: procType as "Injection" | "Dressing" | "IV Access" | "Catheter" | "Observation" | "Procedure" | "Wound Care" | "Blood Draw" | "Other",
+      procedureType: procType,
       description: procDesc || `${procType} — ${procTarget.patientName}`,
       performedBy: procNurse,
       performedAt: `${now} · Mar 15, 2026`,
-      amount: getAmount("procedure", procType, 20),
+      amount: PROCEDURE_PRICES[procType],
       billStatus: "Pending",
     });
     setToast({ message: `${procType} recorded for ${procTarget.patientName}. Charge sent to Accounts.`, type: "success" });
@@ -87,25 +80,6 @@ export default function NursesWardPage() {
     updateWardPatient(dischargeTarget.id, { status: "Discharged" });
     setToast({ message: `${dischargeTarget.patientName} discharged from Ward.`, type: "info" });
     setDischargeTarget(null);
-  }
-
-  function handleChargeBedFee(p: WardPatient) {
-    const amount = getAmount("inpatient", "Daily Bed Fee", 50);
-    const now = new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
-    const todayStr = new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
-    addNursingCharge({
-      id: `BED-${Date.now()}`,
-      patientName: p.patientName,
-      patientId: p.patientId,
-      procedureType: "Bed Fee",
-      description: `Daily bed fee — ${p.unit} ward`,
-      amount,
-      performedBy: "Nursing (Auto)",
-      performedAt: `${now} · ${todayStr}`,
-      unit: p.unit,
-      status: "Pending",
-    });
-    setToast({ message: `Bed fee ₦${amount} charged for ${p.patientName}. Sent to Accounts.`, type: "success" });
   }
 
   const inputCls = "w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/20";
@@ -170,13 +144,12 @@ export default function NursesWardPage() {
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex flex-wrap gap-1.5">
-                      <Button size="sm" onClick={() => { setVitalsTarget(p); setBp(""); setPulse(""); setTemp(""); setSpo2(""); setVitalsNurse(NURSES[0]); }}>
+                      <Button size="sm" onClick={() => { setVitalsTarget(p); setBp(""); setPulse(""); setTemp(""); setSpo2(""); setVitalsNurse(""); }}>
                         Vitals
                       </Button>
-                      <Button size="sm" variant="outline" onClick={() => { setProcTarget(p); setProcDesc(""); setProcType("Injection"); setProcNurse(NURSES[0]); }}>
+                      <Button size="sm" variant="outline" onClick={() => { setProcTarget(p); setProcDesc(""); setProcType("Injection"); setProcNurse(""); }}>
                         Procedure
                       </Button>
-                      <Button size="sm" variant="ghost" onClick={() => handleChargeBedFee(p)}>Bed Fee</Button>
                       <Button size="sm" variant="ghost" onClick={() => setDischargeTarget(p)}>Discharge</Button>
                     </div>
                   </td>
@@ -232,9 +205,7 @@ export default function NursesWardPage() {
                 <input value={spo2} onChange={(e) => setSpo2(e.target.value)} placeholder="e.g. 98%" className={inputCls} /></div>
             </div>
             <div><label className="block text-xs font-semibold text-slate-600 mb-1">Recorded By</label>
-              <select value={vitalsNurse} onChange={(e) => setVitalsNurse(e.target.value)} className={inputCls}>
-                {NURSES.map((n) => <option key={n}>{n}</option>)}
-              </select>
+              <input value={vitalsNurse} onChange={(e) => setVitalsNurse(e.target.value)} placeholder="Your name" className={inputCls} />
             </div>
           </div>
         )}
@@ -253,8 +224,8 @@ export default function NursesWardPage() {
             </div>
             <div>
               <label className="block text-xs font-semibold text-slate-600 mb-1">Procedure Type</label>
-              <select value={procType} onChange={(e) => setProcType(e.target.value)} className={inputCls}>
-                {procedureTypes.map((t) => <option key={t}>{t} (₦{getAmount("procedure", t, 20)})</option>)}
+              <select value={procType} onChange={(e) => setProcType(e.target.value as typeof PROCEDURE_TYPES[number])} className={inputCls}>
+                {PROCEDURE_TYPES.map((t) => <option key={t}>{t} (₦{PROCEDURE_PRICES[t]})</option>)}
               </select>
             </div>
             <div>
@@ -263,12 +234,10 @@ export default function NursesWardPage() {
             </div>
             <div>
               <label className="block text-xs font-semibold text-slate-600 mb-1">Performed By</label>
-              <select value={procNurse} onChange={(e) => setProcNurse(e.target.value)} className={inputCls}>
-                {NURSES.map((n) => <option key={n}>{n}</option>)}
-              </select>
+              <input value={procNurse} onChange={(e) => setProcNurse(e.target.value)} placeholder="Your name" className={inputCls} />
             </div>
             <div className="rounded-lg bg-emerald-50 border border-emerald-200 px-3 py-2 text-xs text-emerald-800">
-              ✓ A charge of <strong>₦{getAmount("procedure", procType, 20)}</strong> will be sent to Accounts automatically.
+              ✓ A charge of <strong>₦{PROCEDURE_PRICES[procType]}</strong> will be sent to Accounts automatically.
             </div>
           </div>
         )}

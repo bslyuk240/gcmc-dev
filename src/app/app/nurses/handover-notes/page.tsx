@@ -10,6 +10,7 @@ import { Toast, type ToastData } from "@/components/ui/toast";
 type Shift = "Morning" | "Afternoon" | "Night";
 type Note = { id: string; shift: Shift; author: string; summary: string; detail: string; time: string; date: string; patientsHandedOver: number };
 
+
 const SHIFT_STYLES: Record<Shift, string> = {
   Morning: "bg-amber-50 text-amber-700",
   Afternoon: "bg-sky-50 text-sky-700",
@@ -32,10 +33,10 @@ export default function NursesHandoverNotesPage() {
     e.preventDefault();
     if (!summary || !author) return;
     const note: Note = {
-      id: `HN-${String(notes.length + 1).padStart(3, "0")}`,
+      id: `HN-${String(notes.length + 4).padStart(3, "0")}`,
       shift, author, summary, detail,
       time: new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }),
-      date: new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short" }),
+      date: "Mar 15",
       patientsHandedOver: parseInt(patients) || 0,
     };
     setNotes((prev) => [note, ...prev]);

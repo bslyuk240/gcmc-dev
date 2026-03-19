@@ -33,6 +33,7 @@ const SAMPLE_TESTS = [
   { name: "Electrolytes", code: "ELEC", sampleType: "Serum", price: 90 },
 ];
 
+
 export default function NursesSampleCollectionPage() {
   const { sampleRequests, allPatients } = useNursesStore();
 
@@ -60,7 +61,7 @@ export default function NursesSampleCollectionPage() {
       unit, testName: selectedTest.name, testCode: selectedTest.code,
       sampleType: selectedTest.sampleType,
       status: "Ordered", priority, orderedBy: doctor,
-      orderedAt: `${now} · ${new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}`,
+      orderedAt: `${now} · Mar 15, 2026`,
     });
     setToast({ message: `Sample request created for ${patient} — ${selectedTest.name}.`, type: "success" });
     setNewSampleModal(false);
@@ -72,7 +73,7 @@ export default function NursesSampleCollectionPage() {
     const now = new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
     updateNurseSampleRequest(collectTarget.id, {
       status: "Collected", collectedBy: collectNurse,
-      collectedAt: `${now} · ${new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}`,
+      collectedAt: `${now} · Mar 15, 2026`,
     });
     setToast({ message: `Sample collected for ${collectTarget.patientName}.`, type: "success" });
     setCollectTarget(null);
@@ -214,7 +215,7 @@ export default function NursesSampleCollectionPage() {
               </select></div>
           </div>
           <div><label className="block text-xs font-semibold text-slate-600 mb-1">Ordered By (Doctor)</label>
-            <input value={doctor} onChange={(e) => setDoctor(e.target.value)} placeholder="e.g. Dr. Mensah" className={inputCls} /></div>
+            <input value={doctor} onChange={(e) => setDoctor(e.target.value)} placeholder="e.g. Dr. Smith" className={inputCls} /></div>
         </div>
         <ModalFooter>
           <Button variant="ghost" size="md" onClick={() => setNewSampleModal(false)}>Cancel</Button>
@@ -234,7 +235,7 @@ export default function NursesSampleCollectionPage() {
               </div>
             </div>
             <div><label className="block text-xs font-semibold text-slate-600 mb-1">Collected By *</label>
-              <input value={collectNurse} onChange={(e) => setCollectNurse(e.target.value)} placeholder="e.g. Nurse Grace" className={inputCls} /></div>
+              <input value={collectNurse} onChange={(e) => setCollectNurse(e.target.value)} placeholder="Your name" className={inputCls} /></div>
           </div>
         )}
         <ModalFooter>
