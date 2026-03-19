@@ -78,8 +78,9 @@ export function Topbar() {
         <button
           type="button"
           onClick={handleOpenMobileMenu}
-          className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 xl:hidden"
+          className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 active:opacity-70 xl:hidden"
           aria-label="Open menu"
+          style={{ touchAction: "manipulation" }}
         >
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <line x1="3" y1="12" x2="21" y2="12" />

@@ -19,7 +19,9 @@ function getInitials(name: string) {
 
 function formatTime(iso: string) {
   if (!iso) return "—";
-  return new Date(iso).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "—";
+  return d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
 }
 
 const SHIFT_LABELS: Record<string, string> = {

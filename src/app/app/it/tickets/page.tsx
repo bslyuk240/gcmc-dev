@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Modal, ModalFooter } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
 import { Toast, type ToastData } from "@/components/ui/toast";
+import { useHMSSession } from "@/modules/rbac/hooks";
 
 type Priority = "Critical" | "High" | "Medium" | "Low";
 type TicketStatus = "Open" | "In Progress" | "Resolved" | "Closed";
@@ -42,6 +43,7 @@ const STATUS_STYLES: Record<TicketStatus, string> = {
 const NAV_ITEMS = ["My Queue", "Unassigned", "Team Tickets", "Escalated", "Resolved", "All Tickets"];
 
 export default function ItTicketsPage() {
+  const session = useHMSSession();
   const [tickets, setTickets] = useState<Ticket[]>(INITIAL);
   const [activeNav, setActiveNav] = useState("All Tickets");
   const [showNew, setShowNew] = useState(false);
@@ -54,9 +56,11 @@ export default function ItTicketsPage() {
   const [newDept, setNewDept] = useState("");
   const [newDescription, setNewDescription] = useState("");
   const [newAssignee, setNewAssignee] = useState("Unassigned");
+  const teamOptions = session?.full_name ? ["Unassigned", session.full_name] : ["Unassigned"];
 
+  const myName = session?.full_name ?? "";
   const displayed = tickets.filter((t) => {
-    if (activeNav === "My Queue") return t.assignee === "Kwame IT" && (t.status === "Open" || t.status === "In Progress");
+    if (activeNav === "My Queue") return myName && t.assignee === myName && (t.status === "Open" || t.status === "In Progress");
     if (activeNav === "Unassigned") return t.assignee === "Unassigned";
     if (activeNav === "Team Tickets") return t.status === "Open" || t.status === "In Progress";
     if (activeNav === "Escalated") return t.priority === "Critical";
@@ -68,7 +72,7 @@ export default function ItTicketsPage() {
     e.preventDefault();
     if (!newTitle || !newDept) return;
     const ticket: Ticket = {
-      id: `#TK-${4023 + tickets.length}`,
+      id: `#TK-${Date.now().toString().slice(-5)}`,
       category: newCategory,
       priority: newPriority,
       title: newTitle,
@@ -211,7 +215,7 @@ export default function ItTicketsPage() {
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Assign To</label>
               <select value={newAssignee} onChange={(e) => setNewAssignee(e.target.value)} className={inputCls}>
-                {TEAM.map((m) => <option key={m}>{m}</option>)}
+                {teamOptions.map((m) => <option key={m}>{m}</option>)}
               </select>
             </div>
           </div>

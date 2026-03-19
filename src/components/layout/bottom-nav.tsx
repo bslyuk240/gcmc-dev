@@ -115,10 +115,13 @@ export function BottomNav() {
             <Link
               key={item.href}
               href={item.href}
+              prefetch={true}
               className={cn(
-                "flex flex-1 flex-col items-center gap-0.5 py-2.5 text-center transition",
-                isActive ? "text-blue-600" : "text-slate-400 hover:text-slate-600",
+                "flex flex-1 select-none flex-col items-center gap-0.5 py-2.5 text-center",
+                "active:opacity-70",
+                isActive ? "text-blue-600" : "text-slate-400",
               )}
+              style={{ touchAction: "manipulation" }}
             >
               <NavIcon active={isActive} />
               <span className={cn(
