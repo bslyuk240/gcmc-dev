@@ -6,6 +6,13 @@ import { PageHeader } from "@/components/layout/page-header";
 import { INTERNAL_PREFIX } from "@/lib/constants/navigation";
 import { usePharmacyStore } from "@/lib/hooks/use-pharmacy-store";
 
+function fmtRxTime(s: string) {
+  if (!s) return "—";
+  const d = new Date(s);
+  if (isNaN(d.getTime())) return s;
+  return d.toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+}
+
 const PRIORITY_STYLES: Record<string, string> = {
   Urgent: "bg-red-50 text-red-700",
   Routine: "bg-slate-100 text-slate-600",
@@ -118,7 +125,7 @@ export default function PharmacyDashboardPage() {
                         <td className="px-4 py-3 text-slate-600 max-w-[180px] truncate text-xs">
                           {rx.drugs.map((d) => d.name).join(", ")}
                         </td>
-                        <td className="px-4 py-3 text-slate-400 text-xs">{rx.createdAt}</td>
+                        <td className="px-4 py-3 text-slate-400 text-xs">{fmtRxTime(rx.createdAt)}</td>
                         <td className="px-4 py-3">
                           <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${PRIORITY_STYLES[rx.urgency]}`}>
                             {rx.urgency}
@@ -142,7 +149,7 @@ export default function PharmacyDashboardPage() {
             <Card className="overflow-hidden p-0">
               <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
                 <h3 className="font-bold text-slate-900">Nurse Medication Requests</h3>
-                <Link href={`${INTERNAL_PREFIX}/pharmacy/inventory`} className="text-sm font-semibold text-accent hover:underline">
+                <Link href={`${INTERNAL_PREFIX}/pharmacy/nurse-requests`} className="text-sm font-semibold text-accent hover:underline">
                   Manage →
                 </Link>
               </div>
