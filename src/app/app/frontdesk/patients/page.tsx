@@ -1,61 +1,80 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { INTERNAL_PREFIX } from "@/lib/constants/navigation";
-import { Button } from "@/components/ui/button";
-import { Modal, ModalFooter } from "@/components/ui/modal";
-import { Toast, type ToastData } from "@/components/ui/toast";
+import { fetchPatientRegistrations, type PatientRegistration } from "@/lib/supabase/db";
 
-type PatientStatus = "Active" | "New" | "Inactive";
+function calcAge(dob?: string): string {
+  if (!dob) return "—";
+  const d = new Date(dob);
+  if (isNaN(d.getTime())) return "—";
+  const today = new Date();
+  let age = today.getFullYear() - d.getFullYear();
+  const m = today.getMonth() - d.getMonth();
+  if (m < 0 || (m === 0 && today.getDate() < d.getDate())) age--;
+  return `${age} yrs`;
+}
 
-type Patient = { id: string; name: string; phone: string; age: string; sex: "Male" | "Female"; lastVisit: string; status: PatientStatus; type: "Returning" | "New" };
+function fmtDate(iso?: string) {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "—";
+  return d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+}
 
-const INITIAL: Patient[] = [];
-
-const STATUS_STYLES: Record<PatientStatus, string> = {
-  Active: "bg-emerald-50 text-emerald-700",
-  New: "bg-sky-50 text-sky-700",
-  Inactive: "bg-slate-100 text-slate-500",
+const STATUS_STYLES: Record<string, string> = {
+  Waiting:          "bg-amber-50 text-amber-700",
+  "In Consultation": "bg-sky-50 text-sky-700",
+  Discharged:       "bg-emerald-50 text-emerald-700",
+  Referred:         "bg-violet-50 text-violet-700",
+  Billing:          "bg-orange-50 text-orange-700",
 };
 
 export default function FrontdeskPatientsPage() {
-  const [patients, setPatients] = useState<Patient[]>(INITIAL);
-  const [search, setSearch] = useState("");
-  const [typeFilter, setTypeFilter] = useState<"All" | "Returning" | "New">("All");
-  const [genderFilter, setGenderFilter] = useState<"All" | "Male" | "Female">("All");
-  const [statusFilter, setStatusFilter] = useState<"All" | PatientStatus>("All");
-  const [viewPatient, setViewPatient] = useState<Patient | null>(null);
-  const [toast, setToast] = useState<ToastData | null>(null);
+  const [patients,  setPatients]  = useState<PatientRegistration[]>([]);
+  const [loading,   setLoading]   = useState(true);
+  const [search,    setSearch]    = useState("");
+  const [genderF,   setGenderF]   = useState("All");
+  const [statusF,   setStatusF]   = useState("All");
+
+  useEffect(() => {
+    fetchPatientRegistrations().then((data) => {
+      setPatients(data);
+      setLoading(false);
+    }).catch(() => setLoading(false));
+  }, []);
 
   const filtered = patients.filter((p) => {
     const q = search.toLowerCase();
-    const matchSearch = !q || p.name.toLowerCase().includes(q) || p.id.toLowerCase().includes(q) || p.phone.includes(q);
-    const matchType = typeFilter === "All" || p.type === typeFilter;
-    const matchGender = genderFilter === "All" || p.sex === genderFilter;
-    const matchStatus = statusFilter === "All" || p.status === statusFilter;
-    return matchSearch && matchType && matchGender && matchStatus;
+    const matchSearch = !q ||
+      p.patientName.toLowerCase().includes(q) ||
+      p.patientId.toLowerCase().includes(q) ||
+      (p.contact ?? "").includes(q);
+    const matchGender = genderF === "All" || p.gender === genderF;
+    const matchStatus = statusF === "All" || p.status === statusF;
+    return matchSearch && matchGender && matchStatus;
   });
 
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-extrabold tracking-tight text-slate-900">Patients Management</h1>
-          <p className="mt-1 text-sm text-slate-500">Register, search, review, and open patient master records.</p>
+          <h1 className="text-2xl font-extrabold tracking-tight text-slate-900 sm:text-3xl">Patient Records</h1>
+          <p className="mt-1 text-sm text-slate-500">Register, search, and open patient master records.</p>
         </div>
         <Link
           href={`${INTERNAL_PREFIX}/frontdesk/patients/new`}
-          className="rounded-lg bg-[var(--accent)] px-5 py-2.5 text-sm font-bold text-white shadow-lg shadow-[var(--accent)]/20 hover:opacity-95"
+          className="rounded-xl bg-[var(--accent)] px-5 py-2.5 text-sm font-bold text-white shadow-lg shadow-[var(--accent)]/20 hover:opacity-95 transition"
         >
           + Register New Patient
         </Link>
       </div>
 
-      {/* Search + filter bar */}
-      <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+      {/* Search + filters */}
+      <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
         <div className="flex flex-wrap items-center gap-3">
-          <div className="relative min-w-[280px] flex-1">
+          <div className="relative min-w-[220px] flex-1">
             <svg className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeWidth="2" strokeLinecap="round" d="M21 21l-4.35-4.35M11 19a8 8 0 100-16 8 8 0 000 16z" />
             </svg>
@@ -63,98 +82,104 @@ export default function FrontdeskPatientsPage() {
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search by name, ID or phone number…"
+              placeholder="Search name, ID or phone…"
               className="w-full rounded-lg border border-slate-200 bg-slate-50 py-2.5 pl-9 pr-4 text-sm outline-none focus:border-[var(--accent)] focus:bg-white"
             />
           </div>
-          {/* Type filter */}
-          {(["All", "Returning", "New"] as const).map((t) => (
-            <button key={t} type="button" onClick={() => setTypeFilter(t)} className={`rounded-full border px-3.5 py-1.5 text-xs font-semibold transition ${typeFilter === t ? "border-[var(--accent)] bg-[var(--accent)]/10 text-[var(--accent-foreground)]" : "border-slate-200 bg-white text-slate-500 hover:border-slate-300"}`}>
-              {t === "All" ? "All Patients" : `Type: ${t}`}
-            </button>
-          ))}
-          <select value={genderFilter} onChange={(e) => setGenderFilter(e.target.value as "All" | "Male" | "Female")} className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-500 outline-none focus:border-[var(--accent)]">
+          <select value={genderF} onChange={(e) => setGenderF(e.target.value)} className="rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-xs font-semibold text-slate-600 outline-none">
             <option value="All">All Genders</option>
-            <option value="Male">Male</option>
-            <option value="Female">Female</option>
+            <option>Male</option>
+            <option>Female</option>
+            <option>Other</option>
           </select>
-          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as "All" | PatientStatus)} className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-500 outline-none focus:border-[var(--accent)]">
+          <select value={statusF} onChange={(e) => setStatusF(e.target.value)} className="rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-xs font-semibold text-slate-600 outline-none">
             <option value="All">All Status</option>
-            <option>Active</option>
-            <option>New</option>
-            <option>Inactive</option>
+            <option>Waiting</option>
+            <option>In Consultation</option>
+            <option>Discharged</option>
+            <option>Referred</option>
+            <option>Billing</option>
           </select>
         </div>
       </section>
 
       {/* Table */}
       <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-        <div className="border-b border-slate-100 px-6 py-4">
-          <h3 className="font-bold text-slate-900">Patient Records <span className="text-sm font-normal text-slate-400">({filtered.length})</span></h3>
+        <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+          <h3 className="font-bold text-slate-900">
+            All Patients{" "}
+            <span className="text-sm font-normal text-slate-400">
+              ({loading ? "…" : filtered.length})
+            </span>
+          </h3>
         </div>
-        <div className="overflow-x-auto">
-          <table className="min-w-full text-left">
-            <thead className="bg-slate-50">
-              <tr>
-                {["Patient ID", "Patient Name", "Phone", "Age / Sex", "Last Visit", "Status", "Actions"].map((col) => (
-                  <th key={col} className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-slate-500">{col}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {filtered.map((patient) => (
-                <tr key={patient.id} className="hover:bg-slate-50/70">
-                  <td className="px-6 py-4 text-sm font-mono text-slate-500">{`#${patient.id}`}</td>
-                  <td className="px-6 py-4 text-sm font-semibold text-slate-900">{patient.name}</td>
-                  <td className="px-6 py-4 text-sm text-slate-600">{patient.phone}</td>
-                  <td className="px-6 py-4 text-sm text-slate-600">{patient.age} / {patient.sex}</td>
-                  <td className="px-6 py-4 text-sm text-slate-500">{patient.lastVisit}</td>
-                  <td className="px-6 py-4"><span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${STATUS_STYLES[patient.status]}`}>{patient.status}</span></td>
-                  <td className="px-6 py-4">
-                    <Button size="sm" variant="outline" onClick={() => setViewPatient(patient)}>Open Record</Button>
-                  </td>
-                </tr>
-              ))}
-              {filtered.length === 0 && (
-                <tr><td colSpan={7} className="px-6 py-10 text-center text-sm text-slate-400">No patients found.</td></tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </section>
 
-      {/* Patient detail modal */}
-      {viewPatient && (
-        <Modal open={true} onClose={() => setViewPatient(null)} title={viewPatient.name}>
-          <div className="space-y-3 text-sm">
-            <div className="flex items-center gap-2 mb-3">
-              <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${STATUS_STYLES[viewPatient.status]}`}>{viewPatient.status}</span>
-              <span className="text-xs text-slate-400">{viewPatient.type} patient</span>
-            </div>
-            {[["Patient ID", `#${viewPatient.id}`], ["Phone", viewPatient.phone], ["Age", viewPatient.age], ["Sex", viewPatient.sex], ["Last Visit", viewPatient.lastVisit]].map(([label, val]) => (
-              <div key={label} className="flex justify-between">
-                <span className="text-slate-500">{label}</span>
-                <span className="font-medium text-slate-900">{val}</span>
-              </div>
-            ))}
+        {loading ? (
+          <div className="flex items-center justify-center py-16">
+            <div className="h-7 w-7 animate-spin rounded-full border-4 border-slate-200 border-t-[var(--accent)]" />
           </div>
-          <ModalFooter>
-            <Button variant="ghost" size="md" onClick={() => setViewPatient(null)}>Close</Button>
-            <Button
-              size="md"
-              href={`${INTERNAL_PREFIX}/frontdesk/visits`}
-              onClick={() => {
-                setToast({ message: `Creating visit for ${viewPatient.name}…`, type: "info" });
-                setViewPatient(null);
-              }}
-            >
-              Create Visit
-            </Button>
-          </ModalFooter>
-        </Modal>
-      )}
-
-      <Toast toast={toast} onDismiss={() => setToast(null)} />
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-left text-sm">
+              <thead className="bg-slate-50">
+                <tr>
+                  {["Patient ID", "Name", "Phone", "Age / Sex", "Blood Grp", "Registered", "Status", ""].map((col) => (
+                    <th key={col} className="whitespace-nowrap px-5 py-3 text-xs font-bold uppercase tracking-wider text-slate-500">{col}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {filtered.map((p) => (
+                  <tr key={p.id} className="group hover:bg-slate-50/80 transition">
+                    <td className="px-5 py-3 font-mono text-xs text-slate-400">{p.patientId || "—"}</td>
+                    <td className="px-5 py-3">
+                      <div className="flex items-center gap-2.5">
+                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[var(--accent)]/10 text-xs font-bold text-[var(--accent)]">
+                          {p.initials || p.patientName.slice(0, 2).toUpperCase()}
+                        </div>
+                        <span className="font-semibold text-slate-900">{p.patientName}</span>
+                      </div>
+                    </td>
+                    <td className="px-5 py-3 text-slate-600">{p.contact || "—"}</td>
+                    <td className="px-5 py-3 text-slate-600 whitespace-nowrap">
+                      {calcAge(p.dateOfBirth)}{p.gender ? ` / ${p.gender}` : ""}
+                    </td>
+                    <td className="px-5 py-3">
+                      {p.bloodGroup
+                        ? <span className="rounded bg-red-50 px-1.5 py-0.5 text-xs font-bold text-red-700">{p.bloodGroup}</span>
+                        : <span className="text-slate-300">—</span>}
+                    </td>
+                    <td className="px-5 py-3 text-slate-500 whitespace-nowrap">{fmtDate(p.registeredAt)}</td>
+                    <td className="px-5 py-3">
+                      <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${STATUS_STYLES[p.status] ?? "bg-slate-100 text-slate-600"}`}>
+                        {p.status}
+                      </span>
+                    </td>
+                    <td className="px-5 py-3">
+                      <Link
+                        href={`${INTERNAL_PREFIX}/frontdesk/patients/${p.id}`}
+                        className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm transition hover:border-[var(--accent)]/40 hover:text-[var(--accent)]"
+                      >
+                        Open Record
+                      </Link>
+                    </td>
+                  </tr>
+                ))}
+                {filtered.length === 0 && (
+                  <tr>
+                    <td colSpan={8} className="px-6 py-12 text-center">
+                      <p className="text-sm text-slate-400">No patients found.</p>
+                      <Link href={`${INTERNAL_PREFIX}/frontdesk/patients/new`} className="mt-2 inline-block text-sm font-semibold text-[var(--accent)] hover:underline">
+                        Register a new patient →
+                      </Link>
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
     </div>
   );
 }

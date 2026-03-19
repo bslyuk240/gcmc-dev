@@ -1311,6 +1311,53 @@ export async function insertPatientRegistration(
   return data as { id: string };
 }
 
+export async function fetchPatientById(id: string): Promise<PatientRegistration | null> {
+  const sb = getSupabase();
+  if (!sb) return null;
+  const { data, error } = await sb
+    .from("patient_registrations")
+    .select("*")
+    .eq("id", id)
+    .single();
+  if (error || !data) return null;
+  return mapPatientRegistration(data as Record<string, unknown>);
+}
+
+export async function updatePatientRegistration(
+  id: string,
+  updates: Partial<Omit<PatientRegistration, "id" | "patientId" | "registeredAt" | "registeredBy">>,
+): Promise<boolean> {
+  const sb = getSupabase();
+  if (!sb) return false;
+  const payload: Record<string, unknown> = {};
+  if (updates.patientName  !== undefined) payload.patient_name      = updates.patientName;
+  if (updates.contact      !== undefined) payload.contact            = updates.contact;
+  if (updates.email        !== undefined) payload.email              = updates.email;
+  if (updates.status       !== undefined) payload.status             = updates.status;
+  if (updates.gender       !== undefined) payload.gender             = updates.gender;
+  if (updates.dateOfBirth  !== undefined) payload.date_of_birth      = updates.dateOfBirth || null;
+  if (updates.address      !== undefined) payload.address            = updates.address;
+  if (updates.nextOfKinName  !== undefined) payload.next_of_kin_name  = updates.nextOfKinName;
+  if (updates.nextOfKinPhone !== undefined) payload.next_of_kin_phone = updates.nextOfKinPhone;
+  if (updates.bloodGroup   !== undefined) payload.blood_group        = updates.bloodGroup;
+  if (updates.nationality  !== undefined) payload.nationality        = updates.nationality;
+  if (updates.occupation   !== undefined) payload.occupation         = updates.occupation;
+  const { error } = await sb.from("patient_registrations").update(payload).eq("id", id);
+  return !error;
+}
+
+export async function fetchVisitsByPatientId(patientId: string): Promise<VisitRow[]> {
+  const sb = getSupabase();
+  if (!sb) return [];
+  const { data } = await sb
+    .from("visits")
+    .select("*")
+    .eq("patient_id", patientId)
+    .order("visit_date", { ascending: false })
+    .limit(20);
+  return (data ?? []).map(mapVisit);
+}
+
 // ─── IT System Status ─────────────────────────────────────────────────────────
 
 export type ITSystemStatus = {
