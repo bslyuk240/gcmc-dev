@@ -6,6 +6,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Modal, ModalFooter } from "@/components/ui/modal";
 import { Toast, type ToastData } from "@/components/ui/toast";
+import { useHMSSession } from "@/modules/rbac/hooks";
 import { useAccountsStore } from "@/lib/hooks/use-accounts-store";
 import { addKioskSale, updateKioskSaleStatus, type KioskSale } from "@/lib/data/accounts-store";
 
@@ -17,13 +18,15 @@ const KIOSK_ITEMS = [
 
 export default function KioskRevenuePage() {
   const { kioskSales, metrics } = useAccountsStore();
+  const session = useHMSSession();
+  const staffName = session?.full_name ?? "Kiosk Attendant";
 
   const [showReport, setShowReport] = useState(false);
   const [confirmSale, setConfirmSale] = useState<KioskSale | null>(null);
   const [toast, setToast] = useState<ToastData | null>(null);
 
-  // New sale report form
-  const [reportDate, setReportDate] = useState("2026-03-15");
+  // New sale report form — default date to today
+  const [reportDate, setReportDate] = useState(() => new Date().toISOString().split("T")[0]);
   const [cashRevenue, setCashRevenue] = useState("");
   const [mobileRevenue, setMobileRevenue] = useState("");
   const [itemsSold, setItemsSold] = useState("");
@@ -40,7 +43,7 @@ export default function KioskRevenuePage() {
     }
     setSubmitting(true);
     const now = new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
-    const displayDate = new Date(reportDate).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+    const displayDate = new Date(reportDate).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
     setTimeout(() => {
       addKioskSale({
         id: `KSK-${Date.now()}`,
@@ -49,7 +52,7 @@ export default function KioskRevenuePage() {
         cashRevenue: parseFloat(cashRevenue) || 0,
         mobileRevenue: parseFloat(mobileRevenue) || 0,
         itemsSold: parseInt(itemsSold) || 0,
-        reportedBy: "Kiosk Attendant (You)",
+        reportedBy: staffName,
         reportedAt: `${now} · ${displayDate}`,
         status: "Pending",
         notes: reportNotes || undefined,
