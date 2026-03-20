@@ -8,6 +8,7 @@ import { StatusBadge } from "@/components/ui/status-badge";
 import { Modal, ModalFooter } from "@/components/ui/modal";
 import { Toast, type ToastData } from "@/components/ui/toast";
 import { usePharmacyStore } from "@/lib/hooks/use-pharmacy-store";
+import { useHMSSession } from "@/modules/rbac/hooks";
 import { fetchPharmacyInventory, upsertPharmacyInventoryItem, fetchStoreInventory, type StoreInventoryItem } from "@/lib/supabase/db";
 import {
   addRestockRequest,
@@ -58,6 +59,8 @@ function calcStockStatus(stock: number, reorder: number): StockStatus {
 }
 
 export default function PharmacyInventoryPage() {
+  const session = useHMSSession();
+  const staffName = session?.full_name ?? "Pharmacist";
   const [items, setItems] = useState<InventoryItem[]>([]);
   const [loadingItems, setLoadingItems] = useState(true);
 
@@ -292,9 +295,14 @@ export default function PharmacyInventoryPage() {
     setRestockUrgency(item.status === "out" || item.status === "critical" ? "Critical" : "Urgent");
     setRestockNotes(`Current stock: ${item.stock} units. Reorder level: ${item.reorderLevel} units.`);
     setRestockStoreItemId("");
-    // Load store pharmaceutical items for linking
+    // Auto-match store item by name — no manual selection needed
     fetchStoreInventory().then((all) => {
-      setStoreItems(all.filter((s) => s.category === "Pharmaceutical"));
+      const pharma = all.filter((s) => s.category === "Pharmaceutical");
+      const drugLower = item.product.toLowerCase();
+      const match = pharma.find((s) =>
+        s.name.toLowerCase().includes(drugLower) || drugLower.includes(s.name.toLowerCase())
+      );
+      if (match) setRestockStoreItemId(match.id);
     }).catch(() => {});
   }
 
@@ -323,7 +331,7 @@ export default function PharmacyInventoryPage() {
       qtyRequested: parseInt(restockQty) || restockItem.reorderLevel * 5,
       unit: "Units",
       urgency: restockUrgency,
-      requestedBy: "Pharmacist (You)",
+      requestedBy: staffName,
       requestedAt: now,
       status: "Pending",
       notes: restockNotes || undefined,
@@ -689,21 +697,6 @@ export default function PharmacyInventoryPage() {
               <div className="flex justify-between"><span className="text-slate-500">Reorder Level</span><span className="font-semibold">{restockItem.reorderLevel} units</span></div>
               <div className="flex justify-between"><span className="text-slate-500">Supplier</span><span>{restockItem.supplier}</span></div>
             </div>
-            {storeItems.length > 0 && (
-              <div>
-                <label className="mb-1 block text-sm font-semibold text-slate-700">
-                  Link to Store Item <span className="text-slate-400 font-normal">(optional — lets Store deduct from their stock)</span>
-                </label>
-                <select value={restockStoreItemId} onChange={(e) => setRestockStoreItemId(e.target.value)} className={inputCls}>
-                  <option value="">— Not linked —</option>
-                  {storeItems.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.name}{s.form ? ` (${s.form})` : ""} — Store qty: {s.qty} {s.unit}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
             <div>
               <label className="mb-1 block text-sm font-semibold text-slate-700">Quantity to Request</label>
               <input type="number" min="1" required value={restockQty} onChange={(e) => setRestockQty(e.target.value)} className={inputCls} />
@@ -726,6 +719,7 @@ export default function PharmacyInventoryPage() {
             </div>
             <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
               ✓ This request will appear in the Store&apos;s supply requests queue for approval and fulfillment.
+              {restockStoreItemId && <span className="ml-1 font-semibold">Matched to Store inventory item.</span>}
             </div>
             <ModalFooter>
               <Button variant="ghost" size="md" type="button" onClick={() => setRestockItem(null)}>Cancel</Button>
