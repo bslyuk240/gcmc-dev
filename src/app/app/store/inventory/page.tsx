@@ -1,13 +1,16 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/layout/page-header";
 import { Modal, ModalFooter } from "@/components/ui/modal";
 import { Toast, type ToastData } from "@/components/ui/toast";
-
-type StoreItem = { id: string; name: string; category: string; form?: string; unit: string; qty: number; reorder: number; unitCost: number; supplier: string; status: string };
+import {
+  fetchStoreInventory,
+  upsertStoreInventoryItem,
+  type StoreInventoryItem,
+} from "@/lib/supabase/db";
 
 const DOSAGE_FORMS = [
   "—", "Tablet", "Capsule", "Syrup", "Suspension", "Solution",
@@ -17,8 +20,6 @@ const DOSAGE_FORMS = [
   "Suppository", "Powder", "Granules", "Other",
 ];
 
-const INITIAL: StoreItem[] = [];
-
 const STATUS_STYLES: Record<string, string> = {
   "In Stock": "bg-emerald-50 text-emerald-700",
   "Low Stock": "bg-amber-50 text-amber-700",
@@ -27,7 +28,7 @@ const STATUS_STYLES: Record<string, string> = {
 };
 
 const CATEGORIES = ["PPE", "Medical", "Wound Care", "Sterilization", "Respiratory", "Admin", "Pharmaceutical", "Furniture", "Other"];
-const UNITS = ["Box", "Pack", "Roll", "Piece", "Bottle", "Set", "Pair", "Litre", "Sheet", "Bag"];
+const UNITS = ["Box", "Pack", "Roll", "Piece", "Bottle", "Set", "Pair", "Litre", "Sheet", "Bag", "Units"];
 
 function deriveStatus(qty: number, reorder: number): string {
   if (qty === 0) return "Out of Stock";
@@ -37,11 +38,12 @@ function deriveStatus(qty: number, reorder: number): string {
 }
 
 export default function StoreInventoryPage() {
-  const [items, setItems] = useState<StoreItem[]>(INITIAL);
+  const [items, setItems] = useState<StoreInventoryItem[]>([]);
+  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("All");
   const [showAdd, setShowAdd] = useState(false);
-  const [editItem, setEditItem] = useState<StoreItem | null>(null);
+  const [editItem, setEditItem] = useState<StoreInventoryItem | null>(null);
   const [toast, setToast] = useState<ToastData | null>(null);
 
   // Add form
@@ -50,10 +52,17 @@ export default function StoreInventoryPage() {
   const [aReorder, setAReorder] = useState(""); const [aCost, setACost] = useState("");
   const [aSupplier, setASupplier] = useState(""); const [aForm, setAForm] = useState("—");
 
-  // Edit form (mirrors add)
+  // Edit form
   const [eName, setEName] = useState(""); const [eQty, setEQty] = useState("");
   const [eReorder, setEReorder] = useState(""); const [eCost, setECost] = useState("");
   const [eSupplier, setESupplier] = useState(""); const [eForm, setEForm] = useState("—");
+
+  useEffect(() => {
+    fetchStoreInventory()
+      .then(setItems)
+      .catch(() => setToast({ message: "Failed to load inventory.", type: "error" }))
+      .finally(() => setLoading(false));
+  }, []);
 
   const allCategories = ["All", ...Array.from(new Set(items.map((i) => i.category)))];
   const filtered = items.filter((i) =>
@@ -64,37 +73,40 @@ export default function StoreInventoryPage() {
   const totalValue = items.reduce((s, i) => s + i.qty * i.unitCost, 0);
   const lowStock = items.filter((i) => i.status !== "In Stock").length;
 
-  function handleAdd(e: React.FormEvent) {
+  async function handleAdd(e: React.FormEvent) {
     e.preventDefault();
     const qty = parseInt(aQty) || 0; const reorder = parseInt(aReorder) || 10;
-    const newItem: StoreItem = {
-      id: `ITM-${String(items.length + 11).padStart(3, "0")}`,
+    const newItem: StoreInventoryItem = {
+      id: `STR-${Date.now()}`,
       name: aName, category: aCat, form: aForm !== "—" ? aForm : undefined, unit: aUnit, qty, reorder,
       unitCost: parseFloat(aCost) || 0, supplier: aSupplier,
       status: deriveStatus(qty, reorder),
     };
-    setItems((prev) => [...prev, newItem]);
+    setItems((prev) => [newItem, ...prev]);
     setToast({ message: `${aName} added to inventory.`, type: "success" });
     setShowAdd(false);
     setAName(""); setACat("PPE"); setAUnit("Box"); setAQty(""); setAReorder(""); setACost(""); setASupplier(""); setAForm("—");
+    await upsertStoreInventoryItem(newItem).catch(() => {});
   }
 
-  function openEdit(item: StoreItem) {
+  function openEdit(item: StoreInventoryItem) {
     setEditItem(item); setEName(item.name); setEQty(String(item.qty));
     setEReorder(String(item.reorder)); setECost(String(item.unitCost)); setESupplier(item.supplier);
     setEForm(item.form ?? "—");
   }
 
-  function handleSaveEdit(e: React.FormEvent) {
+  async function handleSaveEdit(e: React.FormEvent) {
     e.preventDefault();
     if (!editItem) return;
     const qty = parseInt(eQty) || 0; const reorder = parseInt(eReorder) || 0;
-    setItems((prev) => prev.map((i) => i.id === editItem.id
-      ? { ...i, name: eName, form: eForm !== "—" ? eForm : undefined, qty, reorder, unitCost: parseFloat(eCost) || 0, supplier: eSupplier, status: deriveStatus(qty, reorder) }
-      : i,
-    ));
+    const updated: StoreInventoryItem = {
+      ...editItem, name: eName, form: eForm !== "—" ? eForm : undefined, qty, reorder,
+      unitCost: parseFloat(eCost) || 0, supplier: eSupplier, status: deriveStatus(qty, reorder),
+    };
+    setItems((prev) => prev.map((i) => i.id === editItem.id ? updated : i));
     setToast({ message: `${eName} updated.`, type: "success" });
     setEditItem(null);
+    await upsertStoreInventoryItem(updated).catch(() => {});
   }
 
   const inputCls = "w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/20";
@@ -139,7 +151,10 @@ export default function StoreInventoryPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {filtered.map((item) => (
+              {loading && (
+                <tr><td colSpan={11} className="px-5 py-10 text-center text-sm text-slate-400">Loading…</td></tr>
+              )}
+              {!loading && filtered.map((item) => (
                 <tr key={item.id} className="hover:bg-slate-50">
                   <td className="px-5 py-3 font-mono text-xs text-slate-400">{item.id}</td>
                   <td className="px-5 py-3 font-semibold text-slate-900">{item.name}</td>
@@ -154,13 +169,13 @@ export default function StoreInventoryPage() {
                   <td className="px-5 py-3 text-slate-500">{item.reorder}</td>
                   <td className="px-5 py-3 text-slate-600">₦{item.unitCost.toFixed(2)}</td>
                   <td className="px-5 py-3 text-slate-500">{item.supplier}</td>
-                  <td className="px-5 py-3"><span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${STATUS_STYLES[item.status]}`}>{item.status}</span></td>
+                  <td className="px-5 py-3"><span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${STATUS_STYLES[item.status] ?? "bg-slate-100 text-slate-500"}`}>{item.status}</span></td>
                   <td className="px-5 py-3">
                     <Button size="sm" variant="outline" onClick={() => openEdit(item)}>Edit</Button>
                   </td>
                 </tr>
               ))}
-              {filtered.length === 0 && <tr><td colSpan={11} className="px-5 py-10 text-center text-sm text-slate-400">No items found.</td></tr>}
+              {!loading && filtered.length === 0 && <tr><td colSpan={11} className="px-5 py-10 text-center text-sm text-slate-400">No items found.</td></tr>}
             </tbody>
           </table>
         </div>

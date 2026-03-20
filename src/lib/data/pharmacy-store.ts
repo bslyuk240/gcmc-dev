@@ -65,6 +65,7 @@ export type PharmacyRestockRequest = {
   id: string;
   drug: string;
   inventoryItemId: string;
+  storeInventoryId?: string;
   currentStock: number;
   reorderLevel: number;
   qtyRequested: number;

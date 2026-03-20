@@ -8,6 +8,7 @@ import { Modal, ModalFooter } from "@/components/ui/modal";
 import { Toast, type ToastData } from "@/components/ui/toast";
 import { usePharmacyStore } from "@/lib/hooks/use-pharmacy-store";
 import { updateRestockStatus } from "@/lib/data/pharmacy-store";
+import { adjustStoreInventoryQty, adjustPharmacyInventoryStock } from "@/lib/supabase/db";
 
 type RequestStatus = "Pending" | "Approved" | "Rejected" | "Fulfilled";
 type Urgency = "Routine" | "Urgent" | "Critical";
@@ -62,7 +63,7 @@ export default function StoreRequestsPage() {
 
   // Pharmacy restock requests from shared store
   const { restockRequests } = usePharmacyStore();
-  const [pharmActionTarget, setPharmActionTarget] = useState<{ id: string; drug: string; qty: number; action: "approve" | "reject" | "fulfill" } | null>(null);
+  const [pharmActionTarget, setPharmActionTarget] = useState<{ id: string; drug: string; qty: number; action: "approve" | "reject" | "fulfill"; storeInventoryId?: string; inventoryItemId?: string } | null>(null);
 
   // New request form
   const [newItem, setNewItem] = useState(""); const [newQty, setNewQty] = useState("");
@@ -92,7 +93,7 @@ export default function StoreRequestsPage() {
 
   function handlePharmAction() {
     if (!pharmActionTarget) return;
-    const { id, drug, action } = pharmActionTarget;
+    const { id, drug, qty, action, storeInventoryId, inventoryItemId } = pharmActionTarget;
     const now = new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
     if (action === "approve") {
       updateRestockStatus(id, "Approved");
@@ -102,7 +103,14 @@ export default function StoreRequestsPage() {
       setToast({ message: `Pharmacy restock for ${drug} rejected.`, type: "info" });
     } else if (action === "fulfill") {
       updateRestockStatus(id, "Fulfilled", { fulfilledAt: now });
-      setToast({ message: `${drug} fulfilled and delivered to Pharmacy. Inventory updated.`, type: "success" });
+      // Move stock: deduct from store, add to pharmacy
+      if (storeInventoryId) {
+        adjustStoreInventoryQty(storeInventoryId, -qty).catch(() => {});
+      }
+      if (inventoryItemId) {
+        adjustPharmacyInventoryStock(inventoryItemId, qty).catch(() => {});
+      }
+      setToast({ message: `${drug} (×${qty}) fulfilled — Store inventory decremented, Pharmacy inventory incremented.`, type: "success" });
     }
     setPharmActionTarget(null);
   }
@@ -198,12 +206,12 @@ export default function StoreRequestsPage() {
                       <td className="px-5 py-3">
                         {req.status === "Pending" && (
                           <div className="flex gap-2">
-                            <Button size="sm" onClick={() => setPharmActionTarget({ id: req.id, drug: req.drug, qty: req.qtyRequested, action: "approve" })}>Approve</Button>
-                            <Button size="sm" variant="outline" onClick={() => setPharmActionTarget({ id: req.id, drug: req.drug, qty: req.qtyRequested, action: "reject" })}>Reject</Button>
+                            <Button size="sm" onClick={() => setPharmActionTarget({ id: req.id, drug: req.drug, qty: req.qtyRequested, action: "approve", storeInventoryId: req.storeInventoryId, inventoryItemId: req.inventoryItemId })}>Approve</Button>
+                            <Button size="sm" variant="outline" onClick={() => setPharmActionTarget({ id: req.id, drug: req.drug, qty: req.qtyRequested, action: "reject", storeInventoryId: req.storeInventoryId, inventoryItemId: req.inventoryItemId })}>Reject</Button>
                           </div>
                         )}
                         {req.status === "Approved" && (
-                          <Button size="sm" variant="secondary" onClick={() => setPharmActionTarget({ id: req.id, drug: req.drug, qty: req.qtyRequested, action: "fulfill" })}>
+                          <Button size="sm" variant="secondary" onClick={() => setPharmActionTarget({ id: req.id, drug: req.drug, qty: req.qtyRequested, action: "fulfill", storeInventoryId: req.storeInventoryId, inventoryItemId: req.inventoryItemId })}>
                             Mark Fulfilled
                           </Button>
                         )}
@@ -318,7 +326,7 @@ export default function StoreRequestsPage() {
               <>
                 <p className="text-slate-600">Confirm that <strong>{pharmActionTarget.qty} units</strong> of <strong>{pharmActionTarget.drug}</strong> have been physically delivered to Pharmacy?</p>
                 <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
-                  ✓ This will mark the request as fulfilled. Pharmacy inventory will be updated.
+                  ✓ This will: mark the request fulfilled{pharmActionTarget.storeInventoryId ? `, deduct ${pharmActionTarget.qty} from Store inventory` : ""}{pharmActionTarget.inventoryItemId ? `, add ${pharmActionTarget.qty} to Pharmacy inventory` : ""}.
                 </div>
               </>
             )}

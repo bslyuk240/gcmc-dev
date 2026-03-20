@@ -279,6 +279,7 @@ function mapRestockRequest(r: Record<string, unknown>): PharmacyRestockRequest {
     id: r.id as string,
     drug: r.drug as string,
     inventoryItemId: (r.inventory_item_id as string) ?? "",
+    storeInventoryId: (r.store_inventory_id as string) ?? undefined,
     currentStock: (r.current_stock as number) ?? 0,
     reorderLevel: (r.reorder_level as number) ?? 0,
     qtyRequested: (r.qty_requested as number) ?? 0,
@@ -927,6 +928,7 @@ export async function insertRestockRequest(r: PharmacyRestockRequest): Promise<v
   const sb = getSupabase(); if (!sb) return;
   const { error } = await sb.from("pharmacy_restock_requests").upsert({
     id: r.id, drug: r.drug, inventory_item_id: r.inventoryItemId,
+    store_inventory_id: r.storeInventoryId ?? null,
     current_stock: r.currentStock, reorder_level: r.reorderLevel,
     qty_requested: r.qtyRequested, unit: r.unit, urgency: r.urgency,
     requested_by: r.requestedBy,
@@ -2394,4 +2396,92 @@ export async function deleteBillingPreset(id: string): Promise<boolean> {
   if (!sb) return false;
   const { error } = await sb.from("billing_presets").delete().eq("id", id);
   return !error;
+}
+
+// ─── Store Inventory ──────────────────────────────────────────────────────────
+
+export type StoreInventoryItem = {
+  id: string;
+  name: string;
+  category: string;
+  form?: string;
+  unit: string;
+  qty: number;
+  reorder: number;
+  unitCost: number;
+  supplier: string;
+  status: string;
+};
+
+function mapStoreInventoryItem(r: Record<string, unknown>): StoreInventoryItem {
+  return {
+    id: r.id as string,
+    name: (r.name as string) ?? "",
+    category: (r.category as string) ?? "Pharmaceutical",
+    form: (r.form as string) ?? undefined,
+    unit: (r.unit as string) ?? "Units",
+    qty: Number(r.qty ?? 0),
+    reorder: Number(r.reorder ?? 10),
+    unitCost: Number(r.unit_cost ?? 0),
+    supplier: (r.supplier as string) ?? "",
+    status: (r.status as string) ?? "In Stock",
+  };
+}
+
+export async function fetchStoreInventory(): Promise<StoreInventoryItem[]> {
+  const sb = getSupabase(); if (!sb) return [];
+  const { data, error } = await sb
+    .from("store_inventory")
+    .select("*")
+    .order("name");
+  if (error) { console.error("[db] fetchStoreInventory:", error.message); return []; }
+  return (data ?? []).map((r) => mapStoreInventoryItem(r as Record<string, unknown>));
+}
+
+export async function upsertStoreInventoryItem(item: StoreInventoryItem): Promise<void> {
+  const sb = getSupabase(); if (!sb) return;
+  const { error } = await sb.from("store_inventory").upsert({
+    id: item.id,
+    name: item.name,
+    category: item.category,
+    form: item.form ?? null,
+    unit: item.unit,
+    qty: item.qty,
+    reorder: item.reorder,
+    unit_cost: item.unitCost,
+    supplier: item.supplier ?? null,
+    status: item.status,
+    updated_at: new Date().toISOString(),
+  });
+  if (error) console.error("[db] upsertStoreInventoryItem:", error.message);
+}
+
+export async function adjustStoreInventoryQty(id: string, delta: number): Promise<void> {
+  const sb = getSupabase(); if (!sb) return;
+  // Fetch current qty first, then update
+  const { data } = await sb.from("store_inventory").select("qty, reorder").eq("id", id).single();
+  if (!data) return;
+  const newQty = Math.max(0, Number(data.qty) + delta);
+  const reorder = Number(data.reorder);
+  let status = "In Stock";
+  if (newQty === 0) status = "Out of Stock";
+  else if (newQty <= reorder * 0.3) status = "Critical";
+  else if (newQty <= reorder) status = "Low Stock";
+  const { error } = await sb.from("store_inventory").update({ qty: newQty, status, updated_at: new Date().toISOString() }).eq("id", id);
+  if (error) console.error("[db] adjustStoreInventoryQty:", error.message);
+}
+
+export async function adjustPharmacyInventoryStock(id: string, delta: number): Promise<void> {
+  const sb = getSupabase(); if (!sb) return;
+  const { data } = await sb.from("pharmacy_inventory").select("stock, reorder_level").eq("id", id).single();
+  if (!data) return;
+  const newStock = Math.max(0, Number(data.stock) + delta);
+  const reorderLevel = Number(data.reorder_level);
+  let status: string;
+  if (newStock === 0) status = "out";
+  else if (newStock <= reorderLevel * 0.3) status = "critical";
+  else if (newStock <= reorderLevel) status = "low";
+  else status = "ok";
+  const { error } = await sb.from("pharmacy_inventory").update({ stock: newStock, status }).eq("id", id);
+  if (error) console.error("[db] adjustPharmacyInventoryStock:", error.message);
 }

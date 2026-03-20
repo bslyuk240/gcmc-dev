@@ -8,7 +8,7 @@ import { StatusBadge } from "@/components/ui/status-badge";
 import { Modal, ModalFooter } from "@/components/ui/modal";
 import { Toast, type ToastData } from "@/components/ui/toast";
 import { usePharmacyStore } from "@/lib/hooks/use-pharmacy-store";
-import { fetchPharmacyInventory, upsertPharmacyInventoryItem } from "@/lib/supabase/db";
+import { fetchPharmacyInventory, upsertPharmacyInventoryItem, fetchStoreInventory, type StoreInventoryItem } from "@/lib/supabase/db";
 import {
   addRestockRequest,
   addPharmacyBill,
@@ -89,6 +89,8 @@ export default function PharmacyInventoryPage() {
   const [restockQty, setRestockQty] = useState("");
   const [restockUrgency, setRestockUrgency] = useState<"Routine" | "Urgent" | "Critical">("Urgent");
   const [restockNotes, setRestockNotes] = useState("");
+  const [storeItems, setStoreItems] = useState<StoreInventoryItem[]>([]);
+  const [restockStoreItemId, setRestockStoreItemId] = useState("");
   const [toast, setToast] = useState<ToastData | null>(null);
 
   // Counter sale state
@@ -96,6 +98,10 @@ export default function PharmacyInventoryPage() {
   const [salePatient, setSalePatient] = useState("");
   const [salePatientId, setSalePatientId] = useState("");
   const [saleQty, setSaleQty] = useState(1);
+
+  // CSV import state
+  const [csvPreview, setCsvPreview] = useState<{ valid: InventoryItem[]; errors: string[] } | null>(null);
+  const [importing, setImporting] = useState(false);
 
   // Add medication form state
   const [showAdd, setShowAdd] = useState(false);
@@ -126,6 +132,90 @@ export default function PharmacyInventoryPage() {
 
   const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
   const paginated = filtered.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE);
+
+  function handleDownloadTemplate() {
+    const headers = ["product", "category", "form", "stock", "reorder_level", "unit_price", "expiry", "supplier"];
+    const sample = ["Amoxicillin 500mg", "Antibiotic", "Capsule", "100", "30", "1.80", "2027-06", "PharmaCorp Ltd"];
+    const csv = [headers.join(","), sample.join(",")].join("\n");
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = "inventory_template.csv"; a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function handleCsvFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // reset so same file can be re-uploaded
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const text = ev.target?.result as string;
+      const lines = text.split(/\r?\n/).filter(Boolean);
+      if (lines.length < 2) {
+        setToast({ message: "CSV has no data rows.", type: "error" });
+        return;
+      }
+      const headers = lines[0].split(",").map(h => h.trim().toLowerCase());
+      const required = ["product", "category", "form", "stock", "reorder_level", "unit_price", "expiry"];
+      const missing = required.filter(r => !headers.includes(r));
+      if (missing.length > 0) {
+        setToast({ message: `CSV missing columns: ${missing.join(", ")}`, type: "error" });
+        return;
+      }
+      const valid: InventoryItem[] = [];
+      const errors: string[] = [];
+      lines.slice(1).forEach((line, i) => {
+        const cols = line.split(",").map(c => c.trim());
+        const get = (key: string) => cols[headers.indexOf(key)] ?? "";
+        const rowNum = i + 2;
+        const product = get("product");
+        const category = get("category");
+        const form = get("form");
+        const stock = parseInt(get("stock"));
+        const reorder = parseInt(get("reorder_level"));
+        const unitPrice = parseFloat(get("unit_price"));
+        const expiry = get("expiry");
+        if (!product) { errors.push(`Row ${rowNum}: product is required`); return; }
+        if (isNaN(stock) || stock < 0) { errors.push(`Row ${rowNum}: invalid stock`); return; }
+        if (isNaN(reorder) || reorder < 0) { errors.push(`Row ${rowNum}: invalid reorder_level`); return; }
+        if (isNaN(unitPrice) || unitPrice < 0) { errors.push(`Row ${rowNum}: invalid unit_price`); return; }
+        valid.push({
+          id: `INV-CSV-${Date.now()}-${i}`,
+          product,
+          category: category || "Other",
+          form: form || "Tablet",
+          stock,
+          reorderLevel: reorder,
+          price: `₦ ${unitPrice.toFixed(2)}`,
+          unitPrice,
+          expiry: expiry || "",
+          supplier: get("supplier"),
+          status: calcStockStatus(stock, reorder),
+        });
+      });
+      setCsvPreview({ valid, errors });
+    };
+    reader.readAsText(file);
+  }
+
+  async function handleConfirmImport() {
+    if (!csvPreview?.valid.length) return;
+    setImporting(true);
+    const imported: InventoryItem[] = [];
+    for (const item of csvPreview.valid) {
+      try {
+        await upsertPharmacyInventoryItem({ id: item.id, product: item.product, category: item.category, form: item.form, stock: item.stock, reorderLevel: item.reorderLevel, unitPrice: item.unitPrice, expiry: item.expiry, supplier: item.supplier, status: item.status });
+        imported.push(item);
+      } catch {
+        // skip failed rows silently — they'll appear in next sync
+      }
+    }
+    setItems(prev => [...imported, ...prev]);
+    setToast({ message: `${imported.length} item(s) imported successfully.`, type: "success" });
+    setCsvPreview(null);
+    setImporting(false);
+  }
 
   function handleAddMedication(e: React.FormEvent) {
     e.preventDefault();
@@ -201,6 +291,11 @@ export default function PharmacyInventoryPage() {
     setRestockQty(String(item.reorderLevel * 5));
     setRestockUrgency(item.status === "out" || item.status === "critical" ? "Critical" : "Urgent");
     setRestockNotes(`Current stock: ${item.stock} units. Reorder level: ${item.reorderLevel} units.`);
+    setRestockStoreItemId("");
+    // Load store pharmaceutical items for linking
+    fetchStoreInventory().then((all) => {
+      setStoreItems(all.filter((s) => s.category === "Pharmaceutical"));
+    }).catch(() => {});
   }
 
   function handleSendRestock(e: React.FormEvent) {
@@ -222,6 +317,7 @@ export default function PharmacyInventoryPage() {
       id: `PRX-${Date.now()}`,
       drug: restockItem.product,
       inventoryItemId: restockItem.id,
+      storeInventoryId: restockStoreItemId || undefined,
       currentStock: restockItem.stock,
       reorderLevel: restockItem.reorderLevel,
       qtyRequested: parseInt(restockQty) || restockItem.reorderLevel * 5,
@@ -286,10 +382,23 @@ export default function PharmacyInventoryPage() {
 
   return (
     <div className="space-y-6">
+      {/* Hidden CSV file input */}
+      <input id="csv-upload" type="file" accept=".csv" className="hidden" onChange={handleCsvFile} />
+
       <PageHeader
         title="Pharmacy Inventory"
         description="Stock levels, expiry tracking, nurse requests, and Store restock."
-        action={<Button size="md" onClick={() => setShowAdd(true)}>+ Add Medication</Button>}
+        action={
+          <div className="flex items-center gap-2">
+            <Button size="md" variant="outline" onClick={handleDownloadTemplate}>
+              ↓ CSV Template
+            </Button>
+            <Button size="md" variant="outline" onClick={() => document.getElementById("csv-upload")?.click()}>
+              ↑ Upload CSV
+            </Button>
+            <Button size="md" onClick={() => setShowAdd(true)}>+ Add Medication</Button>
+          </div>
+        }
       />
 
       {loadingItems && <p className="text-sm text-slate-400">Loading inventory…</p>}
@@ -580,6 +689,21 @@ export default function PharmacyInventoryPage() {
               <div className="flex justify-between"><span className="text-slate-500">Reorder Level</span><span className="font-semibold">{restockItem.reorderLevel} units</span></div>
               <div className="flex justify-between"><span className="text-slate-500">Supplier</span><span>{restockItem.supplier}</span></div>
             </div>
+            {storeItems.length > 0 && (
+              <div>
+                <label className="mb-1 block text-sm font-semibold text-slate-700">
+                  Link to Store Item <span className="text-slate-400 font-normal">(optional — lets Store deduct from their stock)</span>
+                </label>
+                <select value={restockStoreItemId} onChange={(e) => setRestockStoreItemId(e.target.value)} className={inputCls}>
+                  <option value="">— Not linked —</option>
+                  {storeItems.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}{s.form ? ` (${s.form})` : ""} — Store qty: {s.qty} {s.unit}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
             <div>
               <label className="mb-1 block text-sm font-semibold text-slate-700">Quantity to Request</label>
               <input type="number" min="1" required value={restockQty} onChange={(e) => setRestockQty(e.target.value)} className={inputCls} />
@@ -641,6 +765,79 @@ export default function PharmacyInventoryPage() {
           <ModalFooter>
             <Button variant="ghost" size="md" type="button" onClick={() => setSaleItem(null)}>Cancel</Button>
             <Button size="md" type="submit" form="sale-form">Confirm Sale → Bill to Accounts</Button>
+          </ModalFooter>
+        </Modal>
+      )}
+
+      {/* CSV Import preview modal */}
+      {csvPreview && (
+        <Modal open={true} onClose={() => setCsvPreview(null)} title="CSV Import Preview" className="max-w-2xl">
+          <div className="space-y-4 text-sm">
+            <div className="flex gap-3">
+              {csvPreview.valid.length > 0 && (
+                <div className="flex-1 rounded-lg bg-emerald-50 border border-emerald-200 px-4 py-3">
+                  <p className="font-bold text-emerald-800">{csvPreview.valid.length} valid row{csvPreview.valid.length !== 1 ? "s" : ""} ready to import</p>
+                </div>
+              )}
+              {csvPreview.errors.length > 0 && (
+                <div className="flex-1 rounded-lg bg-red-50 border border-red-200 px-4 py-3">
+                  <p className="font-bold text-red-700">{csvPreview.errors.length} row{csvPreview.errors.length !== 1 ? "s" : ""} skipped</p>
+                </div>
+              )}
+            </div>
+
+            {csvPreview.errors.length > 0 && (
+              <div className="rounded-lg border border-red-100 bg-red-50 px-4 py-3 space-y-1">
+                <p className="text-xs font-semibold text-red-700 mb-1">Validation errors (rows will be skipped):</p>
+                {csvPreview.errors.map((err, i) => (
+                  <p key={i} className="text-xs text-red-600">• {err}</p>
+                ))}
+              </div>
+            )}
+
+            {csvPreview.valid.length > 0 && (
+              <div className="overflow-x-auto rounded-lg border border-slate-200">
+                <table className="min-w-full text-xs">
+                  <thead className="bg-slate-50">
+                    <tr>
+                      {["Product", "Category", "Form", "Stock", "Reorder", "Price", "Expiry", "Supplier"].map(h => (
+                        <th key={h} className="px-3 py-2 text-left font-semibold text-slate-500 uppercase tracking-wide">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {csvPreview.valid.slice(0, 8).map((item, i) => (
+                      <tr key={i} className="hover:bg-slate-50">
+                        <td className="px-3 py-2 font-medium text-slate-800">{item.product}</td>
+                        <td className="px-3 py-2 text-slate-600">{item.category}</td>
+                        <td className="px-3 py-2 text-slate-600">{item.form}</td>
+                        <td className={`px-3 py-2 font-bold ${item.status !== "ok" ? "text-orange-600" : "text-slate-800"}`}>{item.stock}</td>
+                        <td className="px-3 py-2 text-slate-500">{item.reorderLevel}</td>
+                        <td className="px-3 py-2 text-slate-600">{item.price}</td>
+                        <td className="px-3 py-2 text-slate-600">{item.expiry}</td>
+                        <td className="px-3 py-2 text-slate-500">{item.supplier || "—"}</td>
+                      </tr>
+                    ))}
+                    {csvPreview.valid.length > 8 && (
+                      <tr><td colSpan={8} className="px-3 py-2 text-center text-slate-400">…and {csvPreview.valid.length - 8} more rows</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-500">
+              <strong>Required columns:</strong> product, category, form, stock, reorder_level, unit_price, expiry &nbsp;|&nbsp; <strong>Optional:</strong> supplier
+            </div>
+          </div>
+          <ModalFooter>
+            <Button variant="ghost" size="md" onClick={() => setCsvPreview(null)}>Cancel</Button>
+            <Button variant="outline" size="md" onClick={handleDownloadTemplate}>↓ Re-download Template</Button>
+            {csvPreview.valid.length > 0 && (
+              <Button size="md" onClick={handleConfirmImport} disabled={importing}>
+                {importing ? "Importing…" : `Import ${csvPreview.valid.length} Item${csvPreview.valid.length !== 1 ? "s" : ""}`}
+              </Button>
+            )}
           </ModalFooter>
         </Modal>
       )}
