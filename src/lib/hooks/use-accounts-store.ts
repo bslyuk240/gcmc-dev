@@ -22,8 +22,15 @@ export function useAccountsStore() {
     const hydrationId = window.setTimeout(() => setHydrated(true), 0);
     syncAccountsFromSupabase();
     const unsub = subscribeAccountsStore(rerender);
+    // Poll every 30s for background sync — don't react to ACCOUNTS_PAYMENT_UPDATED_EVENT
+    // because that event fires immediately after an optimistic write, before Supabase
+    // has persisted it, causing a race that reverts the optimistic update.
     const poll = setInterval(() => syncAccountsFromSupabase(true), 30_000);
-    return () => { window.clearTimeout(hydrationId); unsub(); clearInterval(poll); };
+    return () => {
+      window.clearTimeout(hydrationId);
+      unsub();
+      clearInterval(poll);
+    };
   }, []);
 
   if (!hydrated) {
