@@ -384,8 +384,8 @@ export async function upsertPrescriptionStatus(id: string, status: SharedPrescri
   if (!sb) return;
   const { error } = await sb.from("prescriptions").update({
     status,
-    // Use ISO timestamp for DB; dispensedAt is display-only ("HH:MM · DD Mon YYYY")
-    ...((extra as Record<string, unknown>)?.dispensedAtIso ? { dispensed_at: (extra as Record<string, unknown>).dispensedAtIso } : extra?.dispensedAt ? { dispensed_at: new Date().toISOString() } : {}),
+    // dispensedAt is display-only ("HH:MM · DD Mon YYYY"); always write ISO to DB
+    ...(extra?.dispensedAt ? { dispensed_at: new Date().toISOString() } : {}),
     ...(extra?.dispensedBy ? { dispensed_by: extra.dispensedBy } : {}),
     ...(extra?.totalCost !== undefined ? { total_cost: extra.totalCost } : {}),
   }).eq("id", id);

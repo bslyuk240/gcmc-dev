@@ -98,8 +98,7 @@ export default function PendingPrescriptionsPage() {
     const target = dispenseTarget; // capture before clearing
     const now = new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
     const dateStr = new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
-    const dispensedAt = `${now} · ${dateStr}`; // display format
-    const dispensedAtIso = new Date().toISOString(); // for Supabase
+    const dispensedAt = `${now} · ${dateStr}`; // display format (db.ts writes ISO separately)
     const total = calcTotal(target);
 
     // Instant UI — row leaves list before any network call
@@ -107,7 +106,6 @@ export default function PendingPrescriptionsPage() {
 
     updatePrescriptionStatus(target.id, "Dispensed", {
       dispensedAt,
-      dispensedAtIso,
       dispensedBy: staffName,
       totalCost: total,
     });
