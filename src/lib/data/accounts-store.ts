@@ -1,3 +1,4 @@
+import { pushNotification } from "@/lib/data/notification-store";
 /**
  * Accounts Cross-Department Shared Store
  *
@@ -26,6 +27,8 @@ export type FrontDeskCharge = {
   createdBy: string;
   visitId?: string;
   status: ChargeStatus;
+  paidAt?: string;
+  paymentMethod?: "Cash" | "POS / Card" | "Mobile Money" | "Insurance";
 };
 
 export type ConsultationFee = {
@@ -37,6 +40,8 @@ export type ConsultationFee = {
   fee: number;
   consultedAt: string;
   status: ChargeStatus;
+  paidAt?: string;
+  paymentMethod?: "Cash" | "POS / Card" | "Mobile Money" | "Insurance";
 };
 
 export type SupplierPaymentStatus = "Pending" | "Approved" | "Paid" | "Rejected";
@@ -153,6 +158,8 @@ export type LabCharge = {
   orderedBy: string;
   completedAt: string;
   status: ChargeStatus;
+  paidAt?: string;
+  paymentMethod?: "Cash" | "POS / Card" | "Mobile Money" | "Insurance";
 };
 
 export type NursingCharge = {
@@ -166,6 +173,8 @@ export type NursingCharge = {
   performedAt: string;
   amount: number;
   status: ChargeStatus;
+  paidAt?: string;
+  paymentMethod?: "Cash" | "POS / Card" | "Mobile Money" | "Insurance";
 };
 
 // ─── Store State ──────────────────────────────────────────────────────────────
@@ -210,12 +219,18 @@ function loadState(): AccountsStoreState {
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
     return raw ? (JSON.parse(raw) as AccountsStoreState) : { ...EMPTY_STATE };
-  } catch { return { ...EMPTY_STATE }; }
+  } catch {
+    return { ...EMPTY_STATE };
+  }
 }
 
 function saveState(state: AccountsStoreState) {
   if (typeof window === "undefined") return;
-  try { window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch { /* quota */ }
+  try {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  } catch {
+    /* quota */
+  }
 }
 
 let _state: AccountsStoreState | null = null;
@@ -241,12 +256,6 @@ export function subscribeAccountsStore(fn: () => void) {
 // ─── Supabase sync ────────────────────────────────────────────────────────────
 
 let _lastSync = 0;
-function mergeById<T extends { id: string }>(remote: T[], local: T[]) {
-  const merged = new Map<string, T>();
-  for (const item of remote) merged.set(item.id, item);
-  for (const item of local) merged.set(item.id, { ...(merged.get(item.id) ?? {}), ...item });
-  return Array.from(merged.values());
-}
 export async function syncAccountsFromSupabase(force = false) {
   if (typeof window === "undefined") return;
   const now = Date.now();
@@ -260,13 +269,13 @@ export async function syncAccountsFromSupabase(force = false) {
     ]);
     const current = getState();
     _state = {
-      frontDeskCharges: mergeById(frontDeskCharges, current.frontDeskCharges),
-      consultationFees: mergeById(consultationFees, current.consultationFees),
-      supplierPayments: mergeById(supplierPayments, current.supplierPayments),
-      payrollBatches: mergeById(payrollBatches, current.payrollBatches),
-      kioskSales: mergeById(kioskSales, current.kioskSales),
-      labCharges: mergeById(labCharges, current.labCharges),
-      nursingCharges: mergeById(nursingCharges, current.nursingCharges),
+      frontDeskCharges: frontDeskCharges.length ? frontDeskCharges : current.frontDeskCharges,
+      consultationFees: consultationFees.length ? consultationFees : current.consultationFees,
+      supplierPayments: supplierPayments.length ? supplierPayments : current.supplierPayments,
+      payrollBatches: payrollBatches.length ? payrollBatches : current.payrollBatches,
+      kioskSales: kioskSales.length ? kioskSales : current.kioskSales,
+      labCharges: labCharges.length ? labCharges : current.labCharges,
+      nursingCharges: nursingCharges.length ? nursingCharges : current.nursingCharges,
     };
     saveState(_state);
     listeners.forEach((l) => l());
@@ -280,9 +289,37 @@ export function addFrontDeskCharge(c: FrontDeskCharge) {
   mutate((s) => { s.frontDeskCharges = [c, ...s.frontDeskCharges]; });
   import("@/lib/supabase/db").then(({ insertFrontDeskCharge }) => insertFrontDeskCharge(c)).catch((err) => console.error('[accounts-store] write failed:', err));
 }
-export function updateFrontDeskChargeStatus(id: string, status: ChargeStatus) {
-  mutate((s) => { s.frontDeskCharges = s.frontDeskCharges.map((c) => c.id === id ? { ...c, status } : c); });
-  import("@/lib/supabase/db").then(({ upsertFrontDeskChargeStatus }) => upsertFrontDeskChargeStatus(id, status))
+export function updateFrontDeskChargeStatus(
+  id: string,
+  status: ChargeStatus,
+  extra?: { paidAt?: string; paymentMethod?: FrontDeskCharge["paymentMethod"] },
+) {
+  mutate((s) => {
+    s.frontDeskCharges = s.frontDeskCharges.map((c) =>
+      c.id === id
+        ? {
+            ...c,
+            status,
+            paidAt: status === "Paid" ? extra?.paidAt ?? c.paidAt ?? new Date().toISOString() : c.paidAt,
+            paymentMethod: extra?.paymentMethod ?? c.paymentMethod,
+          }
+        : c,
+    );
+  });
+  if (status === "Billed") {
+    const charge = getState().frontDeskCharges.find((item) => item.id === id);
+    if (charge) {
+      pushNotification({
+        category: "frontdesk",
+        severity: "info",
+        title: "Front Desk charge sent to Accounts",
+        body: `${charge.patientName} - ${charge.chargeType} (${charge.amount.toLocaleString()}) is ready for collection.`,
+        href: "/app/accounts/receive-payment",
+        targetDepartments: ["accounts"],
+      });
+    }
+  }
+  import("@/lib/supabase/db").then(({ upsertFrontDeskChargeStatus }) => upsertFrontDeskChargeStatus(id, status, extra))
     .catch((err) => console.error("[accounts-store] updateFrontDeskChargeStatus failed:", err));
 }
 
@@ -294,20 +331,39 @@ export async function addConsultationFee(f: ConsultationFee) {
     const { insertConsultationFee } = await import("@/lib/supabase/db");
     await insertConsultationFee(f);
     mutate((s) => { s.consultationFees = [f, ...s.consultationFees]; });
+    pushNotification({
+      category: "doctor",
+      severity: "info",
+      title: "Consultation fee billed",
+      body: `${f.patientName} - ${f.consultationType} consultation (${f.fee.toLocaleString()}) was sent to Accounts.`,
+      href: "/app/accounts/consultation-fees",
+      targetDepartments: ["accounts"],
+    });
   } catch (err) {
     console.error("[accounts-store] addConsultationFee failed:", err);
     throw err;
   }
 }
-export async function updateConsultationFeeStatus(id: string, status: ChargeStatus) {
-  try {
-    const { upsertConsultationFeeStatus } = await import("@/lib/supabase/db");
-    await upsertConsultationFeeStatus(id, status);
-    mutate((s) => { s.consultationFees = s.consultationFees.map((f) => f.id === id ? { ...f, status } : f); });
-  } catch (err) {
-    console.error("[accounts-store] updateConsultationFeeStatus failed:", err);
-    throw err;
-  }
+export function updateConsultationFeeStatus(
+  id: string,
+  status: ChargeStatus,
+  extra?: { paidAt?: string; paymentMethod?: ConsultationFee["paymentMethod"] },
+) {
+  mutate((s) => {
+    s.consultationFees = s.consultationFees.map((f) =>
+      f.id === id
+        ? {
+            ...f,
+            status,
+            paidAt: status === "Paid" ? extra?.paidAt ?? f.paidAt ?? new Date().toISOString() : f.paidAt,
+            paymentMethod: extra?.paymentMethod ?? f.paymentMethod,
+          }
+        : f,
+    );
+  });
+  import("@/lib/supabase/db")
+    .then(({ upsertConsultationFeeStatus }) => upsertConsultationFeeStatus(id, status, extra))
+    .catch((err) => console.error("[accounts-store] updateConsultationFeeStatus failed:", err));
 }
 
 // ─── Supplier Payments ────────────────────────────────────────────────────────
@@ -360,44 +416,82 @@ export async function addLabCharge(c: LabCharge) {
     const { insertLabCharge } = await import("@/lib/supabase/db");
     await insertLabCharge(c);
     mutate((s) => { s.labCharges = [c, ...(s.labCharges ?? [])]; });
+    pushNotification({
+      category: "lab",
+      severity: "info",
+      title: "Lab bill ready",
+      body: `${c.patientName} - ${c.testName} (${c.amount.toLocaleString()}) was sent to Accounts.`,
+      href: "/app/accounts/lab-billing",
+      targetDepartments: ["accounts"],
+    });
   } catch (err) {
     console.error("[accounts-store] addLabCharge failed:", err);
     throw err;
   }
 }
-export async function updateLabChargeStatus(id: string, status: ChargeStatus) {
-  try {
-    const { upsertLabChargeStatus } = await import("@/lib/supabase/db");
-    await upsertLabChargeStatus(id, status);
-    mutate((s) => { s.labCharges = (s.labCharges ?? []).map((c) => c.id === id ? { ...c, status } : c); });
-  } catch (err) {
-    console.error("[accounts-store] updateLabChargeStatus failed:", err);
-    throw err;
-  }
+export function updateLabChargeStatus(
+  id: string,
+  status: ChargeStatus,
+  extra?: { paidAt?: string; paymentMethod?: LabCharge["paymentMethod"] },
+) {
+  mutate((s) => {
+    s.labCharges = (s.labCharges ?? []).map((c) =>
+      c.id === id
+        ? {
+            ...c,
+            status,
+            paidAt: status === "Paid" ? extra?.paidAt ?? c.paidAt ?? new Date().toISOString() : c.paidAt,
+            paymentMethod: extra?.paymentMethod ?? c.paymentMethod,
+          }
+        : c,
+    );
+  });
+  import("@/lib/supabase/db")
+    .then(({ upsertLabChargeStatus }) => upsertLabChargeStatus(id, status, extra))
+    .catch((err) => console.error("[accounts-store] updateLabChargeStatus failed:", err));
 }
 
 // ─── Nursing Charges ─────────────────────────────────────────────────────────
 
 export function getNursingCharges(): NursingCharge[] { return [...(getState().nursingCharges ?? [])]; }
 export async function addNursingCharge(c: NursingCharge) {
-  mutate((s) => { s.nursingCharges = [c, ...(s.nursingCharges ?? [])]; });
   try {
     const { insertNursingCharge } = await import("@/lib/supabase/db");
     await insertNursingCharge(c);
+    mutate((s) => { s.nursingCharges = [c, ...(s.nursingCharges ?? [])]; });
+    pushNotification({
+      category: "nursing",
+      severity: "info",
+      title: "Nursing bill ready",
+      body: `${c.patientName} - ${c.procedureType} (${c.amount.toLocaleString()}) was sent to Accounts.`,
+      href: "/app/accounts/nursing-billing",
+      targetDepartments: ["accounts"],
+    });
   } catch (err) {
     console.error("[accounts-store] addNursingCharge failed:", err);
     throw err;
   }
 }
-export async function updateNursingChargeStatus(id: string, status: ChargeStatus) {
-  mutate((s) => { s.nursingCharges = (s.nursingCharges ?? []).map((c) => c.id === id ? { ...c, status } : c); });
-  try {
-    const { upsertNursingChargeStatus } = await import("@/lib/supabase/db");
-    await upsertNursingChargeStatus(id, status);
-  } catch (err) {
-    console.error("[accounts-store] updateNursingChargeStatus failed:", err);
-    throw err;
-  }
+export async function updateNursingChargeStatus(
+  id: string,
+  status: ChargeStatus,
+  extra?: { paidAt?: string; paymentMethod?: NursingCharge["paymentMethod"] },
+) {
+  mutate((s) => {
+    s.nursingCharges = (s.nursingCharges ?? []).map((c) =>
+      c.id === id
+        ? {
+            ...c,
+            status,
+            paidAt: status === "Paid" ? extra?.paidAt ?? c.paidAt ?? new Date().toISOString() : c.paidAt,
+            paymentMethod: extra?.paymentMethod ?? c.paymentMethod,
+          }
+        : c,
+    );
+  });
+  import("@/lib/supabase/db")
+    .then(({ upsertNursingChargeStatus }) => upsertNursingChargeStatus(id, status, extra))
+    .catch((err) => console.error("[accounts-store] updateNursingChargeStatus failed:", err));
 }
 
 // ─── Financial Metrics (for Admin and Accounts dashboard) ────────────────────
@@ -405,8 +499,13 @@ export async function updateNursingChargeStatus(id: string, status: ChargeStatus
 export function getAccountsMetrics() {
   const s = getState();
 
+  const todayIso = new Date().toISOString().slice(0, 10);
   const todayLabel = new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short" }); // e.g. "19 Mar"
   const todayDate  = new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }); // e.g. "19 Mar 2026"
+  const isPaidToday = (value?: string) => {
+    const text = value ?? "";
+    return text.startsWith(todayIso) || text.includes(todayLabel);
+  };
 
   const fdPending = s.frontDeskCharges.filter((c) => c.status === "Pending");
   const fdPaid = s.frontDeskCharges.filter((c) => c.status === "Paid");
@@ -426,16 +525,16 @@ export function getAccountsMetrics() {
   const nursingPaid = nursingCharges.filter((c) => c.status === "Paid");
 
   const revenueToday =
-    fdPaid.filter((c) => c.createdAt.includes(todayLabel)).reduce((s, c) => s + c.amount, 0) +
-    cfPaid.filter((f) => f.consultedAt.includes(todayLabel)).reduce((s, f) => s + f.fee, 0) +
+    fdPaid.filter((c) => isPaidToday(c.paidAt ?? c.createdAt)).reduce((s, c) => s + c.amount, 0) +
+    cfPaid.filter((f) => isPaidToday(f.paidAt ?? f.consultedAt)).reduce((s, f) => s + f.fee, 0) +
     kioskToday.reduce((s, k) => s + k.totalRevenue, 0) +
-    labPaid.filter((c) => c.completedAt.includes(todayLabel)).reduce((s, c) => s + c.amount, 0) +
-    nursingPaid.filter((c) => c.performedAt.includes(todayLabel)).reduce((s, c) => s + c.amount, 0);
+    labPaid.filter((c) => isPaidToday(c.paidAt ?? c.completedAt)).reduce((s, c) => s + c.amount, 0) +
+    nursingPaid.filter((c) => isPaidToday(c.paidAt ?? c.performedAt)).reduce((s, c) => s + c.amount, 0);
 
   return {
     frontDeskPendingCount: fdPending.length,
     frontDeskPendingValue: fdPending.reduce((sum, c) => sum + c.amount, 0),
-    frontDeskPaidToday: fdPaid.filter((c) => c.createdAt.includes(todayLabel)).reduce((s, c) => s + c.amount, 0),
+    frontDeskPaidToday: fdPaid.filter((c) => isPaidToday(c.paidAt ?? c.createdAt)).reduce((s, c) => s + c.amount, 0),
 
     consultationPendingCount: cfPending.length,
     consultationPendingValue: cfPending.reduce((sum, f) => sum + f.fee, 0),
@@ -453,11 +552,11 @@ export function getAccountsMetrics() {
 
     labPendingCount: labPending.length,
     labPendingValue: labPending.reduce((sum, c) => sum + c.amount, 0),
-    labPaidToday: labPaid.filter((c) => c.completedAt.includes(todayLabel)).reduce((s, c) => s + c.amount, 0),
+    labPaidToday: labPaid.filter((c) => isPaidToday(c.paidAt ?? c.completedAt)).reduce((s, c) => s + c.amount, 0),
 
     nursingPendingCount: nursingPending.length,
     nursingPendingValue: nursingPending.reduce((sum, c) => sum + c.amount, 0),
-    nursingPaidToday: nursingPaid.filter((c) => c.performedAt.includes(todayLabel)).reduce((s, c) => s + c.amount, 0),
+    nursingPaidToday: nursingPaid.filter((c) => isPaidToday(c.paidAt ?? c.performedAt)).reduce((s, c) => s + c.amount, 0),
 
     revenueToday,
   };
