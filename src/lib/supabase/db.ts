@@ -384,7 +384,8 @@ export async function upsertPrescriptionStatus(id: string, status: SharedPrescri
   if (!sb) return;
   const { error } = await sb.from("prescriptions").update({
     status,
-    ...(extra?.dispensedAt ? { dispensed_at: extra.dispensedAt } : {}),
+    // Use ISO timestamp for DB; dispensedAt is display-only ("HH:MM · DD Mon YYYY")
+    ...((extra as Record<string, unknown>)?.dispensedAtIso ? { dispensed_at: (extra as Record<string, unknown>).dispensedAtIso } : extra?.dispensedAt ? { dispensed_at: new Date().toISOString() } : {}),
     ...(extra?.dispensedBy ? { dispensed_by: extra.dispensedBy } : {}),
     ...(extra?.totalCost !== undefined ? { total_cost: extra.totalCost } : {}),
   }).eq("id", id);
@@ -884,7 +885,7 @@ export async function insertPharmacyBill(bill: PharmacyBill): Promise<void> {
     id: bill.id, prescription_id: bill.prescriptionId,
     patient_name: bill.patientName, patient_id: bill.patientId,
     drugs: bill.drugs, total_cost: bill.totalCost,
-    dispensed_at: bill.dispensedAt ? new Date(bill.dispensedAt).toISOString() : new Date().toISOString(),
+    dispensed_at: new Date().toISOString(),
     bill_status: bill.billStatus ?? "Pending", source: bill.source ?? "prescription",
   });
   if (error) console.error("[db] insertPharmacyBill:", error.message);

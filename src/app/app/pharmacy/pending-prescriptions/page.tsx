@@ -45,22 +45,25 @@ export default function PendingPrescriptionsPage() {
   const [dispenseTarget, setDispenseTarget] = useState<SharedPrescription | null>(null);
   const [dispenseNotes, setDispenseNotes] = useState("");
   const [collectedIds, setCollectedIds] = useState<Set<string>>(new Set());
+  // Optimistic: track dispensed IDs locally so the row leaves instantly on click
+  const [optimisticDispensed, setOptimisticDispensed] = useState<Set<string>>(new Set());
   const [toast, setToast] = useState<ToastData | null>(null);
   const [dispensing, setDispensing] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
-  // Derive lists from store state — no local readyIds needed
+  const isDispensed = (id: string) => optimisticDispensed.has(id) || prescriptions.find(p => p.id === id)?.status === "Dispensed";
+
   const urgent = prescriptions.filter(
-    (p) => p.urgency === "Urgent" && p.status !== "Dispensed" && p.status !== "Cancelled"
+    (p) => p.urgency === "Urgent" && !isDispensed(p.id) && p.status !== "Cancelled"
   );
   const waitingPickup = prescriptions.filter(
-    (p) => p.status === "Dispensed" && !collectedIds.has(p.id)
+    (p) => isDispensed(p.id) && !collectedIds.has(p.id)
   );
   const allPending = prescriptions.filter(
-    (p) => p.status !== "Dispensed" && p.status !== "Cancelled"
+    (p) => !isDispensed(p.id) && p.status !== "Cancelled"
   );
   const dispensedToday = prescriptions.filter((p) => {
-    if (p.status !== "Dispensed") return false;
+    if (!isDispensed(p.id)) return false;
     if (!p.dispensedAt) return true;
     // dispensedAt is "HH:MM · DD Mon YYYY" — check if date portion matches today
     const today = new Date().toLocaleDateString("en-GB", {
@@ -95,12 +98,16 @@ export default function PendingPrescriptionsPage() {
     const target = dispenseTarget; // capture before clearing
     const now = new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
     const dateStr = new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
-    const dispensedAt = `${now} · ${dateStr}`;
+    const dispensedAt = `${now} · ${dateStr}`; // display format
+    const dispensedAtIso = new Date().toISOString(); // for Supabase
     const total = calcTotal(target);
 
-    // Optimistic update — instant UI (updatePrescriptionStatus now mutates first)
+    // Instant UI — row leaves list before any network call
+    setOptimisticDispensed(prev => new Set([...prev, target.id]));
+
     updatePrescriptionStatus(target.id, "Dispensed", {
       dispensedAt,
+      dispensedAtIso,
       dispensedBy: staffName,
       totalCost: total,
     });
@@ -140,7 +147,7 @@ export default function PendingPrescriptionsPage() {
 
   function getRowStatus(rx: SharedPrescription): string {
     if (collectedIds.has(rx.id)) return "Collected";
-    if (rx.status === "Dispensed") return "Ready";
+    if (isDispensed(rx.id)) return "Ready";
     if (rx.urgency === "Urgent") return "Urgent";
     return rx.status;
   }
@@ -224,12 +231,12 @@ export default function PendingPrescriptionsPage() {
                       </span>
                     </td>
                     <td className="px-5 py-3.5">
-                      {(row.status === "Pending" || row.status === "Processing") && (
+                      {(row.status === "Pending" || row.status === "Processing") && !isDispensed(row.id) && (
                         <Button size="sm" onClick={() => { setDispenseTarget(row); setDispenseNotes(""); }}>
                           Dispense
                         </Button>
                       )}
-                      {row.status === "Dispensed" && !collectedIds.has(row.id) && (
+                      {isDispensed(row.id) && !collectedIds.has(row.id) && (
                         <Button size="sm" variant="outline" onClick={() => markCollected(row.id, row.patientName)}>
                           Mark Collected
                         </Button>
