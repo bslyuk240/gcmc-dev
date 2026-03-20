@@ -11,6 +11,13 @@ import { usePharmacyStore } from "@/lib/hooks/use-pharmacy-store";
 import { addRestockRequest, type PharmacyRestockRequest } from "@/lib/data/pharmacy-store";
 import { fetchStoreInventory, type StoreInventoryItem } from "@/lib/supabase/db";
 
+function fmtDate(s: string) {
+  if (!s) return "—";
+  try {
+    return new Date(s).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+  } catch { return s; }
+}
+
 const STATUS_STYLES: Record<string, string> = {
   Pending: "bg-amber-50 text-amber-700",
   Approved: "bg-sky-50 text-sky-700",
@@ -116,7 +123,7 @@ export default function PharmacyRestockRequestsPage() {
                     <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${URGENCY_STYLES[row.urgency]}`}>{row.urgency}</span>
                   </td>
                   <td className="px-5 py-3 text-slate-600">{row.requestedBy}</td>
-                  <td className="px-5 py-3 whitespace-nowrap text-slate-500">{row.requestedAt}</td>
+                  <td className="px-5 py-3 whitespace-nowrap text-slate-500">{fmtDate(row.requestedAt)}</td>
                   <td className="px-5 py-3">
                     <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${STATUS_STYLES[row.status] ?? "bg-slate-100 text-slate-600"}`}>
                       {row.status}
@@ -243,7 +250,7 @@ export default function PharmacyRestockRequestsPage() {
               ["Drug", viewReq.drug],
               ["Quantity", `${viewReq.qtyRequested} ${viewReq.unit}`],
               ["Requested By", viewReq.requestedBy],
-              ["Date", viewReq.requestedAt],
+              ["Date", fmtDate(viewReq.requestedAt)],
               ...(viewReq.approvedQty ? [["Approved Qty", String(viewReq.approvedQty)]] : []),
               ...(viewReq.fulfilledAt ? [["Fulfilled At", viewReq.fulfilledAt]] : []),
             ] as [string, string][]).map(([label, val]) => (
