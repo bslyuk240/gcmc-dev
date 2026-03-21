@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -78,6 +79,7 @@ export default function NhisClaimsPage() {
   useEffect(() => {
     syncNhisFromSupabase();
   }, []);
+
 
   const tabClaims = claims.filter((c) => c.status === activeTab);
 
@@ -367,18 +369,20 @@ export default function NhisClaimsPage() {
 
             <div>
               <label className="mb-1 block text-xs font-semibold text-slate-600">Enrolled Patient *</label>
-              <select
-                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent"
+              <SearchableSelect
                 value={selectedEnrollmentId}
-                onChange={(e) => setSelectedEnrollmentId(e.target.value)}
-              >
-                <option value="">— Select enrolled patient —</option>
-                {enrollments.filter((e) => e.isActive).map((e) => (
-                  <option key={e.id} value={e.id}>
-                    {e.patientName} ({e.patientDisplayId || e.patientId}) — {e.schemeName}
-                  </option>
-                ))}
-              </select>
+                onChange={setSelectedEnrollmentId}
+                placeholder="— Search by name, patient ID, or scheme —"
+                options={enrollments
+                  .filter((e) => e.isActive)
+                  .map((e) => ({
+                    value: e.id,
+                    label: e.patientName,
+                    sublabel: `${e.patientDisplayId || e.patientId} · ${e.schemeName}`,
+                  }))}
+              />
+
+              {/* Selected enrollment info card */}
               {selectedEnrollment && (
                 <div className="mt-2 rounded-lg bg-blue-50 border border-blue-100 px-3 py-2 text-xs text-blue-700 space-y-0.5">
                   <p><span className="font-semibold">Scheme:</span> {selectedEnrollment.schemeName}</p>

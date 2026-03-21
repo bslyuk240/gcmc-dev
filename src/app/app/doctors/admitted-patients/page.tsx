@@ -800,18 +800,18 @@ export default function DoctorAdmittedPatientsPage() {
                         )}
                       </div>
 
-                      <select
+                      <SearchableSelect
                         value={line.testCode}
-                        onChange={(event) => updateLabLine(index, "testCode", event.target.value)}
-                        className={INPUT_CLASS}
-                      >
-                        <option value="">- Choose a test -</option>
-                        {testCatalog.map((entry) => (
-                          <option key={entry.code} value={entry.code}>
-                            {entry.name} - N{entry.price}
-                          </option>
-                        ))}
-                      </select>
+                        onChange={(val) => updateLabLine(index, "testCode", val)}
+                        placeholder="- Choose a test -"
+                        showGroups
+                        options={testCatalog.map((entry) => ({
+                          value: entry.code,
+                          label: entry.name,
+                          sublabel: `${entry.code} · N${entry.price}`,
+                          group: entry.category,
+                        }))}
+                      />
 
                       <div className="flex gap-1">
                         {(["Routine", "Urgent", "STAT"] as const).map((priority) => (
@@ -913,27 +913,18 @@ export default function DoctorAdmittedPatientsPage() {
                       <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
                         <div className="md:col-span-2">
                           <label className="mb-1 block text-xs text-slate-500">Medication *</label>
-                          <select
+                          <SearchableSelect
                             value={drug.name}
-                            onChange={(event) => autoFillDrug(index, event.target.value)}
-                            className={INPUT_CLASS}
-                          >
-                            <option value="">- Select from pharmacy inventory -</option>
-                            {Object.entries(
-                              drugList.reduce<Record<string, typeof drugList>>((acc, entry) => {
-                                (acc[entry.category] = acc[entry.category] || []).push(entry);
-                                return acc;
-                              }, {}),
-                            ).map(([category, items]) => (
-                              <optgroup key={category} label={category}>
-                                {items.map((entry) => (
-                                  <option key={entry.id} value={entry.name}>
-                                    {entry.name} - N{entry.unitPrice.toFixed(2)}/{entry.unit}
-                                  </option>
-                                ))}
-                              </optgroup>
-                            ))}
-                          </select>
+                            onChange={(val) => autoFillDrug(index, val)}
+                            placeholder="- Select from pharmacy inventory -"
+                            showGroups
+                            options={drugList.map((entry) => ({
+                              value: entry.name,
+                              label: entry.name,
+                              sublabel: `N${entry.unitPrice.toFixed(2)}/${entry.unit}`,
+                              group: entry.category,
+                            }))}
+                          />
                         </div>
 
                         <div>
