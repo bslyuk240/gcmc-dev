@@ -50,16 +50,20 @@ function fmt(n: number) {
 }
 
 export default function NhisClaimsPage() {
-  const { schemes, claims, hydrated } = useNhisStore();
+  const { schemes, enrollments, claims, hydrated } = useNhisStore();
   const [toast, setToast] = useState<ToastData | null>(null);
   const [activeTab, setActiveTab] = useState<ClaimTab>("draft");
 
   // New claim modal
   const [showNewClaim, setShowNewClaim] = useState(false);
-  const [newClaimSchemeId, setNewClaimSchemeId] = useState("");
-  const [newClaimPatientId, setNewClaimPatientId] = useState("");
-  const [newClaimEnrollmentId, setNewClaimEnrollmentId] = useState("");
+  // selectedEnrollmentId drives everything — patient UUID + scheme are derived from it
+  const [selectedEnrollmentId, setSelectedEnrollmentId] = useState("");
   const [newClaimNotes, setNewClaimNotes] = useState("");
+
+  // Derived from selected enrollment
+  const selectedEnrollment = enrollments.find((e) => e.id === selectedEnrollmentId) ?? null;
+  const newClaimSchemeId = selectedEnrollment?.schemeId ?? "";
+  const newClaimPatientId = selectedEnrollment?.patientId ?? ""; // UUID
   const [services, setServices] = useState<ServiceRow[]>([{ ...EMPTY_SERVICE }]);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
@@ -105,8 +109,10 @@ export default function NhisClaimsPage() {
   const totals = calcTotals();
 
   async function handleSaveDraft() {
-    if (!newClaimSchemeId) { setFormError("Please select an HMO scheme."); return; }
-    if (!newClaimPatientId.trim()) { setFormError("Patient ID is required."); return; }
+    if (!selectedEnrollmentId || !selectedEnrollment) {
+      setFormError("Please select an enrolled patient.");
+      return;
+    }
     if (services.length === 0 || !services.some((r) => r.description.trim())) {
       setFormError("At least one service with a description is required.");
       return;
@@ -115,9 +121,6 @@ export default function NhisClaimsPage() {
     setSaving(true);
     setFormError(null);
     try {
-      const selectedScheme = schemes.find((s) => s.id === newClaimSchemeId);
-      const schemeName = selectedScheme?.name ?? "";
-
       const claimServices: HmoClaimService[] = services
         .filter((r) => r.description.trim())
         .map((r, idx) => ({
@@ -131,9 +134,9 @@ export default function NhisClaimsPage() {
 
       await addHmoClaim(
         {
-          schemeId: newClaimSchemeId,
-          patientId: newClaimPatientId.trim(),
-          enrollmentId: newClaimEnrollmentId.trim() || undefined,
+          schemeId: selectedEnrollment.schemeId,
+          patientId: selectedEnrollment.patientId, // UUID — correct FK
+          enrollmentId: selectedEnrollment.id,
           services: claimServices,
           totalCost: totals.totalCost,
           copayAmount: totals.copayAmount,
@@ -141,15 +144,13 @@ export default function NhisClaimsPage() {
           status: "draft",
           notes: newClaimNotes.trim() || undefined,
         },
-        schemeName,
-        newClaimPatientId.trim(),
+        selectedEnrollment.schemeName,
+        selectedEnrollment.patientName,
       );
 
       setToast({ message: "Claim saved as draft.", type: "success" });
       setShowNewClaim(false);
-      setNewClaimSchemeId("");
-      setNewClaimPatientId("");
-      setNewClaimEnrollmentId("");
+      setSelectedEnrollmentId("");
       setNewClaimNotes("");
       setServices([{ ...EMPTY_SERVICE }]);
       setActiveTab("draft");
@@ -364,39 +365,30 @@ export default function NhisClaimsPage() {
               </div>
             )}
 
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div>
-                <label className="mb-1 block text-xs font-semibold text-slate-600">HMO Scheme *</label>
-                <select
-                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent"
-                  value={newClaimSchemeId}
-                  onChange={(e) => setNewClaimSchemeId(e.target.value)}
-                >
-                  <option value="">— Select Scheme —</option>
-                  {schemes.filter((s) => s.isActive).map((s) => (
-                    <option key={s.id} value={s.id}>{s.name}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="mb-1 block text-xs font-semibold text-slate-600">Patient ID *</label>
-                <input
-                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-accent"
-                  value={newClaimPatientId}
-                  onChange={(e) => setNewClaimPatientId(e.target.value)}
-                  placeholder="e.g. HSP-000123"
-                />
-              </div>
-            </div>
-
             <div>
-              <label className="mb-1 block text-xs font-semibold text-slate-600">Enrollment ID (optional)</label>
-              <input
-                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-accent"
-                value={newClaimEnrollmentId}
-                onChange={(e) => setNewClaimEnrollmentId(e.target.value)}
-                placeholder="Leave blank to skip"
-              />
+              <label className="mb-1 block text-xs font-semibold text-slate-600">Enrolled Patient *</label>
+              <select
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent"
+                value={selectedEnrollmentId}
+                onChange={(e) => setSelectedEnrollmentId(e.target.value)}
+              >
+                <option value="">— Select enrolled patient —</option>
+                {enrollments.filter((e) => e.isActive).map((e) => (
+                  <option key={e.id} value={e.id}>
+                    {e.patientName} ({e.patientDisplayId || e.patientId}) — {e.schemeName}
+                  </option>
+                ))}
+              </select>
+              {selectedEnrollment && (
+                <div className="mt-2 rounded-lg bg-blue-50 border border-blue-100 px-3 py-2 text-xs text-blue-700 space-y-0.5">
+                  <p><span className="font-semibold">Scheme:</span> {selectedEnrollment.schemeName}</p>
+                  <p><span className="font-semibold">Member ID:</span> {selectedEnrollment.memberId}</p>
+                  <p><span className="font-semibold">Copay:</span> {selectedEnrollment.copayPercentage}%</p>
+                  {selectedEnrollment.validUntil && (
+                    <p><span className="font-semibold">Valid until:</span> {selectedEnrollment.validUntil}</p>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Services */}
