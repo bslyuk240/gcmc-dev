@@ -156,7 +156,7 @@ export default function AccountsDailyReportsPage() {
     const titleRange = startDate === endDate ? formatDateOnly(startDate) : `${formatDateOnly(startDate)} - ${formatDateOnly(endDate)}`;
     const generatedAt = formatDateTime(new Date().toISOString());
     const sourceCards = reportSources.map((row) => `<section class="src"><div><b>${escapeHtml(row.label)}</b><div class="muted">${row.count} receipts confirmed</div></div><div class="amt">${escapeHtml(money(row.total))}</div></section>`).join("");
-    const snapshotRows: Array<[string, number]> = [
+    const snapshotRowsData: Array<[string, number]> = [
       ["Front Desk pending", sumBy(frontDesk.filter((x) => x.status !== "Paid"), (x) => x.amount)],
       ["Consultation pending", sumBy(consultation.filter((x) => x.status !== "Paid"), (x) => x.fee)],
       ["Lab pending", sumBy(lab.filter((x) => x.status !== "Paid"), (x) => x.amount)],
@@ -164,7 +164,10 @@ export default function AccountsDailyReportsPage() {
       ["Pharmacy pending", sumBy(pharmacy.filter((x) => x.billStatus !== "Paid"), (x) => x.totalCost)],
       ["Supplier disbursements", sumBy(supplierPaid, (x) => x.amount)],
       ["Payroll disbursements", sumBy(payrollPaid, (x) => x.totalAmount)],
-    ].map(([label, value]) => `<div class="snap"><span>${escapeHtml(label)}</span><strong>${escapeHtml(money(Number(value)))}</strong></div>`).join("");
+    ];
+    const snapshotRows = snapshotRowsData
+      .map(([label, value]) => `<div class="snap"><span>${escapeHtml(label)}</span><strong>${escapeHtml(money(value))}</strong></div>`)
+      .join("");
     const activityHtml = activityRows
       .map(
         (item) =>
@@ -211,7 +214,7 @@ export default function AccountsDailyReportsPage() {
                   key={item}
                   type="button"
                   size="sm"
-                  variant={preset === item ? "default" : "outline"}
+                  variant={preset === item ? "primary" : "outline"}
                   onClick={() => applyPreset(item)}
                   className="capitalize"
                 >

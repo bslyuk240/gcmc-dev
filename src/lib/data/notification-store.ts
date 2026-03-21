@@ -18,6 +18,7 @@ export type NotifCategory =
   | "pharmacy"
   | "admin"
   | "it"
+  | "kiosk"
   | "store";
 
 export type NotifSeverity = "info" | "warning" | "urgent" | "success";
@@ -70,6 +71,7 @@ export const NOTIF_ICONS: Record<NotifCategory, string> = {
   pharmacy:     "💊",
   admin:        "📋",
   it:           "💻",
+  kiosk:        "🏪",
   store:        "📦",
 };
 

@@ -187,8 +187,8 @@ export default function AdminReportsPage() {
       })),
       ...invoicePayments.slice(0, 2).map((item) => ({
         source: "Invoice",
-        name: item.invoiceNumber,
-        detail: item.method,
+        name: invoiceRows.find((invoice) => invoice.id === item.invoiceId)?.invoiceNumber ?? item.invoiceId,
+        detail: item.paymentMethod,
         amount: item.amount,
         time: item.paidAt,
         status: "Paid",

@@ -59,7 +59,7 @@ export default function AccountsExpensesPage() {
     const payrollRows = payrollBatches.map((batch) => ({
       id: `payroll-${batch.id}`,
       kind: "Payroll" as const,
-      reference: batch.payrollRef ?? batch.period,
+      reference: batch.period,
       beneficiary: batch.department ?? "All Departments",
       amount: batch.totalAmount,
       timestamp: batch.paidAt ?? batch.approvedAt ?? batch.preparedAt,
