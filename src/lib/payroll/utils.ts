@@ -268,7 +268,7 @@ export function buildGeneratedPayslip(
     netPay: entry.netPay,
     paymentStatus: "Processing",
     workflowStatus: "Generated",
-    createdAt: new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }),
+    createdAt: new Date().toISOString(),
     createdBy,
   };
 }

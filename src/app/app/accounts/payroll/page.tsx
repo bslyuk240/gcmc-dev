@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Modal, ModalFooter } from "@/components/ui/modal";
 import { Toast, type ToastData } from "@/components/ui/toast";
+import { ACCOUNTS_PAYMENT_UPDATED_EVENT } from "@/lib/constants/accounts-events";
 import { updatePayrollStatus, type PayrollBatch } from "@/lib/data/accounts-store";
 import { updatePayslipWorkflowByBatch } from "@/lib/data/hr-store";
 import { useAccountsStore } from "@/lib/hooks/use-accounts-store";
@@ -21,6 +22,19 @@ const STATUS_STYLES: Record<string, string> = {
 
 function money(value: number) {
   return `NGN ${value.toLocaleString()}`;
+}
+
+function formatPayrollTimestamp(value?: string) {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 export default function AccountsPayrollPage() {
@@ -51,6 +65,7 @@ export default function AccountsPayrollPage() {
     if (actionTarget.action === "approve") {
       updatePayrollStatus(actionTarget.batch.id, "Approved", { approvedAt: today });
       updatePayslipWorkflowByBatch(actionTarget.batch.id, "Approved");
+      window.dispatchEvent(new Event(ACCOUNTS_PAYMENT_UPDATED_EVENT));
       setToast({
         message: `${actionTarget.batch.department ?? "Department"} payroll for ${actionTarget.batch.period} approved and ready for disbursement.`,
         type: "success",
@@ -58,6 +73,7 @@ export default function AccountsPayrollPage() {
     } else {
       updatePayrollStatus(actionTarget.batch.id, "Paid", { paidAt: today });
       updatePayslipWorkflowByBatch(actionTarget.batch.id, "Paid", { paymentStatus: "Paid", paidAt: today });
+      window.dispatchEvent(new Event(ACCOUNTS_PAYMENT_UPDATED_EVENT));
       setToast({
         message: `${money(actionTarget.batch.totalAmount)} disbursed for ${actionTarget.batch.department ?? "department"} - ${actionTarget.batch.period}.`,
         type: "success",
@@ -129,9 +145,9 @@ export default function AccountsPayrollPage() {
                     <td className="px-5 py-3 text-rose-600">{money(totals.deductions)}</td>
                     <td className="px-5 py-3 font-bold text-slate-900">{money(batch.totalAmount)}</td>
                     <td className="px-5 py-3 text-slate-500">{batch.preparedBy}</td>
-                    <td className="px-5 py-3 text-xs text-slate-500">{batch.preparedAt}</td>
-                    <td className="px-5 py-3 text-xs text-slate-500">{batch.approvedAt ?? "-"}</td>
-                    <td className="px-5 py-3 text-xs text-slate-500">{batch.paidAt ?? "-"}</td>
+                    <td className="px-5 py-3 text-xs text-slate-500">{formatPayrollTimestamp(batch.preparedAt)}</td>
+                    <td className="px-5 py-3 text-xs text-slate-500">{formatPayrollTimestamp(batch.approvedAt)}</td>
+                    <td className="px-5 py-3 text-xs text-slate-500">{formatPayrollTimestamp(batch.paidAt)}</td>
                     <td className="px-5 py-3">
                       <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${STATUS_STYLES[batch.status]}`}>
                         {batch.status}
@@ -191,6 +207,9 @@ export default function AccountsPayrollPage() {
                   <div className="flex justify-between"><span className="text-slate-500">Period</span><span className="font-semibold">{actionTarget.batch.period}</span></div>
                   <div className="flex justify-between"><span className="text-slate-500">Department</span><span>{actionTarget.batch.department ?? "-"}</span></div>
                   <div className="flex justify-between"><span className="text-slate-500">Staff Count</span><span>{actionTarget.batch.totalStaff} staff members</span></div>
+                  <div className="flex justify-between"><span className="text-slate-500">Prepared At</span><span>{formatPayrollTimestamp(actionTarget.batch.preparedAt)}</span></div>
+                  <div className="flex justify-between"><span className="text-slate-500">Approved At</span><span>{formatPayrollTimestamp(actionTarget.batch.approvedAt)}</span></div>
+                  <div className="flex justify-between"><span className="text-slate-500">Paid At</span><span>{formatPayrollTimestamp(actionTarget.batch.paidAt)}</span></div>
                   <div className="flex justify-between"><span className="text-slate-500">Gross Payroll</span><span>{money(totals.gross)}</span></div>
                   <div className="flex justify-between"><span className="text-slate-500">Allowances</span><span>{money(totals.allowances)}</span></div>
                   <div className="flex justify-between"><span className="text-slate-500">Deductions</span><span>{money(totals.deductions)}</span></div>
@@ -250,6 +269,18 @@ export default function AccountsPayrollPage() {
                     <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${STATUS_STYLES[viewBatch.status]}`}>
                       {viewBatch.status}
                     </span>
+                  </div>
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Prepared At</p>
+                    <p className="font-semibold text-slate-900">{formatPayrollTimestamp(viewBatch.preparedAt)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Approved At</p>
+                    <p className="font-semibold text-slate-900">{formatPayrollTimestamp(viewBatch.approvedAt)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Paid At</p>
+                    <p className="font-semibold text-slate-900">{formatPayrollTimestamp(viewBatch.paidAt)}</p>
                   </div>
                 </div>
               );

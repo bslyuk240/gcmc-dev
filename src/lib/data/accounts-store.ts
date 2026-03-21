@@ -1,4 +1,5 @@
 import { pushNotification } from "@/lib/data/notification-store";
+import { ACCOUNTS_PAYMENT_UPDATED_EVENT } from "@/lib/constants/accounts-events";
 /**
  * Accounts Cross-Department Shared Store
  *
@@ -396,25 +397,55 @@ export function addPayrollBatch(b: PayrollBatch) {
   mutate((s) => { s.payrollBatches = [b, ...s.payrollBatches]; });
   import("@/lib/supabase/db").then(({ insertPayrollBatch }) => insertPayrollBatch(b))
     .catch((err) => console.error("[accounts-store] addPayrollBatch failed:", err));
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event(ACCOUNTS_PAYMENT_UPDATED_EVENT));
+  }
 }
 export function updatePayrollStatus(id: string, status: PayrollStatus, extra?: Partial<PayrollBatch>) {
   mutate((s) => { s.payrollBatches = s.payrollBatches.map((b) => b.id === id ? { ...b, status, ...extra } : b); });
   import("@/lib/supabase/db").then(({ upsertPayrollBatchStatus }) => upsertPayrollBatchStatus(id, status, extra))
     .catch((err) => console.error("[accounts-store] updatePayrollStatus failed:", err));
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event(ACCOUNTS_PAYMENT_UPDATED_EVENT));
+  }
 }
 
 // ─── Kiosk Sales ─────────────────────────────────────────────────────────────
 
 export function getKioskSales(): KioskSale[] { return [...getState().kioskSales]; }
-export function addKioskSale(sale: KioskSale) {
-  mutate((s) => { s.kioskSales = [sale, ...s.kioskSales]; });
-  import("@/lib/supabase/db").then(({ insertKioskSale }) => insertKioskSale(sale))
-    .catch((err) => console.error("[accounts-store] addKioskSale failed:", err));
+export async function addKioskSale(sale: KioskSale) {
+  try {
+    const { insertKioskSale } = await import("@/lib/supabase/db");
+    await insertKioskSale(sale);
+    mutate((s) => { s.kioskSales = [sale, ...s.kioskSales]; });
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new Event(ACCOUNTS_PAYMENT_UPDATED_EVENT));
+    }
+    pushNotification({
+      category: "kiosk",
+      severity: "info",
+      title: "Kiosk revenue reported",
+      body: `${sale.reportedBy} reported ₦${sale.totalRevenue.toLocaleString()} for ${sale.date}.`,
+      href: "/app/accounts/kiosk",
+      targetDepartments: ["accounts"],
+    });
+  } catch (err) {
+    console.error("[accounts-store] addKioskSale failed:", err);
+    throw err;
+  }
 }
-export function updateKioskSaleStatus(id: string, status: KioskSale["status"]) {
-  mutate((s) => { s.kioskSales = s.kioskSales.map((k) => k.id === id ? { ...k, status } : k); });
-  import("@/lib/supabase/db").then(({ upsertKioskSaleStatus }) => upsertKioskSaleStatus(id, status))
-    .catch((err) => console.error("[accounts-store] updateKioskSaleStatus failed:", err));
+export async function updateKioskSaleStatus(id: string, status: KioskSale["status"]) {
+  try {
+    const { upsertKioskSaleStatus } = await import("@/lib/supabase/db");
+    await upsertKioskSaleStatus(id, status);
+    mutate((s) => { s.kioskSales = s.kioskSales.map((k) => k.id === id ? { ...k, status } : k); });
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new Event(ACCOUNTS_PAYMENT_UPDATED_EVENT));
+    }
+  } catch (err) {
+    console.error("[accounts-store] updateKioskSaleStatus failed:", err);
+    throw err;
+  }
 }
 
 // ─── Lab Charges ──────────────────────────────────────────────────────────────

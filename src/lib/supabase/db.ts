@@ -38,6 +38,7 @@ import type {
   ConsultationFee,
   SupplierPayment,
   PayrollBatch,
+  PayrollEntry,
   KioskSale,
   LabCharge,
   NursingCharge,
@@ -49,6 +50,7 @@ import type {
   OnboardingRecord,
   OffboardingRecord,
   PayrollPrep,
+  GeneratedPayslip,
 } from "@/lib/data/hr-store";
 import { normalizeDoctorSpecialty } from "@/lib/utils/doctor-routing";
 import {
@@ -89,6 +91,23 @@ function withoutSpecialty<T extends { specialty?: unknown }>(payload: T): Omit<T
   const fallbackPayload = { ...payload };
   delete fallbackPayload.specialty;
   return fallbackPayload;
+}
+
+function parseJsonArray<T>(value: unknown): T[] {
+  if (Array.isArray(value)) return value as T[];
+  if (typeof value !== "string") return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? (parsed as T[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function toIsoTimestamp(value: unknown, fallback = new Date().toISOString()) {
+  if (typeof value !== "string" || !value.trim()) return fallback;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? fallback : parsed.toISOString();
 }
 
 // ─── Doctors ─────────────────────────────────────────────────────────────────
@@ -742,6 +761,8 @@ function mapSupplierPayment(r: Record<string, unknown>): SupplierPayment {
 }
 
 function mapPayrollBatch(r: Record<string, unknown>): PayrollBatch {
+  const entries = parseJsonArray<PayrollEntry>(r.entries);
+  const payslipIds = parseJsonArray<string>(r.payslip_ids);
   return {
     id: r.id as string,
     period: r.period as string,
@@ -752,7 +773,36 @@ function mapPayrollBatch(r: Record<string, unknown>): PayrollBatch {
     status: r.status as PayrollBatch["status"],
     approvedAt: r.approved_at as string | undefined,
     paidAt: r.paid_at as string | undefined,
-    entries: [],
+    payslipIds,
+    entries,
+  };
+}
+
+function mapGeneratedPayslip(r: Record<string, unknown>): GeneratedPayslip {
+  return {
+    id: r.id as string,
+    period: r.period as string,
+    monthKey: (r.month_key as string) ?? "",
+    department: r.department as GeneratedPayslip["department"],
+    staffId: (r.staff_id as string) ?? "",
+    staffName: (r.staff_name as string) ?? "",
+    role: (r.role as string) ?? "",
+    unit: (r.unit as string) ?? undefined,
+    bankName: (r.bank_name as string) ?? undefined,
+    bankAccount: (r.bank_account as string) ?? undefined,
+    taxId: (r.tax_id as string) ?? undefined,
+    baseSalary: Number(r.base_salary ?? 0),
+    earnings: parseJsonArray<GeneratedPayslip["earnings"][number]>(r.earnings),
+    deductions: parseJsonArray<GeneratedPayslip["deductions"][number]>(r.deductions),
+    grossPay: Number(r.gross_pay ?? 0),
+    totalDeductions: Number(r.total_deductions ?? 0),
+    netPay: Number(r.net_pay ?? 0),
+    paymentStatus: (r.payment_status as GeneratedPayslip["paymentStatus"]) ?? "Processing",
+    workflowStatus: (r.workflow_status as GeneratedPayslip["workflowStatus"]) ?? "Generated",
+    createdAt: (r.created_at as string) ?? "",
+    createdBy: (r.created_by as string) ?? "",
+    batchId: (r.batch_id as string) ?? undefined,
+    paidAt: (r.paid_at as string) ?? undefined,
   };
 }
 
@@ -822,6 +872,12 @@ export async function fetchPayrollBatches(): Promise<PayrollBatch[]> {
   const sb = getSupabase(); if (!sb) return [];
   const { data } = await sb.from("payroll_batches").select("*").order("prepared_at", { ascending: false });
   return (data ?? []).map(mapPayrollBatch);
+}
+
+export async function fetchGeneratedPayslips(): Promise<GeneratedPayslip[]> {
+  const sb = getSupabase(); if (!sb) return [];
+  const { data } = await sb.from("generated_payslips").select("*").order("created_at", { ascending: false });
+  return (data ?? []).map(mapGeneratedPayslip);
 }
 
 export async function fetchKioskSales(): Promise<KioskSale[]> {
@@ -1066,8 +1122,40 @@ export async function insertPayrollBatch(b: PayrollBatch): Promise<void> {
     status: b.status ?? "Draft",
     approved_at: b.approvedAt ? new Date(b.approvedAt).toISOString() : null,
     paid_at: b.paidAt ? new Date(b.paidAt).toISOString() : null,
+    payslip_ids: b.payslipIds ?? [],
+    entries: b.entries ?? [],
   });
   if (error) console.error("[db] insertPayrollBatch:", error.message);
+}
+
+export async function upsertGeneratedPayslip(payslip: GeneratedPayslip): Promise<void> {
+  const sb = getSupabase(); if (!sb) return;
+  const { error } = await sb.from("generated_payslips").upsert({
+    id: payslip.id,
+    period: payslip.period,
+    month_key: payslip.monthKey,
+    department: payslip.department,
+    staff_id: payslip.staffId,
+    staff_name: payslip.staffName,
+    role: payslip.role,
+    unit: payslip.unit ?? null,
+    bank_name: payslip.bankName ?? null,
+    bank_account: payslip.bankAccount ?? null,
+    tax_id: payslip.taxId ?? null,
+    base_salary: payslip.baseSalary,
+    earnings: payslip.earnings ?? [],
+    deductions: payslip.deductions ?? [],
+    gross_pay: payslip.grossPay,
+    total_deductions: payslip.totalDeductions,
+    net_pay: payslip.netPay,
+    payment_status: payslip.paymentStatus,
+    workflow_status: payslip.workflowStatus,
+    created_at: toIsoTimestamp(payslip.createdAt),
+    created_by: payslip.createdBy,
+    batch_id: payslip.batchId ?? null,
+    paid_at: payslip.paidAt ? toIsoTimestamp(payslip.paidAt) : null,
+  });
+  if (error) console.error("[db] upsertGeneratedPayslip:", error.message);
 }
 
 export async function upsertPayrollBatchStatus(
@@ -1096,13 +1184,13 @@ export async function insertKioskSale(s: KioskSale): Promise<void> {
     reported_at: s.reportedAt ? new Date(s.reportedAt).toISOString() : new Date().toISOString(),
     status: s.status ?? "Pending", notes: s.notes ?? null,
   });
-  if (error) console.error("[db] insertKioskSale:", error.message);
+  if (error) throw new Error(error.message);
 }
 
 export async function upsertKioskSaleStatus(id: string, status: KioskSale["status"]): Promise<void> {
   const sb = getSupabase(); if (!sb) return;
   const { error } = await sb.from("kiosk_sales").update({ status }).eq("id", id);
-  if (error) console.error("[db] upsertKioskSaleStatus:", error.message);
+  if (error) throw new Error(error.message);
 }
 
 // ─── Staff by Department ──────────────────────────────────────────────────────

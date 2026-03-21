@@ -8,6 +8,20 @@ function money(value: number) {
   return `NGN ${value.toLocaleString("en-GB", { minimumFractionDigits: 2 })}`;
 }
 
+function formatDateTime(value?: string) {
+  if (!value) return "";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return parsed.toLocaleString("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+}
+
 export default function PayslipsPage() {
   const session = useHMSSession();
   const { generatedPayslips } = useHRStore();
@@ -88,7 +102,9 @@ export default function PayslipsPage() {
           </div>
 
           <p className={`text-center text-xs font-semibold ${selected.paymentStatus === "Paid" ? "text-emerald-600" : "text-amber-600"}`}>
-            {selected.paymentStatus === "Paid" ? `Paid${selected.paidAt ? ` on ${selected.paidAt}` : ""}` : `${selected.workflowStatus} - payment pending`}
+            {selected.paymentStatus === "Paid"
+              ? `Paid${selected.paidAt ? ` on ${formatDateTime(selected.paidAt)}` : ""}`
+              : `${selected.workflowStatus} - payment pending`}
           </p>
         </div>
       </div>

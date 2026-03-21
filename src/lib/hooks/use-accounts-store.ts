@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useReducer, useState } from "react";
+import { createClient } from "@/lib/supabase/client";
 import {
   subscribeAccountsStore,
   syncAccountsFromSupabase,
@@ -22,14 +23,29 @@ export function useAccountsStore() {
     const hydrationId = window.setTimeout(() => setHydrated(true), 0);
     syncAccountsFromSupabase();
     const unsub = subscribeAccountsStore(rerender);
-    // Poll every 30s for background sync — don't react to ACCOUNTS_PAYMENT_UPDATED_EVENT
-    // because that event fires immediately after an optimistic write, before Supabase
-    // has persisted it, causing a race that reverts the optimistic update.
+    // Poll every 30s as a fallback
     const poll = setInterval(() => syncAccountsFromSupabase(true), 30_000);
+
+    // Supabase Realtime — instant sync when new charges arrive from any session
+    const supabase = createClient();
+    const channel = supabase
+      ?.channel("accounts-billing-realtime")
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "front_desk_charges" }, () => syncAccountsFromSupabase(true))
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "consultation_fees" }, () => syncAccountsFromSupabase(true))
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "lab_charges" }, () => syncAccountsFromSupabase(true))
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "nursing_charges" }, () => syncAccountsFromSupabase(true))
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "pharmacy_bills" }, () => syncAccountsFromSupabase(true))
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "payroll_batches" }, () => syncAccountsFromSupabase(true))
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "payroll_batches" }, () => syncAccountsFromSupabase(true))
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "kiosk_sales" }, () => syncAccountsFromSupabase(true))
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "kiosk_sales" }, () => syncAccountsFromSupabase(true))
+      .subscribe();
+
     return () => {
       window.clearTimeout(hydrationId);
       unsub();
       clearInterval(poll);
+      if (channel) supabase?.removeChannel(channel);
     };
   }, []);
 

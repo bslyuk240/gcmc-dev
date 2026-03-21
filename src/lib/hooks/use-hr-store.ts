@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useReducer } from "react";
+import { createClient } from "@/lib/supabase/client";
+import { ACCOUNTS_PAYMENT_UPDATED_EVENT } from "@/lib/constants/accounts-events";
 import {
   subscribeHRStore,
   syncHRFromSupabase,
@@ -23,7 +25,19 @@ export function useHRStore() {
   useEffect(() => {
     syncHRFromSupabase();
     const unsub = subscribeHRStore(rerender);
-    return () => { unsub(); };
+    const refresh = () => { void syncHRFromSupabase(true); };
+    window.addEventListener(ACCOUNTS_PAYMENT_UPDATED_EVENT, refresh);
+    const supabase = createClient();
+    const channel = supabase
+      ?.channel("hr-payroll-realtime")
+      .on("postgres_changes", { event: "*", schema: "public", table: "generated_payslips" }, () => void syncHRFromSupabase(true))
+      .on("postgres_changes", { event: "*", schema: "public", table: "payroll_batches" }, () => void syncHRFromSupabase(true))
+      .subscribe();
+    return () => {
+      window.removeEventListener(ACCOUNTS_PAYMENT_UPDATED_EVENT, refresh);
+      if (channel) supabase?.removeChannel(channel);
+      unsub();
+    };
   }, []);
 
   return {

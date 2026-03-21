@@ -6,6 +6,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Modal, ModalFooter } from "@/components/ui/modal";
 import { Toast, type ToastData } from "@/components/ui/toast";
+import { ACCOUNTS_PAYMENT_UPDATED_EVENT } from "@/lib/constants/accounts-events";
 import { useAccountsStore } from "@/lib/hooks/use-accounts-store";
 import { updateSupplierPaymentStatus, type SupplierPayment } from "@/lib/data/accounts-store";
 
@@ -21,6 +22,19 @@ const STATUS_STYLES: Record<string, string> = {
   Paid: "bg-emerald-50 text-emerald-700",
   Rejected: "bg-red-50 text-red-700",
 };
+
+function formatSupplierTimestamp(value?: string) {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
 
 export default function AccountsSupplierPaymentsPage() {
   const { supplierPayments, metrics } = useAccountsStore();
@@ -43,17 +57,20 @@ export default function AccountsSupplierPaymentsPage() {
       setOptimisticStatuses((prev) => new Map([...prev, [payment.id, "Approved"]]));
       setToast({ message: `Payment for ${payment.supplier} approved.`, type: "success" });
       updateSupplierPaymentStatus(payment.id, "Approved");
+      window.dispatchEvent(new Event(ACCOUNTS_PAYMENT_UPDATED_EVENT));
     } else if (action === "pay") {
-      const today = new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+      const paidAt = new Date().toISOString();
       // Instant optimistic update
       setOptimisticStatuses((prev) => new Map([...prev, [payment.id, "Paid"]]));
       setToast({ message: `₦${payment.amount.toLocaleString()} paid to ${payment.supplier}.`, type: "success" });
-      updateSupplierPaymentStatus(payment.id, "Paid", { paidAt: today });
+      updateSupplierPaymentStatus(payment.id, "Paid", { paidAt });
+      window.dispatchEvent(new Event(ACCOUNTS_PAYMENT_UPDATED_EVENT));
     } else {
       // Instant optimistic update
       setOptimisticStatuses((prev) => new Map([...prev, [payment.id, "Rejected"]]));
       setToast({ message: `Payment to ${payment.supplier} rejected.`, type: "info" });
       updateSupplierPaymentStatus(payment.id, "Rejected");
+      window.dispatchEvent(new Event(ACCOUNTS_PAYMENT_UPDATED_EVENT));
     }
     setActionTarget(null);
     setRejectReason("");
@@ -105,8 +122,8 @@ export default function AccountsSupplierPaymentsPage() {
                   <td className="px-5 py-3 text-slate-600">{toStr(p.items)}</td>
                   <td className="px-5 py-3 text-xs text-slate-500 max-w-[180px] truncate">{toStr(p.description)}</td>
                   <td className="px-5 py-3 font-bold text-slate-900">₦{p.amount.toLocaleString()}</td>
-                  <td className="px-5 py-3 text-slate-600">{p.dueDate}</td>
-                  <td className="px-5 py-3 text-xs text-slate-500">{p.submittedAt}</td>
+                  <td className="px-5 py-3 text-slate-600">{formatSupplierTimestamp(p.dueDate)}</td>
+                  <td className="px-5 py-3 text-xs text-slate-500">{formatSupplierTimestamp(p.submittedAt)}</td>
                   <td className="px-5 py-3">
                     <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${STATUS_STYLES[effectiveStatus(p)]}`}>{effectiveStatus(p)}</span>
                   </td>
@@ -124,7 +141,7 @@ export default function AccountsSupplierPaymentsPage() {
                         </Button>
                       )}
                       {effectiveStatus(p) === "Paid" && (
-                        <span className="text-xs font-semibold text-emerald-700">✓ Paid {p.paidAt}</span>
+                        <span className="text-xs font-semibold text-emerald-700">✓ Paid {formatSupplierTimestamp(p.paidAt)}</span>
                       )}
                       {effectiveStatus(p) === "Rejected" && (
                         <span className="text-xs text-slate-400">Rejected</span>
@@ -160,6 +177,8 @@ export default function AccountsSupplierPaymentsPage() {
             <div className="rounded-lg bg-slate-50 p-3 space-y-1.5">
               <div className="flex justify-between"><span className="text-slate-500">Supplier</span><span className="font-semibold">{actionTarget.payment.supplier}</span></div>
               <div className="flex justify-between"><span className="text-slate-500">PO Reference</span><span>{actionTarget.payment.poId}</span></div>
+              <div className="flex justify-between"><span className="text-slate-500">Submitted</span><span className="text-slate-700">{formatSupplierTimestamp(actionTarget.payment.submittedAt)}</span></div>
+              <div className="flex justify-between"><span className="text-slate-500">Due Date</span><span className="text-slate-700">{formatSupplierTimestamp(actionTarget.payment.dueDate)}</span></div>
               <div className="flex justify-between"><span className="text-slate-500">Description</span><span className="text-right text-xs">{toStr(actionTarget.payment.description)}</span></div>
               <div className="flex justify-between"><span className="font-semibold text-slate-600">Amount</span><span className="font-bold text-xl text-slate-900">₦{actionTarget.payment.amount.toLocaleString()}</span></div>
             </div>

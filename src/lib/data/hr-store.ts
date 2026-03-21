@@ -248,6 +248,8 @@ export type GeneratedPayslip = {
   paidAt?: string;
 };
 
+type SharedPayrollBatch = import("@/lib/data/accounts-store").PayrollBatch;
+
 // ─── Store State ──────────────────────────────────────────────────────────────
 
 type HRStoreState = {
@@ -303,14 +305,98 @@ function buildPayrollPrepsFromPayslips(payslips: GeneratedPayslip[]): PayrollPre
         netTotal: items.reduce((sum, item) => sum + item.netPay, 0),
         status,
         preparedBy: items[items.length - 1]?.createdBy ?? "HR Manager",
-        preparedAt: items[items.length - 1]?.createdAt ?? "Mar 18, 2026",
+        preparedAt: formatPayrollDateLabel(items[items.length - 1]?.createdAt),
         batchId,
       };
     })
     .sort((left, right) => right.period.localeCompare(left.period) || left.department.localeCompare(right.department));
 }
 
+function applyPayrollBatchesToPayslips(
+  payslips: GeneratedPayslip[],
+  batches: SharedPayrollBatch[],
+) {
+  const next = payslips.map((item) => ({ ...item }));
+  const batchById = new Map(batches.map((batch) => [batch.id, batch]));
+
+  for (const batch of batches) {
+    const payslipIds = new Set(batch.payslipIds ?? []);
+    for (const item of next) {
+      const belongsToBatch = item.batchId === batch.id || payslipIds.has(item.id);
+      if (!belongsToBatch) continue;
+
+      if (batch.status === "Draft") {
+        item.batchId = batch.id;
+        item.workflowStatus = "Batched";
+        item.paymentStatus = "Processing";
+      } else if (batch.status === "Submitted") {
+        item.batchId = batch.id;
+        item.workflowStatus = "Submitted to Accounts";
+        item.paymentStatus = "Processing";
+      } else if (batch.status === "Approved") {
+        item.batchId = batch.id;
+        item.workflowStatus = "Approved";
+        item.paymentStatus = "Processing";
+      } else if (batch.status === "Paid") {
+        item.batchId = batch.id;
+        item.workflowStatus = "Paid";
+        item.paymentStatus = "Paid";
+        item.paidAt = batch.paidAt ?? item.paidAt;
+      }
+    }
+  }
+
+  // Reapply any local batch markers for payslips that were created before
+  // the payroll batch was written to Supabase.
+  for (const item of next) {
+    const batch = item.batchId ? batchById.get(item.batchId) : undefined;
+    if (!batch) continue;
+    if (batch.status === "Draft") {
+      item.workflowStatus = "Batched";
+      item.paymentStatus = "Processing";
+    } else if (batch.status === "Submitted") {
+      item.workflowStatus = "Submitted to Accounts";
+      item.paymentStatus = "Processing";
+    } else if (batch.status === "Approved") {
+      item.workflowStatus = "Approved";
+      item.paymentStatus = "Processing";
+    } else if (batch.status === "Paid") {
+      item.workflowStatus = "Paid";
+      item.paymentStatus = "Paid";
+      item.paidAt = batch.paidAt ?? item.paidAt;
+    }
+  }
+
+  return next;
+}
+
 // ─── Internal state ───────────────────────────────────────────────────────────
+
+function formatPayrollDateLabel(value?: string) {
+  if (!value) return "Mar 18, 2026";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return parsed.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+}
+
+async function persistGeneratedPayslip(payslip: GeneratedPayslip) {
+  try {
+    const { upsertGeneratedPayslip } = await import("@/lib/supabase/db");
+    await upsertGeneratedPayslip(payslip);
+  } catch {
+    /* keep local state */
+  }
+}
+
+async function persistGeneratedPayslips(payslips: GeneratedPayslip[]) {
+  if (payslips.length === 0) return;
+  try {
+    const { upsertGeneratedPayslip } = await import("@/lib/supabase/db");
+    await Promise.all(payslips.map((payslip) => upsertGeneratedPayslip(payslip)));
+  } catch {
+    /* keep local state */
+  }
+}
 
 const STORAGE_KEY = "hms_hr_store";
 const EMPTY_HR_STATE: HRStoreState = {
@@ -368,17 +454,28 @@ export function subscribeHRStore(fn: () => void) {
 // ─── Supabase sync ────────────────────────────────────────────────────────────
 
 let _synced = false;
-export async function syncHRFromSupabase() {
-  if (typeof window === "undefined" || _synced) return;
+export async function syncHRFromSupabase(force = false) {
+  if (typeof window === "undefined" || (!force && _synced)) return;
   try {
-    const { fetchStaffMembers, fetchLeaveRequests } = await import("@/lib/supabase/db");
-    const [staff, leaveRequests] = await Promise.all([fetchStaffMembers(), fetchLeaveRequests()]);
-    const current = getState();
+    const {
+      fetchStaffMembers,
+      fetchLeaveRequests,
+      fetchPayrollBatches,
+      fetchGeneratedPayslips,
+    } = await import("@/lib/supabase/db");
+    const [staff, leaveRequests, payrollBatches, generatedPayslips] = await Promise.all([
+      fetchStaffMembers(),
+      fetchLeaveRequests(),
+      fetchPayrollBatches(),
+      fetchGeneratedPayslips(),
+    ]);
+    const hydratedPayslips = applyPayrollBatchesToPayslips(generatedPayslips, payrollBatches);
     _state = {
-      ...current,
+      ...getState(),
       staff,
       leaveRequests,
-      payrollPreps: buildPayrollPrepsFromPayslips(current.generatedPayslips),
+      generatedPayslips: hydratedPayslips,
+      payrollPreps: buildPayrollPrepsFromPayslips(hydratedPayslips),
     };
     saveState(_state);
     listeners.forEach((l) => l());
@@ -580,6 +677,7 @@ export function addGeneratedPayslip(payslip: GeneratedPayslip) {
     ];
     state.payrollPreps = buildPayrollPrepsFromPayslips(state.generatedPayslips);
   });
+  void persistGeneratedPayslip(payslip);
 }
 
 export function assignPayslipsToBatch(batchId: string, payslipIds: string[]) {
@@ -591,6 +689,9 @@ export function assignPayslipsToBatch(batchId: string, payslipIds: string[]) {
     );
     state.payrollPreps = buildPayrollPrepsFromPayslips(state.generatedPayslips);
   });
+  void persistGeneratedPayslips(
+    getGeneratedPayslips().filter((item) => item.batchId === batchId || payslipIds.includes(item.id)),
+  );
 }
 
 export function updatePayslipWorkflowByBatch(
@@ -611,6 +712,7 @@ export function updatePayslipWorkflowByBatch(
     );
     state.payrollPreps = buildPayrollPrepsFromPayslips(state.generatedPayslips);
   });
+  void persistGeneratedPayslips(getGeneratedPayslips().filter((item) => item.batchId === batchId));
 }
 
 // ─── Metrics ──────────────────────────────────────────────────────────────────
