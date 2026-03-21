@@ -1,40 +1,24 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/layout/page-header";
 import { Modal, ModalFooter } from "@/components/ui/modal";
 import { Toast, type ToastData } from "@/components/ui/toast";
 import { usePharmacyStore } from "@/lib/hooks/use-pharmacy-store";
-import { updateRestockStatus, type PharmacyRestockRequest } from "@/lib/data/pharmacy-store";
-import { adjustStoreInventoryQty, adjustPharmacyInventoryStock, adjustPharmacyInventoryStockByStoreInventoryId, upsertPharmacyInventoryFromStoreSnapshot } from "@/lib/supabase/db";
+import { updateRestockStatus } from "@/lib/data/pharmacy-store";
+import {
+  adjustStoreInventoryQty,
+  adjustPharmacyInventoryStock,
+  fetchStockRequests,
+  insertStockRequest,
+  updateStockRequestStatus,
+  type StockRequest,
+} from "@/lib/supabase/db";
 
-type RequestStatus = "Pending" | "Approved" | "Rejected" | "Fulfilled";
-type Urgency = "Routine" | "Urgent" | "Critical";
-
-type StockRequest = {
-  id: string;
-  item: string;
-  qty: number;
-  unit: string;
-  dept: string;
-  requestedBy: string;
-  date: string;
-  urgency: Urgency;
-  status: RequestStatus;
-  notes?: string;
-};
-
-const INITIAL: StockRequest[] = [
-  { id: "REQ-2841", item: "N95 Respirators", qty: 50, unit: "Pack", dept: "Nurses", requestedBy: "Nurse Patricia", date: "Mar 14, 2026", urgency: "Urgent", status: "Pending", notes: "Ward 3 running low before weekend." },
-  { id: "REQ-2840", item: "Gauze Bandages 10cm", qty: 100, unit: "Roll", dept: "Doctors", requestedBy: "Dr. Amaka Osei", date: "Mar 14, 2026", urgency: "Critical", status: "Approved" },
-  { id: "REQ-2839", item: "Disposable Syringes 5ml", qty: 10, unit: "Box", dept: "Pharmacy", requestedBy: "James Adu", date: "Mar 13, 2026", urgency: "Routine", status: "Fulfilled" },
-  { id: "REQ-2838", item: "Patient Wristbands", qty: 5, unit: "Roll", dept: "Front Desk", requestedBy: "Tom Kwesi", date: "Mar 13, 2026", urgency: "Urgent", status: "Pending", notes: "Completely out of stock at reception." },
-  { id: "REQ-2837", item: "Alcohol Swabs", qty: 20, unit: "Pack", dept: "Nurses", requestedBy: "Nurse Grace", date: "Mar 12, 2026", urgency: "Routine", status: "Fulfilled" },
-  { id: "REQ-2836", item: "Oxygen Masks (Adult)", qty: 15, unit: "Piece", dept: "Doctors", requestedBy: "Dr. Kwame Mensah", date: "Mar 12, 2026", urgency: "Urgent", status: "Approved" },
-  { id: "REQ-2835", item: "IV Cannula 18G", qty: 5, unit: "Box", dept: "Nurses", requestedBy: "Nurse Patricia", date: "Mar 11, 2026", urgency: "Routine", status: "Rejected", notes: "Sufficient stock available." },
-];
+type RequestStatus = StockRequest["status"];
+type Urgency = StockRequest["urgency"];
 
 const DEPARTMENTS = ["Nurses", "Doctors", "Pharmacy", "Front Desk", "Accounts", "Store", "IT", "HR", "Admin"];
 const UNITS = ["Pack", "Roll", "Box", "Piece", "Bottle", "Pair", "Set", "Litre", "Sheet"];
@@ -52,8 +36,24 @@ const URGENCY_STYLES: Record<Urgency, string> = {
   Critical: "bg-red-50 text-red-700",
 };
 
+function fmtDate(iso: string) {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return iso;
+  return d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+}
+
+function newReqId(requests: StockRequest[]): string {
+  const nums = requests
+    .map((r) => parseInt(r.id.replace(/\D/g, ""), 10))
+    .filter((n) => !isNaN(n));
+  const next = nums.length > 0 ? Math.max(...nums) + 1 : 1000;
+  return `REQ-${next}`;
+}
+
 export default function StoreRequestsPage() {
-  const [requests, setRequests] = useState<StockRequest[]>(INITIAL);
+  const [requests, setRequests] = useState<StockRequest[]>([]);
+  const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<"All" | RequestStatus>("All");
   const [activeSection, setActiveSection] = useState<"general" | "pharmacy">("general");
   const [actionTarget, setActionTarget] = useState<{ req: StockRequest; action: "approve" | "reject" | "fulfill" } | null>(null);
@@ -63,13 +63,27 @@ export default function StoreRequestsPage() {
 
   // Pharmacy restock requests from shared store
   const { restockRequests } = usePharmacyStore();
-  const [pharmActionTarget, setPharmActionTarget] = useState<(PharmacyRestockRequest & { action: "approve" | "reject" | "fulfill"; qty: number }) | null>(null);
-  const [pharmFulfillQty, setPharmFulfillQty] = useState("");
+  // Local status overrides so UI updates immediately (store pub/sub is unreliable)
+  const [pharmStatuses, setPharmStatuses] = useState<Record<string, string>>({});
+  const displayRestockRequests = restockRequests.map((r) =>
+    pharmStatuses[r.id] ? { ...r, status: pharmStatuses[r.id] } : r
+  );
+
+  const [pharmActionTarget, setPharmActionTarget] = useState<{
+    id: string; drug: string; qty: number; action: "approve" | "reject" | "fulfill";
+    storeInventoryId?: string; inventoryItemId?: string;
+  } | null>(null);
 
   // New request form
   const [newItem, setNewItem] = useState(""); const [newQty, setNewQty] = useState("");
   const [newUnit, setNewUnit] = useState("Pack"); const [newDept, setNewDept] = useState("");
   const [newUrgency, setNewUrgency] = useState<Urgency>("Routine"); const [newNotes, setNewNotes] = useState("");
+
+  useEffect(() => {
+    fetchStockRequests()
+      .then(setRequests)
+      .finally(() => setLoading(false));
+  }, []);
 
   const filtered = requests.filter((r) => filter === "All" || r.status === filter);
   const counts = {
@@ -79,67 +93,74 @@ export default function StoreRequestsPage() {
     Rejected: requests.filter((r) => r.status === "Rejected").length,
   };
 
-  const pharmPending = restockRequests.filter((r) => r.status === "Pending").length;
+  const pharmPending = displayRestockRequests.filter((r) => r.status === "Pending").length;
 
-  function handleAction() {
+  async function handleAction() {
     if (!actionTarget) return;
     const { req, action } = actionTarget;
     const newStatus: RequestStatus = action === "approve" ? "Approved" : action === "reject" ? "Rejected" : "Fulfilled";
-    setRequests((prev) => prev.map((r) => r.id === req.id ? { ...r, status: newStatus, notes: action === "reject" && rejectNotes ? rejectNotes : r.notes } : r));
+    const notes = action === "reject" && rejectNotes ? rejectNotes : req.notes;
+    // Optimistic
+    setRequests((prev) => prev.map((r) => r.id === req.id ? { ...r, status: newStatus, notes } : r));
     const msgs: Record<string, string> = { approve: `${req.id} approved.`, reject: `${req.id} rejected.`, fulfill: `${req.id} marked as fulfilled.` };
     setToast({ message: msgs[action], type: action === "reject" ? "info" : "success" });
     setActionTarget(null);
     setRejectNotes("");
+    // Persist
+    await updateStockRequestStatus(req.id, newStatus, notes);
   }
 
   function handlePharmAction() {
     if (!pharmActionTarget) return;
-    const { id, drug, qtyRequested, action, storeInventoryId, inventoryItemId, storeSnapshot } = pharmActionTarget;
+    const { id, drug, qty, action, storeInventoryId, inventoryItemId } = pharmActionTarget;
     const now = new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
     if (action === "approve") {
-      updateRestockStatus(id, "Approved");
+      const newStatus = "Approved";
+      setPharmStatuses((prev) => ({ ...prev, [id]: newStatus }));
+      updateRestockStatus(id, newStatus);
       setToast({ message: `Pharmacy restock for ${drug} approved.`, type: "success" });
     } else if (action === "reject") {
-      updateRestockStatus(id, "Rejected");
+      const newStatus = "Rejected";
+      setPharmStatuses((prev) => ({ ...prev, [id]: newStatus }));
+      updateRestockStatus(id, newStatus);
       setToast({ message: `Pharmacy restock for ${drug} rejected.`, type: "info" });
     } else if (action === "fulfill") {
-      const qty = Math.max(0, parseInt(pharmFulfillQty) || qtyRequested || 0);
-      if (!qty) {
-        setToast({ message: "Enter a fulfilled quantity before marking this request as fulfilled.", type: "error" });
-        return;
+      const newStatus = "Fulfilled";
+      setPharmStatuses((prev) => ({ ...prev, [id]: newStatus }));
+      updateRestockStatus(id, newStatus, { fulfilledAt: now });
+      if (storeInventoryId) {
+        adjustStoreInventoryQty(storeInventoryId, -qty).catch(() => {});
       }
-      const linkedStoreId = storeInventoryId || storeSnapshot?.id;
-      updateRestockStatus(id, "Fulfilled", { fulfilledAt: now, approvedQty: qty });
-      // Move stock: deduct from store, add to pharmacy
-      if (linkedStoreId) {
-        adjustStoreInventoryQty(linkedStoreId, -qty).catch(() => {});
-      }
-      if (storeSnapshot) {
-        upsertPharmacyInventoryFromStoreSnapshot(storeSnapshot, qty).catch(() => {});
-      } else if (linkedStoreId) {
-        adjustPharmacyInventoryStockByStoreInventoryId(linkedStoreId, qty).catch(() => {});
-      } else if (inventoryItemId) {
+      if (inventoryItemId) {
         adjustPharmacyInventoryStock(inventoryItemId, qty).catch(() => {});
       }
       setToast({ message: `${drug} (×${qty}) fulfilled — Store inventory decremented, Pharmacy inventory incremented.`, type: "success" });
     }
     setPharmActionTarget(null);
-    setPharmFulfillQty("");
   }
 
-  function handleNewRequest(e: React.FormEvent) {
+  async function handleNewRequest(e: React.FormEvent) {
     e.preventDefault();
     if (!newItem || !newQty || !newDept) return;
-    const seq = requests.length + 1;
     const req: StockRequest = {
-      id: `REQ-${2841 + seq}`, item: newItem, qty: parseInt(newQty), unit: newUnit,
-      dept: newDept, requestedBy: "You", date: "Mar 15, 2026", urgency: newUrgency,
-      status: "Pending", notes: newNotes || undefined,
+      id: newReqId(requests),
+      item: newItem,
+      qty: parseInt(newQty),
+      unit: newUnit,
+      dept: newDept,
+      requestedBy: "Store Manager",
+      urgency: newUrgency,
+      status: "Pending",
+      notes: newNotes || undefined,
+      createdAt: new Date().toISOString(),
     };
+    // Optimistic
     setRequests((prev) => [req, ...prev]);
     setToast({ message: `Stock request ${req.id} submitted.`, type: "success" });
     setShowNew(false);
     setNewItem(""); setNewQty(""); setNewUnit("Pack"); setNewDept(""); setNewUrgency("Routine"); setNewNotes("");
+    // Persist
+    await insertStockRequest(req);
   }
 
   const inputCls = "w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/20";
@@ -194,7 +215,7 @@ export default function StoreRequestsPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {restockRequests.map((req) => (
+                  {displayRestockRequests.map((req) => (
                     <tr key={req.id} className={`hover:bg-slate-50 ${req.status === "Pending" ? "bg-orange-50/30" : ""}`}>
                       <td className="px-5 py-3 font-mono text-xs font-bold text-slate-700">{req.id}</td>
                       <td className="px-5 py-3 font-semibold text-slate-900">{req.drug}</td>
@@ -202,7 +223,7 @@ export default function StoreRequestsPage() {
                         {req.currentStock}
                       </td>
                       <td className="px-5 py-3 text-slate-500">{req.reorderLevel}</td>
-                      <td className="px-5 py-3 font-semibold text-slate-800">{req.qtyRequested != null ? `${req.qtyRequested} ${req.unit}` : <span className="text-slate-400">Store decides</span>}</td>
+                      <td className="px-5 py-3 font-semibold text-slate-800">{req.qtyRequested} {req.unit}</td>
                       <td className="px-5 py-3">
                         <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${req.urgency === "Critical" ? "bg-red-100 text-red-700" : req.urgency === "Urgent" ? "bg-orange-100 text-orange-700" : "bg-slate-100 text-slate-600"}`}>
                           {req.urgency}
@@ -218,12 +239,12 @@ export default function StoreRequestsPage() {
                       <td className="px-5 py-3">
                         {req.status === "Pending" && (
                           <div className="flex gap-2">
-                            <Button size="sm" onClick={() => setPharmActionTarget({ ...req, qty: req.qtyRequested ?? 0, action: "approve" })}>Approve</Button>
-                            <Button size="sm" variant="outline" onClick={() => { setPharmFulfillQty(""); setPharmActionTarget({ ...req, qty: req.qtyRequested ?? 0, action: "reject" }); }}>Reject</Button>
+                            <Button size="sm" onClick={() => setPharmActionTarget({ id: req.id, drug: req.drug, qty: req.qtyRequested ?? 0, action: "approve", storeInventoryId: req.storeInventoryId, inventoryItemId: req.inventoryItemId })}>Approve</Button>
+                            <Button size="sm" variant="outline" onClick={() => setPharmActionTarget({ id: req.id, drug: req.drug, qty: req.qtyRequested ?? 0, action: "reject", storeInventoryId: req.storeInventoryId, inventoryItemId: req.inventoryItemId })}>Reject</Button>
                           </div>
                         )}
                         {req.status === "Approved" && (
-                          <Button size="sm" variant="secondary" onClick={() => { setPharmFulfillQty(req.qtyRequested != null ? String(req.qtyRequested) : ""); setPharmActionTarget({ ...req, qty: req.qtyRequested ?? 0, action: "fulfill" }); }}>
+                          <Button size="sm" variant="secondary" onClick={() => setPharmActionTarget({ id: req.id, drug: req.drug, qty: req.qtyRequested ?? 0, action: "fulfill", storeInventoryId: req.storeInventoryId, inventoryItemId: req.inventoryItemId })}>
                             Mark Fulfilled
                           </Button>
                         )}
@@ -236,7 +257,7 @@ export default function StoreRequestsPage() {
                       </td>
                     </tr>
                   ))}
-                  {restockRequests.length === 0 && (
+                  {displayRestockRequests.length === 0 && (
                     <tr><td colSpan={10} className="px-6 py-10 text-center text-sm text-slate-400">No pharmacy resupply requests yet.</td></tr>
                   )}
                 </tbody>
@@ -250,82 +271,83 @@ export default function StoreRequestsPage() {
       )}
 
       {activeSection === "general" && (
-      <>
-      {/* Summary cards */}
-      <div className="grid gap-4 sm:grid-cols-4">
-        {(["Pending", "Approved", "Fulfilled", "Rejected"] as RequestStatus[]).map((s) => (
-          <Card
-            key={s}
-            className={`cursor-pointer p-5 transition ${filter === s ? "ring-2 ring-[var(--accent)]" : "hover:border-slate-300"}`}
-            onClick={() => setFilter(filter === s ? "All" : s)}
-          >
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{s}</p>
-            <p className="mt-1 text-3xl font-bold text-slate-900">{counts[s]}</p>
+        <>
+          {/* Summary cards */}
+          <div className="grid gap-4 sm:grid-cols-4">
+            {(["Pending", "Approved", "Fulfilled", "Rejected"] as RequestStatus[]).map((s) => (
+              <Card
+                key={s}
+                className={`cursor-pointer p-5 transition ${filter === s ? "ring-2 ring-[var(--accent)]" : "hover:border-slate-300"}`}
+                onClick={() => setFilter(filter === s ? "All" : s)}
+              >
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{s}</p>
+                <p className="mt-1 text-3xl font-bold text-slate-900">{loading ? "—" : counts[s]}</p>
+              </Card>
+            ))}
+          </div>
+
+          {/* Table */}
+          <Card className="overflow-hidden p-0">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+              <h3 className="font-bold text-slate-900">
+                {filter === "All" ? "All Requests" : `${filter} Requests`}
+                <span className="ml-2 text-sm font-normal text-slate-400">({loading ? "…" : filtered.length})</span>
+              </h3>
+              {filter !== "All" && (
+                <button type="button" onClick={() => setFilter("All")} className="text-xs font-medium text-slate-500 hover:text-slate-700">Clear filter</button>
+              )}
+            </div>
+
+            {loading ? (
+              <div className="px-5 py-10 text-center text-sm text-slate-400">Loading requests…</div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-slate-100 bg-slate-50 text-left">
+                      {["Ref", "Item", "Qty", "Department", "Requested By", "Date", "Urgency", "Status", "Notes", ""].map((h) => (
+                        <th key={h} className="whitespace-nowrap px-5 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {filtered.map((req) => (
+                      <tr key={req.id} className="hover:bg-slate-50">
+                        <td className="px-5 py-3 font-mono text-xs text-slate-500">{req.id}</td>
+                        <td className="px-5 py-3 font-medium text-slate-900">{req.item}</td>
+                        <td className="px-5 py-3 text-slate-700">{req.qty} {req.unit}</td>
+                        <td className="px-5 py-3 text-slate-600">{req.dept}</td>
+                        <td className="px-5 py-3 text-slate-600">{req.requestedBy}</td>
+                        <td className="px-5 py-3 whitespace-nowrap text-slate-600">{fmtDate(req.createdAt)}</td>
+                        <td className="px-5 py-3"><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${URGENCY_STYLES[req.urgency]}`}>{req.urgency}</span></td>
+                        <td className="px-5 py-3"><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${STATUS_STYLES[req.status]}`}>{req.status}</span></td>
+                        <td className="px-5 py-3 max-w-[180px] text-xs text-slate-500 truncate">{req.notes ?? "—"}</td>
+                        <td className="px-5 py-3">
+                          {req.status === "Pending" && (
+                            <div className="flex gap-2">
+                              <Button size="sm" onClick={() => setActionTarget({ req, action: "approve" })}>Approve</Button>
+                              <Button size="sm" variant="outline" onClick={() => { setActionTarget({ req, action: "reject" }); setRejectNotes(""); }}>Reject</Button>
+                            </div>
+                          )}
+                          {req.status === "Approved" && (
+                            <Button size="sm" variant="secondary" onClick={() => setActionTarget({ req, action: "fulfill" })}>Mark Fulfilled</Button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {filtered.length === 0 && <p className="px-5 py-10 text-center text-sm text-slate-400">No requests in this category.</p>}
+              </div>
+            )}
           </Card>
-        ))}
-      </div>
-
-      {/* Table */}
-      <Card className="overflow-hidden p-0">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
-          <h3 className="font-bold text-slate-900">
-            {filter === "All" ? "All Requests" : `${filter} Requests`}
-            <span className="ml-2 text-sm font-normal text-slate-400">({filtered.length})</span>
-          </h3>
-          {filter !== "All" && (
-            <button type="button" onClick={() => setFilter("All")} className="text-xs font-medium text-slate-500 hover:text-slate-700">Clear filter</button>
-          )}
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-slate-100 bg-slate-50 text-left">
-                {["Ref", "Item", "Qty", "Department", "Requested By", "Date", "Urgency", "Status", "Notes", ""].map((h) => (
-                  <th key={h} className="whitespace-nowrap px-5 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {filtered.map((req) => (
-                <tr key={req.id} className="hover:bg-slate-50">
-                  <td className="px-5 py-3 font-mono text-xs text-slate-500">{req.id}</td>
-                  <td className="px-5 py-3 font-medium text-slate-900">{req.item}</td>
-                  <td className="px-5 py-3 text-slate-700">{req.qty} {req.unit}</td>
-                  <td className="px-5 py-3 text-slate-600">{req.dept}</td>
-                  <td className="px-5 py-3 text-slate-600">{req.requestedBy}</td>
-                  <td className="px-5 py-3 whitespace-nowrap text-slate-600">{req.date}</td>
-                  <td className="px-5 py-3"><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${URGENCY_STYLES[req.urgency]}`}>{req.urgency}</span></td>
-                  <td className="px-5 py-3"><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${STATUS_STYLES[req.status]}`}>{req.status}</span></td>
-                  <td className="px-5 py-3 max-w-[180px] text-xs text-slate-500 truncate">{req.notes ?? "—"}</td>
-                  <td className="px-5 py-3">
-                    {req.status === "Pending" && (
-                      <div className="flex gap-2">
-                        <Button size="sm" onClick={() => setActionTarget({ req, action: "approve" })}>Approve</Button>
-                        <Button size="sm" variant="outline" onClick={() => { setActionTarget({ req, action: "reject" }); setRejectNotes(""); }}>Reject</Button>
-                      </div>
-                    )}
-                    {req.status === "Approved" && (
-                      <Button size="sm" variant="secondary" onClick={() => setActionTarget({ req, action: "fulfill" })}>Mark Fulfilled</Button>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {filtered.length === 0 && <p className="px-5 py-10 text-center text-sm text-slate-400">No requests in this category.</p>}
-        </div>
-      </Card>
-
-      </>
+        </>
       )}
 
       {/* Pharmacy action modal */}
       <Modal
         open={!!pharmActionTarget}
-        onClose={() => {
-          setPharmActionTarget(null);
-          setPharmFulfillQty("");
-        }}
+        onClose={() => setPharmActionTarget(null)}
         title={
           pharmActionTarget?.action === "approve" ? "Approve Pharmacy Request"
           : pharmActionTarget?.action === "reject" ? "Reject Pharmacy Request"
@@ -335,29 +357,11 @@ export default function StoreRequestsPage() {
         {pharmActionTarget && (
           <div className="space-y-3 text-sm">
             {pharmActionTarget.action === "approve" && (
-              <p className="text-slate-600">
-                Approve supply of <strong>{pharmActionTarget.qtyRequested != null ? `${pharmActionTarget.qtyRequested} units` : "the requested quantity"}</strong> of <strong>{pharmActionTarget.drug}</strong> to Pharmacy?
-              </p>
+              <p className="text-slate-600">Approve supply of <strong>{pharmActionTarget.qty} units</strong> of <strong>{pharmActionTarget.drug}</strong> to Pharmacy?</p>
             )}
             {pharmActionTarget.action === "fulfill" && (
               <>
-                <p className="text-slate-600">
-                  Confirm delivery of <strong>{pharmActionTarget.drug}</strong> to Pharmacy.
-                  {pharmActionTarget.qtyRequested != null
-                    ? <> Requested quantity: <strong>{pharmActionTarget.qtyRequested} units</strong>.</>
-                    : <> Pharmacy left quantity blank, so Store can choose the fulfilled amount.</>}
-                </p>
-                <div>
-                  <label className="mb-1 block text-sm font-semibold text-slate-700">Fulfilled Quantity</label>
-                  <input
-                    type="number"
-                    min="1"
-                    value={pharmFulfillQty}
-                    onChange={(e) => setPharmFulfillQty(e.target.value)}
-                    placeholder={pharmActionTarget.qtyRequested != null ? String(pharmActionTarget.qtyRequested) : "Enter quantity to fulfill"}
-                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/20"
-                  />
-                </div>
+                <p className="text-slate-600">Confirm that <strong>{pharmActionTarget.qty} units</strong> of <strong>{pharmActionTarget.drug}</strong> have been physically delivered to Pharmacy?</p>
                 <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
                   ✓ This will: mark the request fulfilled{pharmActionTarget.storeInventoryId ? `, deduct ${pharmActionTarget.qty} from Store inventory` : ""}{pharmActionTarget.inventoryItemId ? `, add ${pharmActionTarget.qty} to Pharmacy inventory` : ""}.
                 </div>

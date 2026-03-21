@@ -65,7 +65,10 @@ export type StorePO = {
   requestedBy: string;
   requestedAt: string;
   expectedDate: string;
-  status: "Draft" | "Pending Approval" | "Approved" | "Sent" | "Received" | "Rejected";
+  status: "Draft" | "Pending Approval" | "Approved" | "Sent" | "Confirmed" | "Received" | "Rejected" | "Cancelled";
+  description?: string;
+  paymentSubmitted?: boolean;
+  raisedBy?: string;
 };
 
 export type HRStaff = {

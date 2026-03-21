@@ -52,18 +52,24 @@ export default function LabProcessingPage() {
       });
   }, [staffName]);
 
-  const readyToProcess = tests.filter((t) => t.status === "Sample Collected");
-  const inProgress = tests.filter((t) => t.status === "In Progress");
+  // Local overrides — ensures instant UI update independent of store pub/sub
+  const [localOverrides, setLocalOverrides] = useState<Record<string, Partial<LabTest>>>({});
+  const displayTests = tests.map((t) => localOverrides[t.id] ? { ...t, ...localOverrides[t.id] } : t);
+  const readyToProcess = displayTests.filter((t) => t.status === "Sample Collected");
+  const inProgress = displayTests.filter((t) => t.status === "In Progress");
 
   function handleStartProcessing() {
     if (!processTarget) return;
     const now = new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
-    updateLabTest(processTarget.id, {
+    const processingStartedAt = `${now} · ${new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}`;
+    const overrides: Partial<LabTest> = {
       status: "In Progress",
       technicianName: techName,
       equipmentUsed: equipment,
-      processingStartedAt: `${now} · ${new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}`,
-    });
+      processingStartedAt,
+    };
+    setLocalOverrides((prev) => ({ ...prev, [processTarget.id]: overrides }));
+    updateLabTest(processTarget.id, overrides);
     setToast({ message: `Processing started: ${processTarget.testName} for ${processTarget.patientName}.`, type: "success" });
     setProcessTarget(null);
   }

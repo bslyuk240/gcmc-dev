@@ -1,9 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import Link from "next/link";
 import { PageHeader } from "@/components/layout/page-header";
-import { INTERNAL_PREFIX } from "@/lib/constants/navigation";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Modal, ModalFooter } from "@/components/ui/modal";
@@ -40,12 +38,18 @@ export default function LabResultsEntryPage() {
     }).catch(() => {});
   }, []);
 
-  const inProgress = tests.filter((t) => t.status === "In Progress");
+  // Local status overrides — ensures instant UI update independent of store pub/sub
+  const [localStatuses, setLocalStatuses] = useState<Record<string, string>>({});
+  const displayTests = tests.map((t) =>
+    localStatuses[t.id] ? { ...t, status: localStatuses[t.id] as LabTest["status"] } : t
+  );
+  const inProgress = displayTests.filter((t) => t.status === "In Progress");
 
   function handleSubmitResult() {
     if (!entryTarget || !resultValue) return;
     const now = new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
     const today = new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+    setLocalStatuses((prev) => ({ ...prev, [entryTarget.id]: "Completed" }));
     updateLabTest(entryTarget.id, {
       status: "Completed",
       resultValue,
@@ -92,10 +96,9 @@ export default function LabResultsEntryPage() {
         description="Enter test result values for tests currently in progress. Results are sent to the doctor."
       />
 
-      {/* Billing rates shortcut */}
-      <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-xs text-slate-600 flex items-center justify-between">
+      {/* Billing rates note */}
+      <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-xs text-slate-600">
         <span>Lab test billing rates are configured in <strong>Admin → Settings → Billing Rates</strong></span>
-        <Link href={`${INTERNAL_PREFIX}/admin/settings`} className="font-semibold text-[var(--accent)] hover:underline">Manage Rates →</Link>
       </div>
 
       <Card className="overflow-hidden p-0">

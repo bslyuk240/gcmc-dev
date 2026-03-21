@@ -506,6 +506,22 @@ export async function fetchTestCatalog(): Promise<TestCatalogItem[]> {
   return (data ?? []).map(mapTestCatalog);
 }
 
+export async function upsertTestCatalogItem(item: TestCatalogItem): Promise<void> {
+  const sb = getSupabase();
+  if (!sb) return;
+  await sb.from("test_catalog").upsert({
+    id: item.id,
+    name: item.name,
+    code: item.code,
+    category: item.category,
+    sample_type: item.sampleType,
+    price: item.price,
+    turnaround_hours: item.turnaroundHours,
+    department: item.department,
+    description: item.description,
+  });
+}
+
 export async function insertLabTest(t: LabTest): Promise<void> {
   const sb = getSupabase();
   if (!sb) return;
@@ -1677,12 +1693,15 @@ function mapStorePO(r: Record<string, unknown>): StorePO {
   return {
     id: r.id as string,
     supplier: r.supplier as string,
-    items: (r.items as StorePO["items"]) ?? [],
+    items: Number(r.items ?? 0),
     value: (r.value as number) ?? 0,
     requestedBy: (r.requested_by as string) ?? "",
     requestedAt: (r.requested_at as string) ?? "",
     expectedDate: (r.expected_date as string) ?? "",
     status: r.status as StorePO["status"],
+    description: (r.description as string) ?? undefined,
+    paymentSubmitted: Boolean(r.payment_submitted),
+    raisedBy: (r.raised_by as string) ?? undefined,
   };
 }
 
@@ -1714,6 +1733,137 @@ export async function fetchStorePOs(): Promise<StorePO[]> {
   const sb = getSupabase(); if (!sb) return [];
   const { data } = await sb.from("store_pos").select("*").order("requested_at", { ascending: false });
   return (data ?? []).map(mapStorePO);
+}
+
+export async function insertStorePO(po: Omit<StorePO, "paymentSubmitted">): Promise<void> {
+  const sb = getSupabase(); if (!sb) return;
+  await sb.from("store_pos").insert({
+    id: po.id,
+    supplier: po.supplier,
+    items: po.items,
+    value: po.value,
+    requested_by: po.requestedBy,
+    requested_at: po.requestedAt,
+    expected_date: po.expectedDate || null,
+    status: po.status,
+    description: po.description ?? null,
+    raised_by: po.raisedBy ?? null,
+    payment_submitted: false,
+  });
+}
+
+export async function updateStorePOStatus(id: string, status: StorePO["status"]): Promise<void> {
+  const sb = getSupabase(); if (!sb) return;
+  await sb.from("store_pos").update({ status }).eq("id", id);
+}
+
+export async function updateStorePOPayment(id: string): Promise<void> {
+  const sb = getSupabase(); if (!sb) return;
+  await sb.from("store_pos").update({ payment_submitted: true }).eq("id", id);
+}
+
+// ─── Store Suppliers ──────────────────────────────────────────────────────────
+
+export type StoreSupplier = {
+  id: string;
+  name: string;
+  category: string;
+  contact: string;
+  phone: string;
+  lead: string;
+  createdAt: string;
+};
+
+function mapStoreSupplier(r: Record<string, unknown>): StoreSupplier {
+  return {
+    id: String(r.id ?? ""),
+    name: String(r.name ?? ""),
+    category: String(r.category ?? "General Supplies"),
+    contact: String(r.contact ?? ""),
+    phone: String(r.phone ?? ""),
+    lead: String(r.lead ?? ""),
+    createdAt: String(r.created_at ?? ""),
+  };
+}
+
+export async function fetchStoreSuppliers(): Promise<StoreSupplier[]> {
+  const sb = getSupabase(); if (!sb) return [];
+  const { data } = await sb.from("store_suppliers").select("*").order("created_at", { ascending: false });
+  return (data ?? []).map(mapStoreSupplier);
+}
+
+export async function insertStoreSupplier(s: Omit<StoreSupplier, "id" | "createdAt">): Promise<void> {
+  const sb = getSupabase(); if (!sb) return;
+  await sb.from("store_suppliers").insert({
+    name: s.name, category: s.category, contact: s.contact, phone: s.phone, lead: s.lead,
+  });
+}
+
+export async function deleteStoreSupplier(id: string): Promise<void> {
+  const sb = getSupabase(); if (!sb) return;
+  await sb.from("store_suppliers").delete().eq("id", id);
+}
+
+// ─── Stock Requests ───────────────────────────────────────────────────────────
+
+export type StockRequest = {
+  id: string;
+  item: string;
+  qty: number;
+  unit: string;
+  dept: string;
+  requestedBy: string;
+  urgency: "Routine" | "Urgent" | "Critical";
+  status: "Pending" | "Approved" | "Rejected" | "Fulfilled";
+  notes?: string;
+  createdAt: string;
+};
+
+function mapStockRequest(r: Record<string, unknown>): StockRequest {
+  return {
+    id: r.id as string,
+    item: r.item as string,
+    qty: Number(r.qty ?? 1),
+    unit: (r.unit as string) ?? "Pack",
+    dept: (r.dept as string) ?? "",
+    requestedBy: (r.requested_by as string) ?? "",
+    urgency: (r.urgency as StockRequest["urgency"]) ?? "Routine",
+    status: (r.status as StockRequest["status"]) ?? "Pending",
+    notes: (r.notes as string) ?? undefined,
+    createdAt: (r.created_at as string) ?? "",
+  };
+}
+
+export async function fetchStockRequests(): Promise<StockRequest[]> {
+  const sb = getSupabase(); if (!sb) return [];
+  const { data } = await sb.from("stock_requests").select("*").order("created_at", { ascending: false });
+  return (data ?? []).map(mapStockRequest);
+}
+
+export async function insertStockRequest(req: Omit<StockRequest, "createdAt">): Promise<void> {
+  const sb = getSupabase(); if (!sb) return;
+  await sb.from("stock_requests").insert({
+    id: req.id,
+    item: req.item,
+    qty: req.qty,
+    unit: req.unit,
+    dept: req.dept,
+    requested_by: req.requestedBy,
+    urgency: req.urgency,
+    status: req.status,
+    notes: req.notes ?? null,
+  });
+}
+
+export async function updateStockRequestStatus(
+  id: string,
+  status: StockRequest["status"],
+  notes?: string,
+): Promise<void> {
+  const sb = getSupabase(); if (!sb) return;
+  const update: Record<string, unknown> = { status };
+  if (notes !== undefined) update.notes = notes;
+  await sb.from("stock_requests").update(update).eq("id", id);
 }
 
 export async function insertAdminApproval(a: AdminApproval): Promise<void> {

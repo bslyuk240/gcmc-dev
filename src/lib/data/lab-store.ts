@@ -199,6 +199,24 @@ export async function updateLabTest(id: string, updates: Partial<LabTest>) {
 
 export function getTestCatalog(): TestCatalogItem[] { return [...getState().catalog]; }
 
+export async function addTestCatalogItem(item: TestCatalogItem) {
+  mutate((s) => { s.catalog = [...s.catalog, item].sort((a, b) => a.name.localeCompare(b.name)); });
+  try {
+    const { upsertTestCatalogItem } = await import("@/lib/supabase/db");
+    await upsertTestCatalogItem(item);
+  } catch (err) { console.error("[lab-store] addTestCatalogItem failed:", err); }
+}
+
+export async function updateTestCatalogItem(item: TestCatalogItem) {
+  mutate((s) => {
+    s.catalog = s.catalog.map((c) => c.id === item.id ? item : c).sort((a, b) => a.name.localeCompare(b.name));
+  });
+  try {
+    const { upsertTestCatalogItem } = await import("@/lib/supabase/db");
+    await upsertTestCatalogItem(item);
+  } catch (err) { console.error("[lab-store] updateTestCatalogItem failed:", err); }
+}
+
 // ─── Metrics ─────────────────────────────────────────────────────────────────
 
 export function getLabMetrics() {
