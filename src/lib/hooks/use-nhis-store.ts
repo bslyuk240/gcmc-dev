@@ -9,6 +9,7 @@ import {
   getNhisTariffs,
   getNhisEnrollments,
   getNhisClaims,
+  getNhisRegistrations,
 } from "@/lib/data/nhis-store";
 
 export function useNhisStore() {
@@ -27,6 +28,7 @@ export function useNhisStore() {
       .on("postgres_changes", { event: "*", schema: "public", table: "hmo_schemes" }, () => syncNhisFromSupabase(true))
       .on("postgres_changes", { event: "*", schema: "public", table: "hmo_tariffs" }, () => syncNhisFromSupabase(true))
       .on("postgres_changes", { event: "*", schema: "public", table: "patient_hmo_enrollments" }, () => syncNhisFromSupabase(true))
+      .on("postgres_changes", { event: "*", schema: "public", table: "patient_registrations" }, () => syncNhisFromSupabase(true))
       .on("postgres_changes", { event: "*", schema: "public", table: "hmo_claims" }, () => syncNhisFromSupabase(true))
       .subscribe();
 
@@ -45,6 +47,7 @@ export function useNhisStore() {
       tariffs: [],
       enrollments: [],
       claims: [],
+      hmoRegistrations: [],
     };
   }
 
@@ -54,5 +57,6 @@ export function useNhisStore() {
     tariffs: getNhisTariffs(),
     enrollments: getNhisEnrollments(),
     claims: getNhisClaims(),
+    hmoRegistrations: getNhisRegistrations(),
   };
 }

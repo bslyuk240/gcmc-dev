@@ -82,6 +82,16 @@ export type HmoClaim = {
   createdAt: string;
 };
 
+export type HmoRegistration = {
+  id: string;
+  patientId: string;
+  patientName: string;
+  primaryHmoSchemeId?: string;
+  registeredAt: string;
+  registeredBy: string;
+  hasHmo: boolean;
+};
+
 // ─── Store State ──────────────────────────────────────────────────────────────
 
 type NhisState = {
@@ -89,6 +99,7 @@ type NhisState = {
   tariffs: HmoTariff[];
   enrollments: HmoEnrollment[];
   claims: HmoClaim[];
+  hmoRegistrations: HmoRegistration[];
 };
 
 // ─── Internal state ───────────────────────────────────────────────────────────
@@ -99,6 +110,7 @@ const EMPTY_STATE: NhisState = {
   tariffs: [],
   enrollments: [],
   claims: [],
+  hmoRegistrations: [],
 };
 
 function loadState(): NhisState {
@@ -140,6 +152,7 @@ export function getNhisSchemes(): HmoScheme[] { return [...getState().schemes]; 
 export function getNhisTariffs(): HmoTariff[] { return [...getState().tariffs]; }
 export function getNhisEnrollments(): HmoEnrollment[] { return [...getState().enrollments]; }
 export function getNhisClaims(): HmoClaim[] { return [...getState().claims]; }
+export function getNhisRegistrations(): HmoRegistration[] { return [...getState().hmoRegistrations]; }
 
 // ─── Supabase sync ────────────────────────────────────────────────────────────
 
@@ -158,12 +171,19 @@ export async function syncNhisFromSupabase(force = false) {
   if (!force && now - _lastSync < 30_000) return;
   _lastSync = now;
   try {
-    const { fetchHmoSchemes, fetchHmoTariffs, fetchHmoEnrollments, fetchHmoClaims } = await import("@/lib/supabase/db");
-    const [schemes, tariffs, enrollments, claims] = await Promise.all([
+    const {
+      fetchHmoSchemes,
+      fetchHmoTariffs,
+      fetchHmoEnrollments,
+      fetchHmoClaims,
+      fetchHmoPatientRegistrations,
+    } = await import("@/lib/supabase/db");
+    const [schemes, tariffs, enrollments, claims, registrations] = await Promise.all([
       fetchHmoSchemes(),
       fetchHmoTariffs(),
       fetchHmoEnrollments(),
       fetchHmoClaims(),
+      fetchHmoPatientRegistrations(),
     ]);
     const current = getState();
     _state = {
@@ -171,6 +191,18 @@ export async function syncNhisFromSupabase(force = false) {
       tariffs: mergeById(tariffs, current.tariffs),
       enrollments: mergeById(enrollments, current.enrollments),
       claims: mergeById(claims, current.claims),
+      hmoRegistrations: mergeById(
+        registrations.map((reg) => ({
+          id: reg.id,
+          patientId: reg.patientId,
+          patientName: reg.patientName,
+          primaryHmoSchemeId: reg.primaryHmoSchemeId,
+          registeredAt: reg.registeredAt,
+          registeredBy: reg.registeredBy,
+          hasHmo: reg.hasHmo ?? true,
+        })),
+        current.hmoRegistrations,
+      ),
     };
     saveState(_state);
     listeners.forEach((l) => l());

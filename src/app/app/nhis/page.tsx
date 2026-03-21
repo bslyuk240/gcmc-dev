@@ -5,7 +5,7 @@ import { PageHeader } from "@/components/layout/page-header";
 import { Card } from "@/components/ui/card";
 import { useNhisStore } from "@/lib/hooks/use-nhis-store";
 import { syncNhisFromSupabase } from "@/lib/data/nhis-store";
-import type { HmoClaim } from "@/lib/data/nhis-store";
+import type { HmoClaim, HmoRegistration } from "@/lib/data/nhis-store";
 
 const STATUS_STYLES: Record<string, string> = {
   draft: "bg-slate-100 text-slate-600",
@@ -28,7 +28,7 @@ function fmt(n: number) {
 }
 
 export default function NhisDashboardPage() {
-  const { schemes, enrollments, claims, hydrated } = useNhisStore();
+  const { schemes, enrollments, claims, hmoRegistrations, hydrated } = useNhisStore();
 
   useEffect(() => {
     syncNhisFromSupabase();
@@ -41,6 +41,9 @@ export default function NhisDashboardPage() {
   const hmoReceivables = claims
     .filter((c) => c.status === "submitted" || c.status === "approved" || c.status === "partial")
     .reduce((sum, c) => sum + c.hmoAmount, 0);
+  const pendingHmoRegistrations = hmoRegistrations.filter(
+    (registration: HmoRegistration) => !enrollments.some((enrollment) => enrollment.patientId === registration.patientId),
+  );
 
   const statusCounts: Record<string, number> = {
     draft: 0, submitted: 0, approved: 0, rejected: 0, paid: 0, partial: 0,
@@ -78,13 +81,19 @@ export default function NhisDashboardPage() {
       />
 
       {/* KPI Cards */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
         {[
           {
             label: "Enrolled Patients",
             value: activeEnrollments.length,
             sub: `${schemes.filter((s) => s.isActive).length} active schemes`,
             color: "text-blue-700",
+          },
+          {
+            label: "Pending HMO Enrollment",
+            value: pendingHmoRegistrations.length,
+            sub: "Front Desk HMO-flagged registrations",
+            color: "text-violet-700",
           },
           {
             label: "Active Claims",
@@ -112,6 +121,44 @@ export default function NhisDashboardPage() {
           </Card>
         ))}
       </div>
+
+      {pendingHmoRegistrations.length > 0 && (
+        <Card className="overflow-hidden p-0">
+          <div className="border-b border-slate-100 px-5 py-4">
+            <h3 className="font-bold text-slate-900">Front Desk HMO Registrations</h3>
+            <p className="text-xs text-slate-500">Patients marked as HMO at registration but not yet enrolled in NHIS.</p>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-sm text-left">
+              <thead>
+                <tr className="bg-slate-50 border-b border-slate-100">
+                  {["Patient", "Patient ID", "Scheme", "Registered", "Status"].map((h) => (
+                    <th key={h} className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {pendingHmoRegistrations.slice(0, 10).map((registration: HmoRegistration) => {
+                  const schemeName = schemes.find((scheme) => scheme.id === registration.primaryHmoSchemeId)?.name ?? "—";
+                  return (
+                    <tr key={registration.id} className="hover:bg-slate-50">
+                      <td className="px-5 py-3 font-medium text-slate-900">{registration.patientName}</td>
+                      <td className="px-5 py-3 font-mono text-xs text-slate-500">{registration.patientId}</td>
+                      <td className="px-5 py-3 text-slate-600">{schemeName}</td>
+                      <td className="px-5 py-3 text-xs text-slate-500">{formatDate(registration.registeredAt)}</td>
+                      <td className="px-5 py-3">
+                        <span className="rounded-full bg-amber-50 px-2.5 py-0.5 text-xs font-bold text-amber-700">
+                          Pending Enrollment
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
 
       {/* Claims by status */}
       <Card className="p-5">

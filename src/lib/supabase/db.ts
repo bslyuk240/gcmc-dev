@@ -2182,6 +2182,8 @@ export type PatientRegistration = {
   bloodGroup?: string;
   nationality?: string;
   occupation?: string;
+  hasHmo?: boolean;
+  primaryHmoSchemeId?: string;
 };
 
 function mapPatientRegistration(r: Record<string, unknown>): PatientRegistration {
@@ -2203,6 +2205,8 @@ function mapPatientRegistration(r: Record<string, unknown>): PatientRegistration
     bloodGroup: (r.blood_group as string) ?? undefined,
     nationality: (r.nationality as string) ?? "Ghanaian",
     occupation: (r.occupation as string) ?? undefined,
+    hasHmo: (r.has_hmo as boolean) ?? false,
+    primaryHmoSchemeId: (r.primary_hmo_scheme_id as string) ?? undefined,
   };
 }
 
@@ -2211,6 +2215,19 @@ export async function fetchPatientRegistrations(): Promise<PatientRegistration[]
   if (!sb) return [];
   const { data } = await sb.from("patient_registrations").select("*")
     .order("created_at", { ascending: false }).limit(50);
+  return (data ?? []).map(mapPatientRegistration);
+}
+
+export async function fetchHmoPatientRegistrations(): Promise<PatientRegistration[]> {
+  const sb = getSupabase();
+  if (!sb) return [];
+  const { data, error } = await sb
+    .from("patient_registrations")
+    .select("*")
+    .eq("has_hmo", true)
+    .order("created_at", { ascending: false })
+    .limit(100);
+  if (error) throw new Error(error.message);
   return (data ?? []).map(mapPatientRegistration);
 }
 
