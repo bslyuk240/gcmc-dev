@@ -1659,7 +1659,8 @@ export async function insertNotification(n: AppNotification): Promise<void> {
   await sb.from("notifications").upsert({
     id: n.id, category: n.category, severity: n.severity, title: n.title,
     body: n.body, href: n.href, is_read: n.isRead,
-    target_departments: n.targetDepartments, created_at: n.createdAt,
+    // n.createdAt is a locale-formatted display string ("02:30 PM") — DB needs ISO
+    target_departments: n.targetDepartments, created_at: new Date().toISOString(),
   });
 }
 
