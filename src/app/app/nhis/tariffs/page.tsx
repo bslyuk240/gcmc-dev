@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { PageHeader } from "@/components/layout/page-header";
-import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Modal, ModalFooter } from "@/components/ui/modal";
 import { Toast, type ToastData } from "@/components/ui/toast";
@@ -21,6 +20,16 @@ import { getTestCatalog } from "@/lib/data/lab-store";
 const SERVICE_CATEGORIES: HmoTariff["serviceCategory"][] = [
   "consultation", "lab", "pharmacy", "nursing", "procedure", "admission", "other",
 ];
+
+const CATEGORY_LABELS: Record<HmoTariff["serviceCategory"], string> = {
+  consultation: "Consultation",
+  lab: "Laboratory",
+  pharmacy: "Pharmacy",
+  nursing: "Nursing",
+  procedure: "Procedure",
+  admission: "Admission",
+  other: "Other",
+};
 
 type TariffFormData = {
   serviceCategory: HmoTariff["serviceCategory"];
@@ -50,6 +59,7 @@ export default function NhisTariffsPage() {
   const { schemes, tariffs, hydrated } = useNhisStore();
   const [toast, setToast] = useState<ToastData | null>(null);
   const [selectedSchemeId, setSelectedSchemeId] = useState("");
+  const [activeTab, setActiveTab] = useState<HmoTariff["serviceCategory"]>("consultation");
   const [showModal, setShowModal] = useState(false);
   const [editTarget, setEditTarget] = useState<HmoTariff | null>(null);
   const [form, setForm] = useState<TariffFormData>(EMPTY_FORM);
@@ -74,7 +84,7 @@ export default function NhisTariffsPage() {
 
   function openAdd(category?: HmoTariff["serviceCategory"]) {
     setEditTarget(null);
-    setForm({ ...EMPTY_FORM, serviceCategory: category ?? "consultation" });
+    setForm({ ...EMPTY_FORM, serviceCategory: category ?? activeTab });
     setError(null);
     setShowModal(true);
   }
@@ -133,11 +143,11 @@ export default function NhisTariffsPage() {
           isActive: form.isActive,
           notes: form.notes.trim() || undefined,
         });
+        // Switch to the saved category's tab so the new tariff is immediately visible
+        setActiveTab(form.serviceCategory);
         setToast({ message: `Tariff "${form.serviceName}" added.`, type: "success" });
       }
-      // Force a fresh pull from DB so the UI always reflects the latest state,
-      // guarding against any timing window where the optimistic mutate and an
-      // in-flight sync could race each other.
+      // Force a fresh pull from DB to guard against mutate-vs-sync race conditions
       syncNhisFromSupabase(true);
       closeModal();
     } catch (err) {
@@ -162,28 +172,30 @@ export default function NhisTariffsPage() {
   }
 
   const schemeTariffs = tariffs.filter((t) => t.schemeId === selectedSchemeId);
-
-  // Group by service category
   const grouped = SERVICE_CATEGORIES.reduce<Record<string, HmoTariff[]>>((acc, cat) => {
     acc[cat] = schemeTariffs.filter((t) => t.serviceCategory === cat);
     return acc;
   }, {});
+  const activeTariffs = grouped[activeTab] ?? [];
 
   return (
-    <div className="space-y-6">
-      <PageHeader
-        title="Tariffs"
-        description="Configure HMO pricing and copay rules per scheme and service category."
-      />
+    <div className="flex flex-col gap-0">
+      <Toast toast={toast} onDismiss={() => setToast(null)} />
 
-      {<Toast toast={toast} onDismiss={() => setToast(null)} />}
+      {/* Page header */}
+      <div className="px-6 pt-6 pb-4">
+        <PageHeader
+          title="Tariffs"
+          description="Configure HMO pricing and copay rules per scheme and service category."
+        />
+      </div>
 
-      {/* Scheme selector */}
-      <Card className="flex flex-col gap-3 p-5 sm:flex-row sm:items-center sm:justify-between">
+      {/* Scheme selector + Add button — sticky toolbar */}
+      <div className="sticky top-0 z-10 border-b border-slate-200 bg-white px-6 py-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-3">
-          <label className="text-sm font-semibold text-slate-700">Scheme:</label>
+          <label className="text-sm font-semibold text-slate-600 whitespace-nowrap">Scheme:</label>
           <select
-            className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-accent"
+            className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-accent"
             value={selectedSchemeId}
             onChange={(e) => setSelectedSchemeId(e.target.value)}
           >
@@ -193,71 +205,138 @@ export default function NhisTariffsPage() {
             ))}
           </select>
         </div>
-        <Button onClick={() => openAdd()} disabled={!selectedSchemeId}>+ Add Tariff</Button>
-      </Card>
+        <Button onClick={() => openAdd()} disabled={!selectedSchemeId}>
+          + Add Tariff
+        </Button>
+      </div>
 
-      {!hydrated ? (
-        <div className="rounded-xl border border-slate-100 bg-white px-5 py-8 text-center text-sm text-slate-400">Loading…</div>
-      ) : !selectedSchemeId ? (
-        <div className="rounded-xl border border-slate-100 bg-white px-5 py-8 text-center text-sm text-slate-400">Select a scheme to view tariffs.</div>
-      ) : (
-        <>
-          {SERVICE_CATEGORIES.map((cat) => {
-            const catTariffs = grouped[cat] ?? [];
-            return (
-              <Card key={cat} className="overflow-hidden p-0">
-                <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3">
-                  <h3 className="font-bold text-slate-900 capitalize">{cat} ({catTariffs.length})</h3>
-                  <Button size="sm" variant="ghost" onClick={() => openAdd(cat)}>+ Add</Button>
-                </div>
-                {catTariffs.length === 0 ? (
-                  <div className="px-5 py-4 text-sm text-slate-400">No tariffs for this category.</div>
-                ) : (
-                  <div className="overflow-x-auto">
-                    <table className="min-w-full text-sm text-left">
-                      <thead>
-                        <tr className="bg-slate-50 border-b border-slate-100">
-                          {["Service Name", "HMO Price", "Copay Type", "Copay Value", "Status", "Actions"].map((h) => (
-                            <th key={h} className="px-5 py-2.5 text-xs font-semibold uppercase tracking-wide text-slate-500">{h}</th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {catTariffs.map((t) => (
-                          <tr key={t.id} className="hover:bg-slate-50">
-                            <td className="px-5 py-3 font-medium text-slate-900">{t.serviceName}</td>
-                            <td className="px-5 py-3 font-bold text-slate-900">{fmt(t.hmoPrice)}</td>
-                            <td className="px-5 py-3">
-                              <span className="rounded-full bg-blue-50 text-blue-700 px-2.5 py-0.5 text-xs font-semibold capitalize">
-                                {t.copayType}
-                              </span>
-                            </td>
-                            <td className="px-5 py-3 text-slate-700">
-                              {t.copayType === "percentage" ? `${t.copayValue}%` : fmt(t.copayValue)}
-                            </td>
-                            <td className="px-5 py-3">
-                              <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${t.isActive ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>
-                                {t.isActive ? "Active" : "Inactive"}
-                              </span>
-                            </td>
-                            <td className="px-5 py-3">
-                              <div className="flex gap-2">
-                                <Button size="sm" variant="ghost" onClick={() => openEdit(t)}>Edit</Button>
-                                <Button size="sm" variant="ghost" onClick={() => handleDelete(t)} className="text-red-500 hover:text-red-700">Delete</Button>
-                              </div>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </Card>
-            );
-          })}
-        </>
+      {/* Category tabs */}
+      {selectedSchemeId && (
+        <div className="border-b border-slate-200 bg-white px-6 overflow-x-auto">
+          <nav className="flex gap-0 -mb-px">
+            {SERVICE_CATEGORIES.map((cat) => {
+              const count = grouped[cat]?.length ?? 0;
+              const isActive = activeTab === cat;
+              return (
+                <button
+                  key={cat}
+                  onClick={() => setActiveTab(cat)}
+                  className={[
+                    "flex items-center gap-2 whitespace-nowrap border-b-2 px-4 py-3 text-sm font-medium transition-colors focus:outline-none",
+                    isActive
+                      ? "border-accent text-accent"
+                      : "border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300",
+                  ].join(" ")}
+                >
+                  {CATEGORY_LABELS[cat]}
+                  <span
+                    className={[
+                      "inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-xs font-bold",
+                      isActive
+                        ? "bg-accent/10 text-accent"
+                        : count > 0
+                          ? "bg-slate-100 text-slate-600"
+                          : "bg-slate-50 text-slate-400",
+                    ].join(" ")}
+                  >
+                    {count}
+                  </span>
+                </button>
+              );
+            })}
+          </nav>
+        </div>
       )}
 
+      {/* Tab content */}
+      <div className="px-6 py-5">
+        {!hydrated ? (
+          <div className="rounded-xl border border-slate-100 bg-white px-5 py-12 text-center text-sm text-slate-400">
+            Loading…
+          </div>
+        ) : !selectedSchemeId ? (
+          <div className="rounded-xl border border-slate-100 bg-white px-5 py-12 text-center text-sm text-slate-400">
+            Select a scheme to view tariffs.
+          </div>
+        ) : (
+          <div className="rounded-xl border border-slate-200 bg-white overflow-hidden">
+            {/* Tab header */}
+            <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3">
+              <div>
+                <span className="font-semibold text-slate-900">{CATEGORY_LABELS[activeTab]}</span>
+                <span className="ml-2 text-sm text-slate-400">
+                  {activeTariffs.length} tariff{activeTariffs.length !== 1 ? "s" : ""}
+                </span>
+              </div>
+              <Button size="sm" onClick={() => openAdd(activeTab)} disabled={!selectedSchemeId}>
+                + Add
+              </Button>
+            </div>
+
+            {activeTariffs.length === 0 ? (
+              <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
+                <div className="text-3xl">📋</div>
+                <p className="text-sm font-medium text-slate-500">
+                  No {CATEGORY_LABELS[activeTab].toLowerCase()} tariffs yet for this scheme.
+                </p>
+                <Button size="sm" variant="ghost" onClick={() => openAdd(activeTab)}>
+                  + Add first tariff
+                </Button>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-sm text-left">
+                  <thead>
+                    <tr className="bg-slate-50 border-b border-slate-100">
+                      {["Service Name", "HMO Price", "Copay Type", "Copay Value", "Status", "Actions"].map((h) => (
+                        <th key={h} className="px-5 py-2.5 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                          {h}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {activeTariffs.map((t) => (
+                      <tr key={t.id} className="hover:bg-slate-50 transition-colors">
+                        <td className="px-5 py-3 font-medium text-slate-900">{t.serviceName}</td>
+                        <td className="px-5 py-3 font-bold text-slate-900">{fmt(t.hmoPrice)}</td>
+                        <td className="px-5 py-3">
+                          <span className="rounded-full bg-blue-50 text-blue-700 px-2.5 py-0.5 text-xs font-semibold capitalize">
+                            {t.copayType}
+                          </span>
+                        </td>
+                        <td className="px-5 py-3 text-slate-700">
+                          {t.copayType === "percentage" ? `${t.copayValue}%` : fmt(t.copayValue)}
+                        </td>
+                        <td className="px-5 py-3">
+                          <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${t.isActive ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>
+                            {t.isActive ? "Active" : "Inactive"}
+                          </span>
+                        </td>
+                        <td className="px-5 py-3">
+                          <div className="flex gap-2">
+                            <Button size="sm" variant="ghost" onClick={() => openEdit(t)}>Edit</Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => handleDelete(t)}
+                              className="text-red-500 hover:text-red-700"
+                            >
+                              Delete
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Add / Edit Modal */}
       {showModal && (
         <Modal open={showModal} title={editTarget ? "Edit Tariff" : "Add Tariff"} onClose={closeModal}>
           <div className="space-y-4">
@@ -273,7 +352,6 @@ export default function NhisTariffsPage() {
                 className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent"
                 value={form.serviceCategory}
                 onChange={(e) => {
-                  // Clear service name when switching category so catalog/text doesn't mismatch
                   setForm((prev) => ({
                     ...prev,
                     serviceCategory: e.target.value as HmoTariff["serviceCategory"],
@@ -283,7 +361,7 @@ export default function NhisTariffsPage() {
                 }}
               >
                 {SERVICE_CATEGORIES.map((c) => (
-                  <option key={c} value={c}>{c.charAt(0).toUpperCase() + c.slice(1)}</option>
+                  <option key={c} value={c}>{CATEGORY_LABELS[c]}</option>
                 ))}
               </select>
             </div>
@@ -296,7 +374,6 @@ export default function NhisTariffsPage() {
                   <SearchableSelect
                     value={form.serviceName}
                     onChange={(val) => {
-                      // Auto-fill HMO price from the drug's unit price
                       const drug = getPharmacyDrugList().find((d) => d.name === val);
                       field("serviceName", val);
                       if (drug && !form.hmoPrice) {
