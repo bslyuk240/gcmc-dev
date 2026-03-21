@@ -1,13 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Modal, ModalFooter } from "@/components/ui/modal";
 import { Toast, type ToastData } from "@/components/ui/toast";
-import { INTERNAL_PREFIX } from "@/lib/constants/navigation";
 import { useAdminStore } from "@/lib/hooks/use-admin-store";
 import { updatePOStatus } from "@/lib/data/admin-store";
 
@@ -55,10 +53,6 @@ export default function AdminStoreMonitorPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <PageHeader title="Store Monitor" description="Procurement oversight — stock levels, purchase orders, supply alerts, and approval of major purchases." />
-        <Link href={`${INTERNAL_PREFIX}/store`}
-          className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition">
-          Open Store →
-        </Link>
       </div>
 
       {metrics.criticalStock > 0 && (
@@ -179,14 +173,6 @@ export default function AdminStoreMonitorPage() {
               <li className="flex items-start gap-2"><span className="mt-0.5 h-1.5 w-1.5 shrink-0 rounded-full bg-violet-500" />{metrics.pendingPOs} PO{metrics.pendingPOs !== 1 ? "s" : ""} awaiting admin approval (₦{metrics.pendingPOValue.toLocaleString()}).</li>
             </ul>
           </Card>
-          <Link href={`${INTERNAL_PREFIX}/store/procurement`}
-            className="block rounded-xl border border-violet-200 bg-violet-50 px-4 py-3 text-sm font-semibold text-violet-800 hover:bg-violet-100 text-center transition">
-            Procurement →
-          </Link>
-          <Link href={`${INTERNAL_PREFIX}/store/inventory`}
-            className="block rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 text-center transition">
-            Full Inventory →
-          </Link>
         </div>
       </div>
 

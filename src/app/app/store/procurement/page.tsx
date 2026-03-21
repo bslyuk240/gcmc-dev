@@ -13,17 +13,21 @@ import {
   insertStorePO,
   updateStorePOStatus,
   updateStorePOPayment,
+  fetchStoreSuppliers,
+  insertStoreSupplier,
+  deleteStoreSupplier,
+  type StoreSupplier,
 } from "@/lib/supabase/db";
 
 type ActiveStatus = "Draft" | "Sent" | "Confirmed" | "Received" | "Cancelled";
 
-const SUPPLIERS = [
-  { name: "MedSupply Co.", contact: "procurement@medsupply.gh", phone: "+233 24 000 1001", lead: "5–7 days", category: "General Supplies" },
-  { name: "SafeGuard Ltd.", contact: "orders@safeguard.gh", phone: "+233 24 000 1002", lead: "5–8 days", category: "PPE" },
-  { name: "ClinTech Ghana", contact: "supply@clintech.gh", phone: "+233 24 000 1003", lead: "7–10 days", category: "Medical Devices" },
-  { name: "MedEquip Co.", contact: "sales@medequip.gh", phone: "+233 24 000 1004", lead: "7–14 days", category: "Equipment" },
-  { name: "PrintPro", contact: "orders@printpro.gh", phone: "+233 24 000 1005", lead: "3–5 days", category: "Stationery & Admin" },
-];
+const DEFAULT_SUPPLIERS = [
+  { id: "_1", name: "MedSupply Co.", contact: "procurement@medsupply.gh", phone: "+233 24 000 1001", lead: "5–7 days", category: "General Supplies", createdAt: "" },
+  { id: "_2", name: "SafeGuard Ltd.", contact: "orders@safeguard.gh", phone: "+233 24 000 1002", lead: "5–8 days", category: "PPE", createdAt: "" },
+  { id: "_3", name: "ClinTech Ghana", contact: "supply@clintech.gh", phone: "+233 24 000 1003", lead: "7–10 days", category: "Medical Devices", createdAt: "" },
+  { id: "_4", name: "MedEquip Co.", contact: "sales@medequip.gh", phone: "+233 24 000 1004", lead: "7–14 days", category: "Equipment", createdAt: "" },
+  { id: "_5", name: "PrintPro", contact: "orders@printpro.gh", phone: "+233 24 000 1005", lead: "3–5 days", category: "Stationery & Admin", createdAt: "" },
+] satisfies StoreSupplier[];
 
 const STATUS_STYLES: Record<string, string> = {
   Draft: "bg-slate-100 text-slate-600",
@@ -36,7 +40,7 @@ const STATUS_STYLES: Record<string, string> = {
   Cancelled: "bg-red-50 text-red-700",
 };
 
-const SUPPLIER_NAMES = SUPPLIERS.map((s) => s.name);
+const SUPPLIER_CATEGORIES = ["General Supplies", "PPE", "Medical Devices", "Equipment", "Stationery & Admin", "Laboratory", "Pharmacy", "Other"];
 const ITEM_DESCRIPTIONS = [
   "N95 Respirators × 200", "Gauze Bandages × 500", "IV Cannulas × 100",
   "Surgical Gloves × 50 boxes", "Medical Waste Bags × 100", "Lab Reagents × 30",
@@ -67,8 +71,19 @@ export default function StoreProcurementPage() {
   const [viewOrder, setViewOrder] = useState<StorePO | null>(null);
   const [toast, setToast] = useState<ToastData | null>(null);
 
+  // Suppliers
+  const [dbSuppliers, setDbSuppliers] = useState<StoreSupplier[]>([]);
+  const allSuppliers = [...DEFAULT_SUPPLIERS, ...dbSuppliers];
+  const [showAddSupplier, setShowAddSupplier] = useState(false);
+  const [newSupName, setNewSupName] = useState("");
+  const [newSupCategory, setNewSupCategory] = useState(SUPPLIER_CATEGORIES[0]);
+  const [newSupContact, setNewSupContact] = useState("");
+  const [newSupPhone, setNewSupPhone] = useState("");
+  const [newSupLead, setNewSupLead] = useState("");
+  const [deletingSupId, setDeletingSupId] = useState<string | null>(null);
+
   // New order form
-  const [newSupplier, setNewSupplier] = useState(SUPPLIER_NAMES[0]);
+  const [newSupplier, setNewSupplier] = useState(DEFAULT_SUPPLIERS[0].name);
   const [newItems, setNewItems] = useState("1");
   const [newCost, setNewCost] = useState("");
   const [newDesc, setNewDesc] = useState("");
@@ -76,9 +91,8 @@ export default function StoreProcurementPage() {
   const [submittingNew, setSubmittingNew] = useState(false);
 
   useEffect(() => {
-    fetchStorePOs()
-      .then(setOrders)
-      .finally(() => setLoading(false));
+    fetchStorePOs().then(setOrders).finally(() => setLoading(false));
+    fetchStoreSuppliers().then(setDbSuppliers);
   }, []);
 
   const totalSpend = orders.filter((o) => o.status === "Received").reduce((s, o) => s + o.value, 0);
@@ -105,7 +119,7 @@ export default function StoreProcurementPage() {
       setOrders((prev) => [newOrder, ...prev]);
       setToast({ message: `Purchase Order ${newOrder.id} created as Draft.`, type: "success" });
       setShowNew(false);
-      setNewSupplier(SUPPLIER_NAMES[0]); setNewItems("1"); setNewCost(""); setNewDesc(""); setNewExpected("");
+      setNewSupplier(DEFAULT_SUPPLIERS[0].name); setNewItems("1"); setNewCost(""); setNewDesc(""); setNewExpected("");
       // Persist
       await insertStorePO(newOrder);
     } catch {
@@ -160,6 +174,30 @@ export default function StoreProcurementPage() {
     setPayTarget(null);
     // Persist
     await updateStorePOPayment(payTarget.id);
+  }
+
+  async function handleAddSupplier(e: React.FormEvent) {
+    e.preventDefault();
+    if (!newSupName) return;
+    const s: StoreSupplier = {
+      id: `_tmp_${Date.now()}`,
+      name: newSupName, category: newSupCategory,
+      contact: newSupContact, phone: newSupPhone, lead: newSupLead,
+      createdAt: new Date().toISOString(),
+    };
+    setDbSuppliers((prev) => [s, ...prev]);
+    setToast({ message: `Supplier "${newSupName}" added.`, type: "success" });
+    setShowAddSupplier(false);
+    setNewSupName(""); setNewSupCategory(SUPPLIER_CATEGORIES[0]); setNewSupContact(""); setNewSupPhone(""); setNewSupLead("");
+    await insertStoreSupplier(s);
+    // refresh to get real id
+    fetchStoreSuppliers().then(setDbSuppliers);
+  }
+
+  async function handleDeleteSupplier(id: string) {
+    setDbSuppliers((prev) => prev.filter((s) => s.id !== id));
+    setDeletingSupId(null);
+    await deleteStoreSupplier(id);
   }
 
   const inputCls = "w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/20";
@@ -276,40 +314,55 @@ export default function StoreProcurementPage() {
       )}
 
       {tab === "suppliers" && (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {SUPPLIERS.map((s) => (
-            <Card key={s.name} className="p-5">
-              <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-100 text-sm font-bold text-slate-600">
-                  {s.name.slice(0, 2).toUpperCase()}
+        <div className="space-y-4">
+          <div className="flex justify-end">
+            <Button size="md" onClick={() => setShowAddSupplier(true)}>+ Add Supplier</Button>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {allSuppliers.map((s) => (
+              <Card key={s.id} className="p-5">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-100 text-sm font-bold text-slate-600">
+                      {s.name.slice(0, 2).toUpperCase()}
+                    </div>
+                    <div>
+                      <p className="font-bold text-slate-900">{s.name}</p>
+                      <p className="text-xs text-slate-500">{s.category}</p>
+                    </div>
+                  </div>
+                  {!s.id.startsWith("_") && (
+                    <button type="button" onClick={() => setDeletingSupId(s.id)}
+                      className="shrink-0 rounded p-1 text-slate-300 hover:bg-red-50 hover:text-red-500 transition">
+                      <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeWidth="2" strokeLinecap="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                      </svg>
+                    </button>
+                  )}
                 </div>
-                <div>
-                  <p className="font-bold text-slate-900">{s.name}</p>
-                  <p className="text-xs text-slate-500">{s.category}</p>
+                <div className="mt-4 space-y-2 text-sm text-slate-600">
+                  <div className="flex items-center gap-2">
+                    <svg className="h-4 w-4 shrink-0 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeWidth="2" strokeLinecap="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                    </svg>
+                    {s.contact || <span className="text-slate-400 italic">No email</span>}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <svg className="h-4 w-4 shrink-0 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeWidth="2" strokeLinecap="round" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+                    </svg>
+                    {s.phone || <span className="text-slate-400 italic">No phone</span>}
+                  </div>
+                  {s.lead && <p className="text-xs text-slate-400">Lead time: {s.lead}</p>}
                 </div>
-              </div>
-              <div className="mt-4 space-y-2 text-sm text-slate-600">
-                <div className="flex items-center gap-2">
-                  <svg className="h-4 w-4 shrink-0 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeWidth="2" strokeLinecap="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                  </svg>
-                  {s.contact}
+                <div className="mt-4 flex gap-2">
+                  <button type="button" className="flex-1 rounded-lg border border-slate-200 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50">Contact</button>
+                  <button type="button" onClick={() => { setShowNew(true); setNewSupplier(s.name); setTab("orders"); }}
+                    className="flex-1 rounded-lg bg-[var(--accent)]/10 py-1.5 text-xs font-semibold text-[var(--accent-foreground)] hover:bg-[var(--accent)]/20">New PO</button>
                 </div>
-                <div className="flex items-center gap-2">
-                  <svg className="h-4 w-4 shrink-0 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeWidth="2" strokeLinecap="round" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
-                  </svg>
-                  {s.phone}
-                </div>
-                <p className="text-xs text-slate-400">Lead time: {s.lead}</p>
-              </div>
-              <div className="mt-4 flex gap-2">
-                <button type="button" className="flex-1 rounded-lg border border-slate-200 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50">Contact</button>
-                <button type="button" onClick={() => { setShowNew(true); setNewSupplier(s.name); }}
-                  className="flex-1 rounded-lg bg-[var(--accent)]/10 py-1.5 text-xs font-semibold text-[var(--accent-foreground)] hover:bg-[var(--accent)]/20">New PO</button>
-              </div>
-            </Card>
-          ))}
+              </Card>
+            ))}
+          </div>
         </div>
       )}
 
@@ -319,7 +372,7 @@ export default function StoreProcurementPage() {
           <div>
             <label className="mb-1 block text-sm font-semibold text-slate-700">Supplier *</label>
             <select required value={newSupplier} onChange={(e) => setNewSupplier(e.target.value)} className={inputCls}>
-              {SUPPLIER_NAMES.map((s) => <option key={s}>{s}</option>)}
+              {allSuppliers.map((s) => <option key={s.id}>{s.name}</option>)}
             </select>
           </div>
           <div className="grid grid-cols-2 gap-3">
@@ -398,6 +451,49 @@ export default function StoreProcurementPage() {
           </ModalFooter>
         </Modal>
       )}
+
+      {/* Add supplier modal */}
+      <Modal open={showAddSupplier} onClose={() => setShowAddSupplier(false)} title="Add Supplier">
+        <form id="add-sup-form" onSubmit={handleAddSupplier} className="space-y-4">
+          <div>
+            <label className="mb-1 block text-sm font-semibold text-slate-700">Supplier Name *</label>
+            <input required value={newSupName} onChange={(e) => setNewSupName(e.target.value)} placeholder="e.g. BioMed Supplies" className={inputCls} />
+          </div>
+          <div>
+            <label className="mb-1 block text-sm font-semibold text-slate-700">Category</label>
+            <select value={newSupCategory} onChange={(e) => setNewSupCategory(e.target.value)} className={inputCls}>
+              {SUPPLIER_CATEGORIES.map((c) => <option key={c}>{c}</option>)}
+            </select>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="mb-1 block text-sm font-semibold text-slate-700">Email</label>
+              <input type="email" value={newSupContact} onChange={(e) => setNewSupContact(e.target.value)} placeholder="orders@supplier.com" className={inputCls} />
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-semibold text-slate-700">Phone</label>
+              <input value={newSupPhone} onChange={(e) => setNewSupPhone(e.target.value)} placeholder="+233 24 000 0000" className={inputCls} />
+            </div>
+          </div>
+          <div>
+            <label className="mb-1 block text-sm font-semibold text-slate-700">Lead Time</label>
+            <input value={newSupLead} onChange={(e) => setNewSupLead(e.target.value)} placeholder="e.g. 5–7 days" className={inputCls} />
+          </div>
+        </form>
+        <ModalFooter>
+          <Button variant="ghost" size="md" type="button" onClick={() => setShowAddSupplier(false)}>Cancel</Button>
+          <Button size="md" type="submit" form="add-sup-form">Add Supplier</Button>
+        </ModalFooter>
+      </Modal>
+
+      {/* Delete supplier confirmation */}
+      <Modal open={!!deletingSupId} onClose={() => setDeletingSupId(null)} title="Remove Supplier">
+        <p className="text-sm text-slate-600">Remove this supplier from your directory? This only removes them from the list — existing purchase orders are unaffected.</p>
+        <ModalFooter>
+          <Button variant="ghost" size="md" onClick={() => setDeletingSupId(null)}>Cancel</Button>
+          <Button size="md" className="bg-red-600 text-white hover:opacity-95" onClick={() => deletingSupId && handleDeleteSupplier(deletingSupId)}>Remove</Button>
+        </ModalFooter>
+      </Modal>
 
       <Toast toast={toast} onDismiss={() => setToast(null)} />
     </div>

@@ -63,6 +63,12 @@ export default function StoreRequestsPage() {
 
   // Pharmacy restock requests from shared store
   const { restockRequests } = usePharmacyStore();
+  // Local status overrides so UI updates immediately (store pub/sub is unreliable)
+  const [pharmStatuses, setPharmStatuses] = useState<Record<string, string>>({});
+  const displayRestockRequests = restockRequests.map((r) =>
+    pharmStatuses[r.id] ? { ...r, status: pharmStatuses[r.id] } : r
+  );
+
   const [pharmActionTarget, setPharmActionTarget] = useState<{
     id: string; drug: string; qty: number; action: "approve" | "reject" | "fulfill";
     storeInventoryId?: string; inventoryItemId?: string;
@@ -87,7 +93,7 @@ export default function StoreRequestsPage() {
     Rejected: requests.filter((r) => r.status === "Rejected").length,
   };
 
-  const pharmPending = restockRequests.filter((r) => r.status === "Pending").length;
+  const pharmPending = displayRestockRequests.filter((r) => r.status === "Pending").length;
 
   async function handleAction() {
     if (!actionTarget) return;
@@ -109,13 +115,19 @@ export default function StoreRequestsPage() {
     const { id, drug, qty, action, storeInventoryId, inventoryItemId } = pharmActionTarget;
     const now = new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
     if (action === "approve") {
-      updateRestockStatus(id, "Approved");
+      const newStatus = "Approved";
+      setPharmStatuses((prev) => ({ ...prev, [id]: newStatus }));
+      updateRestockStatus(id, newStatus);
       setToast({ message: `Pharmacy restock for ${drug} approved.`, type: "success" });
     } else if (action === "reject") {
-      updateRestockStatus(id, "Rejected");
+      const newStatus = "Rejected";
+      setPharmStatuses((prev) => ({ ...prev, [id]: newStatus }));
+      updateRestockStatus(id, newStatus);
       setToast({ message: `Pharmacy restock for ${drug} rejected.`, type: "info" });
     } else if (action === "fulfill") {
-      updateRestockStatus(id, "Fulfilled", { fulfilledAt: now });
+      const newStatus = "Fulfilled";
+      setPharmStatuses((prev) => ({ ...prev, [id]: newStatus }));
+      updateRestockStatus(id, newStatus, { fulfilledAt: now });
       if (storeInventoryId) {
         adjustStoreInventoryQty(storeInventoryId, -qty).catch(() => {});
       }
@@ -203,7 +215,7 @@ export default function StoreRequestsPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {restockRequests.map((req) => (
+                  {displayRestockRequests.map((req) => (
                     <tr key={req.id} className={`hover:bg-slate-50 ${req.status === "Pending" ? "bg-orange-50/30" : ""}`}>
                       <td className="px-5 py-3 font-mono text-xs font-bold text-slate-700">{req.id}</td>
                       <td className="px-5 py-3 font-semibold text-slate-900">{req.drug}</td>
@@ -245,7 +257,7 @@ export default function StoreRequestsPage() {
                       </td>
                     </tr>
                   ))}
-                  {restockRequests.length === 0 && (
+                  {displayRestockRequests.length === 0 && (
                     <tr><td colSpan={10} className="px-6 py-10 text-center text-sm text-slate-400">No pharmacy resupply requests yet.</td></tr>
                   )}
                 </tbody>

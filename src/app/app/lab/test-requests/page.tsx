@@ -32,13 +32,19 @@ export default function LabTestRequestsPage() {
   const [viewTest, setViewTest] = useState<LabTest | null>(null);
   const [cancelTarget, setCancelTarget] = useState<LabTest | null>(null);
   const [toast, setToast] = useState<ToastData | null>(null);
+  // Local status overrides — ensures instant UI update independent of store pub/sub
+  const [localStatuses, setLocalStatuses] = useState<Record<string, string>>({});
 
-  const filtered = tests
+  const displayTests = tests.map((t) =>
+    localStatuses[t.id] ? { ...t, status: localStatuses[t.id] as LabTest["status"] } : t
+  );
+  const filtered = displayTests
     .filter((t) => filter === "All" || t.status === filter)
     .filter((t) => priorityFilter === "All" || t.priority === priorityFilter);
 
   function handleCancel() {
     if (!cancelTarget) return;
+    setLocalStatuses((prev) => ({ ...prev, [cancelTarget.id]: "Cancelled" }));
     updateLabTest(cancelTarget.id, { status: "Cancelled" });
     setToast({ message: `Test "${cancelTarget.testName}" for ${cancelTarget.patientName} cancelled.`, type: "info" });
     setCancelTarget(null);
@@ -60,7 +66,7 @@ export default function LabTestRequestsPage() {
             {statuses.map((s) => (
               <button key={s} onClick={() => setFilter(s)}
                 className={`rounded-full px-3 py-1 text-xs font-semibold transition ${filter === s ? "bg-accent text-white" : "border border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
-                {s} {s !== "All" && `(${tests.filter((t) => t.status === s).length})`}
+                {s} {s !== "All" && `(${displayTests.filter((t) => t.status === s).length})`}
               </button>
             ))}
           </div>

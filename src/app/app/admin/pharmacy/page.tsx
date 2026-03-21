@@ -1,9 +1,7 @@
 "use client";
 
-import Link from "next/link";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card } from "@/components/ui/card";
-import { INTERNAL_PREFIX } from "@/lib/constants/navigation";
 import { usePharmacyStore } from "@/lib/hooks/use-pharmacy-store";
 
 export default function AdminPharmacyMonitorPage() {
@@ -17,10 +15,6 @@ export default function AdminPharmacyMonitorPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <PageHeader title="Pharmacy Monitor" description="Medication dispensing, prescription queue, stock levels, and expiry alerts." />
-        <Link href={`${INTERNAL_PREFIX}/pharmacy`}
-          className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition">
-          Open Pharmacy →
-        </Link>
       </div>
 
       {criticalDrugs.length > 0 && (
@@ -119,14 +113,6 @@ export default function AdminPharmacyMonitorPage() {
               ))}
             </div>
           </Card>
-          <Link href={`${INTERNAL_PREFIX}/pharmacy/pending-prescriptions`}
-            className="block rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800 hover:bg-amber-100 text-center transition">
-            Prescription Queue →
-          </Link>
-          <Link href={`${INTERNAL_PREFIX}/pharmacy/inventory`}
-            className="block rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 text-center transition">
-            View Inventory →
-          </Link>
         </div>
       </div>
     </div>

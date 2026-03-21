@@ -1,9 +1,7 @@
 "use client";
 
-import Link from "next/link";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card } from "@/components/ui/card";
-import { INTERNAL_PREFIX } from "@/lib/constants/navigation";
 
 const CONSULTATIONS: { id: string; patient: string; doctor: string; type: string; time: string; status: string; rxWritten: boolean }[] = [];
 
@@ -28,10 +26,6 @@ export default function AdminDoctorsMonitorPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <PageHeader title="Doctors Monitor" description="Clinical operations — consultations, doctor workload, prescriptions, and patient throughput." />
-        <Link href={`${INTERNAL_PREFIX}/doctors`}
-          className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition">
-          Open Doctors →
-        </Link>
       </div>
 
       <div className="flex gap-3">
@@ -141,10 +135,6 @@ export default function AdminDoctorsMonitorPage() {
               <li className="flex items-start gap-2"><span className="mt-0.5 h-1.5 w-1.5 shrink-0 rounded-full bg-sky-500" />{rxCount} prescriptions written — flowing to Pharmacy.</li>
             </ul>
           </Card>
-          <Link href={`${INTERNAL_PREFIX}/doctors/consultations`}
-            className="block rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 text-center transition">
-            View Consultations →
-          </Link>
         </div>
       </div>
     </div>

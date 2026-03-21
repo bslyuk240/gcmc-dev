@@ -1,13 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Modal, ModalFooter } from "@/components/ui/modal";
 import { Toast, type ToastData } from "@/components/ui/toast";
-import { INTERNAL_PREFIX } from "@/lib/constants/navigation";
 import { useAdminStore } from "@/lib/hooks/use-admin-store";
 import { updateITTicket } from "@/lib/data/admin-store";
 
@@ -64,10 +62,6 @@ export default function AdminITMonitorPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <PageHeader title="IT Monitor" description="System health, open support tickets, access issues, and technical incident oversight." />
-        <Link href={`${INTERNAL_PREFIX}/it`}
-          className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition">
-          Open IT →
-        </Link>
       </div>
 
       {(metrics.criticalITTickets > 0 || degradedSystems.length > 0) && (
@@ -172,10 +166,6 @@ export default function AdminITMonitorPage() {
               <li className="flex items-start gap-2"><span className="mt-0.5 h-1.5 w-1.5 shrink-0 rounded-full bg-violet-500" />{openTickets.length} tickets open — {metrics.criticalITTickets} critical.</li>
             </ul>
           </Card>
-          <Link href={`${INTERNAL_PREFIX}/it`}
-            className="block rounded-xl border border-cyan-200 bg-cyan-50 px-4 py-3 text-sm font-semibold text-cyan-800 hover:bg-cyan-100 text-center transition">
-            IT Dashboard →
-          </Link>
         </div>
       </div>
 

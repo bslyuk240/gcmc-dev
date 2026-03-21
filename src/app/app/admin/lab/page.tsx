@@ -1,9 +1,7 @@
 "use client";
 
-import Link from "next/link";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card } from "@/components/ui/card";
-import { INTERNAL_PREFIX } from "@/lib/constants/navigation";
 import { useLabStore } from "@/lib/hooks/use-lab-store";
 
 export default function AdminLabMonitorPage() {
@@ -15,10 +13,6 @@ export default function AdminLabMonitorPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <PageHeader title="Laboratory Monitor" description="Diagnostic test pipeline, result turnaround, urgent STAT tests, and lab revenue." />
-        <Link href={`${INTERNAL_PREFIX}/lab`}
-          className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition">
-          Open Lab →
-        </Link>
       </div>
 
       {metrics.urgentTests > 0 && (
@@ -108,14 +102,6 @@ export default function AdminLabMonitorPage() {
               <div className="flex justify-between"><span className="text-slate-500">Cancelled</span><span className="font-bold text-slate-500">{tests.filter((t) => t.status === "Cancelled").length}</span></div>
             </div>
           </Card>
-          <Link href={`${INTERNAL_PREFIX}/lab/results`}
-            className="block rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800 hover:bg-emerald-100 text-center transition">
-            View Lab Results →
-          </Link>
-          <Link href={`${INTERNAL_PREFIX}/accounts/lab-billing`}
-            className="block rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 text-center transition">
-            Lab Billing →
-          </Link>
         </div>
       </div>
     </div>

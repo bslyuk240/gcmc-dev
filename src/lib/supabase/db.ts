@@ -506,6 +506,22 @@ export async function fetchTestCatalog(): Promise<TestCatalogItem[]> {
   return (data ?? []).map(mapTestCatalog);
 }
 
+export async function upsertTestCatalogItem(item: TestCatalogItem): Promise<void> {
+  const sb = getSupabase();
+  if (!sb) return;
+  await sb.from("test_catalog").upsert({
+    id: item.id,
+    name: item.name,
+    code: item.code,
+    category: item.category,
+    sample_type: item.sampleType,
+    price: item.price,
+    turnaround_hours: item.turnaroundHours,
+    department: item.department,
+    description: item.description,
+  });
+}
+
 export async function insertLabTest(t: LabTest): Promise<void> {
   const sb = getSupabase();
   if (!sb) return;
@@ -1744,6 +1760,48 @@ export async function updateStorePOStatus(id: string, status: StorePO["status"])
 export async function updateStorePOPayment(id: string): Promise<void> {
   const sb = getSupabase(); if (!sb) return;
   await sb.from("store_pos").update({ payment_submitted: true }).eq("id", id);
+}
+
+// ─── Store Suppliers ──────────────────────────────────────────────────────────
+
+export type StoreSupplier = {
+  id: string;
+  name: string;
+  category: string;
+  contact: string;
+  phone: string;
+  lead: string;
+  createdAt: string;
+};
+
+function mapStoreSupplier(r: Record<string, unknown>): StoreSupplier {
+  return {
+    id: String(r.id ?? ""),
+    name: String(r.name ?? ""),
+    category: String(r.category ?? "General Supplies"),
+    contact: String(r.contact ?? ""),
+    phone: String(r.phone ?? ""),
+    lead: String(r.lead ?? ""),
+    createdAt: String(r.created_at ?? ""),
+  };
+}
+
+export async function fetchStoreSuppliers(): Promise<StoreSupplier[]> {
+  const sb = getSupabase(); if (!sb) return [];
+  const { data } = await sb.from("store_suppliers").select("*").order("created_at", { ascending: false });
+  return (data ?? []).map(mapStoreSupplier);
+}
+
+export async function insertStoreSupplier(s: Omit<StoreSupplier, "id" | "createdAt">): Promise<void> {
+  const sb = getSupabase(); if (!sb) return;
+  await sb.from("store_suppliers").insert({
+    name: s.name, category: s.category, contact: s.contact, phone: s.phone, lead: s.lead,
+  });
+}
+
+export async function deleteStoreSupplier(id: string): Promise<void> {
+  const sb = getSupabase(); if (!sb) return;
+  await sb.from("store_suppliers").delete().eq("id", id);
 }
 
 // ─── Stock Requests ───────────────────────────────────────────────────────────
