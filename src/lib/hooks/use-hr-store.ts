@@ -25,13 +25,13 @@ export function useHRStore() {
   useEffect(() => {
     syncHRFromSupabase();
     const unsub = subscribeHRStore(rerender);
-    const refresh = () => { void syncHRFromSupabase(true); };
+    const refresh = () => { void syncHRFromSupabase(); };
     window.addEventListener(ACCOUNTS_PAYMENT_UPDATED_EVENT, refresh);
     const supabase = createClient();
     const channel = supabase
       ?.channel("hr-payroll-realtime")
-      .on("postgres_changes", { event: "*", schema: "public", table: "generated_payslips" }, () => void syncHRFromSupabase(true))
-      .on("postgres_changes", { event: "*", schema: "public", table: "payroll_batches" }, () => void syncHRFromSupabase(true))
+      .on("postgres_changes", { event: "*", schema: "public", table: "generated_payslips" }, () => void syncHRFromSupabase())
+      .on("postgres_changes", { event: "*", schema: "public", table: "payroll_batches" }, () => void syncHRFromSupabase())
       .subscribe();
     return () => {
       window.removeEventListener(ACCOUNTS_PAYMENT_UPDATED_EVENT, refresh);

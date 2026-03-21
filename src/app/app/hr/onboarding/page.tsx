@@ -32,6 +32,7 @@ const DEPT_OPTIONS: { label: string; value: DBDepartmentKey }[] = [
   { label: "IT",                 value: "it"           },
   { label: "Admin",              value: "admin"        },
   { label: "Non-Clinical Staff", value: "non_clinical" },
+  { label: "NHIS",               value: "nhis"         },
 ];
 
 const ROLE_OPTIONS: { label: string; value: RoleKey }[] = [
@@ -49,6 +50,8 @@ const ROLE_OPTIONS: { label: string; value: RoleKey }[] = [
   { label: "Store Keeper",         value: "store_keeper"       },
   { label: "IT Staff",             value: "it_staff"           },
   { label: "Non-Clinical Staff",   value: "non_clinical_staff" },
+  { label: "NHIS Officer",         value: "nhis_officer"       },
+  { label: "NHIS Manager",         value: "nhis_manager"       },
   { label: "Viewer",               value: "viewer"             },
 ];
 
