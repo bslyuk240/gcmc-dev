@@ -520,12 +520,7 @@ export const sidebarNavigationByDepartment: Record<
         { label: "Enrolled Patients",  href: `${INTERNAL_PREFIX}/nhis/patients`,     icon: "patients" },
         { label: "Claims",             href: `${INTERNAL_PREFIX}/nhis/claims`,       icon: "reports" },
         { label: "Tariffs",            href: `${INTERNAL_PREFIX}/nhis/tariffs`,      icon: "money" },
-      ],
-    },
-    {
-      section: "Profile",
-      items: [
-        { label: "Chat to IT", href: `${INTERNAL_PREFIX}/nhis/chat`, icon: "support" },
+        { label: "Chat to IT",         href: `${INTERNAL_PREFIX}/nhis/chat`,         icon: "support" },
       ],
     },
   ],
