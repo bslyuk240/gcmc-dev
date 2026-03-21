@@ -339,6 +339,14 @@ function loadState(): HRStoreState {
       const generatedPayslips = parsed.generatedPayslips ?? [];
       return {
         ...EMPTY_HR_STATE,
+        // Restore all arrays from localStorage so the page renders
+        // immediately on hard reload (Supabase sync will overwrite with
+        // fresh data once the async fetch completes).
+        staff:            parsed.staff            ?? [],
+        leaveRequests:    parsed.leaveRequests    ?? [],
+        onboarding:       parsed.onboarding       ?? [],
+        offboarding:      parsed.offboarding      ?? [],
+        departmentHeads:  parsed.departmentHeads  ?? [],
         generatedPayslips,
         payrollPreps: buildPayrollPrepsFromPayslips(generatedPayslips),
       };
