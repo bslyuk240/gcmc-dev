@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import { useHMSSession } from "@/modules/rbac/hooks";
-import { logoutStaffAction } from "@/server/actions/auth/logout";
 
 const DEPT_LABELS: Record<string, string> = {
   frontdesk: "Front Desk",
@@ -121,7 +120,7 @@ export default function AppProfilePage() {
       {/* Sign out */}
       <div className="rounded-2xl border border-red-100 bg-white p-5 shadow-sm">
         <h2 className="mb-3 text-xs font-bold uppercase tracking-wider text-red-400">Session</h2>
-        <form action={logoutStaffAction}>
+        <form action="/logout" method="post">
           <button
             type="submit"
             className="w-full rounded-xl border border-red-200 bg-red-50 py-3 text-sm font-bold text-red-700 transition hover:bg-red-100 active:opacity-80"

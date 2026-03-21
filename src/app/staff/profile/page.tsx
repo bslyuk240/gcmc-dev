@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { useHMSSession } from "@/modules/rbac/hooks";
-import { logoutStaffPortalAction } from "@/server/actions/auth/logout-staff-portal";
 import Link from "next/link";
 import { formatStaffDisplayId } from "@/lib/staff-id";
 
@@ -294,7 +293,7 @@ export default function StaffProfilePage() {
               <span className="text-slate-500">Department</span>
               <span className="font-semibold text-slate-900">{DEPT_LABELS[session.department] ?? session.department}</span>
             </div>
-            <form action={logoutStaffPortalAction}>
+            <form action="/staff/logout" method="post">
               <button type="submit" className="w-full rounded-xl border border-red-200 py-2.5 text-sm font-bold text-red-600 hover:bg-red-50 transition">
                 Sign Out
               </button>

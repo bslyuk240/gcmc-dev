@@ -2,12 +2,11 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useEffect, useRef, useState } from "react";
 import { NotificationBell } from "@/components/layout/notification-bell";
 import { DeptSearch } from "@/components/layout/dept-search";
 import { Icon } from "@/components/ui/icon";
 import { departmentThemes, findNavigationItem } from "@/lib/constants/navigation";
-import { logoutStaffAction } from "@/server/actions/auth/logout";
 import { useSession } from "@/modules/rbac/session-context";
 import { formatStaffDisplayId } from "@/lib/staff-id";
 import { cn } from "@/lib/utils/cn";
@@ -34,7 +33,6 @@ export function Topbar() {
   const pathname = usePathname();
   const item = findNavigationItem(pathname);
   const theme = departmentThemes[item?.department ?? "dashboard"];
-  const [isLoggingOut, startLogoutTransition] = useTransition();
   const [profileOpen, setProfileOpen] = useState(false);
   const profileRef = useRef<HTMLDivElement>(null);
 
@@ -70,7 +68,6 @@ export function Topbar() {
 
   function handleLogout() {
     setProfileOpen(false);
-    startLogoutTransition(() => logoutStaffAction());
   }
 
   const initials = staffBasic.name
@@ -169,18 +166,19 @@ export function Topbar() {
                   <Icon name="patients" className="h-4 w-4 text-slate-500" />
                   Staff Portal
                 </Link>
-                <button
-                  type="button"
-                  onClick={handleLogout}
-                  disabled={isLoggingOut}
-                  className="mt-1 flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-sm font-medium text-red-600 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  <svg className="h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H9" />
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M13 20H7a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h6" />
-                  </svg>
-                  {isLoggingOut ? "Logging out..." : "Logout"}
-                </button>
+                <form action="/logout" method="post">
+                  <button
+                    type="submit"
+                    onClick={handleLogout}
+                    className="mt-1 flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-sm font-medium text-red-600 transition hover:bg-red-50"
+                  >
+                    <svg className="h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H9" />
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M13 20H7a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h6" />
+                    </svg>
+                    Logout
+                  </button>
+                </form>
               </div>
             </div>
           ) : null}
