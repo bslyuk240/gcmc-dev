@@ -1,14 +1,58 @@
 "use client";
 
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card } from "@/components/ui/card";
 import { INTERNAL_PREFIX } from "@/lib/constants/navigation";
+import { ACCOUNTS_PAYMENT_UPDATED_EVENT } from "@/lib/constants/accounts-events";
 import { useAccountsStore } from "@/lib/hooks/use-accounts-store";
+import { fetchInvoices, fetchPayments, type InvoiceRecord, type PaymentRecord } from "@/lib/supabase/db";
 
 export default function AdminAccountsMonitorPage() {
   const { metrics, frontDeskCharges, consultationFees, payrollBatches, supplierPayments, labCharges, nursingCharges } = useAccountsStore();
+  const [invoiceRows, setInvoiceRows] = useState<InvoiceRecord[]>([]);
+  const [invoicePayments, setInvoicePayments] = useState<PaymentRecord[]>([]);
 
+  useEffect(() => {
+    let alive = true;
+
+    const loadData = async () => {
+      try {
+        const [rows, payments] = await Promise.all([fetchInvoices(), fetchPayments()]);
+        if (!alive) return;
+        setInvoiceRows(rows);
+        setInvoicePayments(payments);
+      } catch (error) {
+        if (!alive) return;
+        console.error("[admin-accounts] invoice payment load failed:", error);
+      }
+    };
+
+    void loadData();
+    const refresh = () => {
+      void loadData();
+    };
+    window.addEventListener(ACCOUNTS_PAYMENT_UPDATED_EVENT, refresh);
+
+    return () => {
+      alive = false;
+      window.removeEventListener(ACCOUNTS_PAYMENT_UPDATED_EVENT, refresh);
+    };
+  }, []);
+
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const invoiceRevenueToday = useMemo(
+    () => invoicePayments.filter((payment) => payment.paidAt.startsWith(todayIso)).reduce((sum, payment) => sum + payment.amount, 0),
+    [invoicePayments, todayIso],
+  );
+  const invoicePendingBalance = useMemo(
+    () =>
+      invoiceRows
+        .filter((invoice) => invoice.status !== "paid" && invoice.status !== "cancelled")
+        .reduce((sum, invoice) => sum + Math.max(0, invoice.amountDue - invoice.amountPaid), 0),
+    [invoiceRows],
+  );
   const pendingBills = [
     ...frontDeskCharges.filter((c) => c.status === "Pending").map((c) => ({ name: c.patientName, type: "Front Desk", amount: c.amount, date: c.createdAt })),
     ...consultationFees.filter((c) => c.status === "Pending").map((c) => ({ name: c.patientName, type: "Consultation", amount: c.fee, date: c.consultedAt })),
@@ -28,8 +72,8 @@ export default function AdminAccountsMonitorPage() {
 
       <div className="flex gap-3">
         {[
-          { label: "Revenue Today", value: `₦${metrics.revenueToday.toLocaleString()}`, color: "text-emerald-700" },
-          { label: "Pending Collections", value: metrics.frontDeskPendingCount + metrics.consultationPendingCount + metrics.labPendingCount + metrics.nursingPendingCount, color: "text-amber-600" },
+          { label: "Revenue Today", value: `₦${(metrics.revenueToday + invoiceRevenueToday).toLocaleString()}`, color: "text-emerald-700" },
+          { label: "Pending Collections", value: `₦${(metrics.frontDeskPendingValue + metrics.consultationPendingValue + metrics.labPendingValue + metrics.nursingPendingValue + invoicePendingBalance).toLocaleString()}`, color: "text-amber-600" },
           { label: "Payroll Pending", value: `₦${metrics.payrollPendingValue.toLocaleString()}`, color: "text-sky-700" },
           { label: "Supplier Payable", value: `₦${metrics.supplierPendingValue.toLocaleString()}`, color: metrics.supplierPendingCount > 0 ? "text-red-600" : "text-slate-500" },
         ].map((s) => (
@@ -106,6 +150,7 @@ export default function AdminAccountsMonitorPage() {
               {[
                 { label: "Front Desk", value: metrics.frontDeskPaidToday, color: "bg-amber-400" },
                 { label: "Consultations", value: consultationFees.filter((f) => f.status === "Paid").reduce((s, f) => s + f.fee, 0), color: "bg-emerald-400" },
+                { label: "Invoices", value: invoiceRevenueToday, color: "bg-violet-400" },
                 { label: "Lab Tests", value: metrics.labPaidToday, color: "bg-sky-400" },
                 { label: "Nursing", value: metrics.nursingPaidToday, color: "bg-violet-400" },
                 { label: "Kiosk", value: metrics.kioskRevenueToday, color: "bg-pink-400" },

@@ -8,6 +8,7 @@ import type {
   ChatSenderPortal,
   ChatTargetDepartment,
   ChatThread,
+  ChatSendAttachment,
 } from "@/lib/chat/types";
 import {
   formatChatListTime,
@@ -38,11 +39,22 @@ type ChatMessageRow = {
   sender_role: string | null;
   sender_portal: ChatSenderPortal;
   body: string;
+  attachment_url: string | null;
+  attachment_path: string | null;
+  attachment_name: string | null;
+  attachment_mime_type: string | null;
   created_at: string;
 };
 
+const CHAT_MEDIA_BUCKET = "chat-media";
+
 function getSupabase() {
   return createClient();
+}
+
+function buildAttachmentPreview(body: string, hasAttachment: boolean) {
+  const text = body.trim() || (hasAttachment ? "[Image]" : "");
+  return text.length > 140 ? `${text.slice(0, 137)}...` : text;
 }
 
 function mapThread(row: ChatThreadRow): ChatThread {
@@ -63,7 +75,17 @@ function mapThread(row: ChatThreadRow): ChatThread {
   };
 }
 
-function mapMessage(row: ChatMessageRow, currentUserId?: string): ChatMessage {
+function mapMessage(
+  row: ChatMessageRow,
+  currentUserId?: string,
+  sb = getSupabase(),
+): ChatMessage {
+  const attachmentUrl =
+    row.attachment_url ??
+    (row.attachment_path && sb
+      ? sb.storage.from(CHAT_MEDIA_BUCKET).getPublicUrl(row.attachment_path).data.publicUrl
+      : undefined);
+
   return {
     id: row.id,
     threadId: row.thread_id,
@@ -72,6 +94,10 @@ function mapMessage(row: ChatMessageRow, currentUserId?: string): ChatMessage {
     senderRole: row.sender_role ?? undefined,
     senderPortal: row.sender_portal,
     body: row.body,
+    attachmentUrl,
+    attachmentPath: row.attachment_path ?? undefined,
+    attachmentName: row.attachment_name ?? undefined,
+    attachmentMimeType: row.attachment_mime_type ?? undefined,
     createdAt: row.created_at,
     time: formatChatMessageTime(row.created_at),
     isOwn: row.sender_id === currentUserId,
@@ -179,7 +205,35 @@ export async function fetchChatMessages(threadId: string, currentUserId?: string
     throw error;
   }
 
-  return (data ?? []).map((row) => mapMessage(row as ChatMessageRow, currentUserId));
+  return (data ?? []).map((row) => mapMessage(row as ChatMessageRow, currentUserId, sb));
+}
+
+async function uploadChatAttachment(
+  sb: NonNullable<ReturnType<typeof createClient>>,
+  file: File,
+  threadId: string,
+  senderId: string,
+) {
+  const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 80) || "image";
+  const path = `threads/${threadId}/${senderId}/${Date.now()}-${crypto.randomUUID()}-${safeName}`;
+
+  const { error } = await sb.storage.from(CHAT_MEDIA_BUCKET).upload(path, file, {
+    contentType: file.type || "application/octet-stream",
+    upsert: false,
+  });
+
+  if (error) {
+    throw error;
+  }
+
+  const { data } = sb.storage.from(CHAT_MEDIA_BUCKET).getPublicUrl(path);
+
+  return {
+    path,
+    url: data.publicUrl,
+    name: file.name,
+    mimeType: file.type || "application/octet-stream",
+  };
 }
 
 export async function sendChatMessage(args: {
@@ -189,35 +243,61 @@ export async function sendChatMessage(args: {
   senderRole: string;
   senderPortal: ChatSenderPortal;
   body: string;
+  attachmentFile?: ChatSendAttachment;
 }) {
   const sb = getSupabase();
   if (!sb) return null;
 
   const body = args.body.trim();
-  if (!body) {
+  const attachmentFile = args.attachmentFile ?? null;
+  if (!body && !attachmentFile) {
     return null;
   }
 
   const now = new Date().toISOString();
-  const { data, error } = await sb
-    .from("chat_messages")
-    .insert({
-      thread_id: args.threadId,
-      sender_id: args.senderId,
-      sender_name: args.senderName,
-      sender_role: args.senderRole,
-      sender_portal: args.senderPortal,
-      body,
-      created_at: now,
-    })
-    .select("*")
-    .single();
+  const attachment = attachmentFile
+    ? await uploadChatAttachment(sb, attachmentFile, args.threadId, args.senderId)
+    : null;
 
-  if (error) {
+  const payload: Record<string, unknown> = {
+    thread_id: args.threadId,
+    sender_id: args.senderId,
+    sender_name: args.senderName,
+    sender_role: args.senderRole,
+    sender_portal: args.senderPortal,
+    body,
+    created_at: now,
+  };
+
+  if (attachment) {
+    payload.attachment_url = attachment.url;
+    payload.attachment_path = attachment.path;
+    payload.attachment_name = attachment.name;
+    payload.attachment_mime_type = attachment.mimeType;
+  }
+
+  let data: ChatMessageRow | null = null;
+
+  try {
+    const response = await sb
+      .from("chat_messages")
+      .insert(payload)
+      .select("*")
+      .single();
+
+    data = response.data as ChatMessageRow | null;
+
+    if (response.error) {
+      throw response.error;
+    }
+  } catch (error) {
+    if (attachment) {
+      await sb.storage.from(CHAT_MEDIA_BUCKET).remove([attachment.path]);
+    }
     throw error;
   }
 
-  const preview = body.length > 140 ? `${body.slice(0, 137)}...` : body;
+  const preview = buildAttachmentPreview(body, Boolean(attachment));
   const { error: threadError } = await sb
     .from("chat_threads")
     .update({
@@ -231,7 +311,7 @@ export async function sendChatMessage(args: {
     throw threadError;
   }
 
-  return mapMessage(data as ChatMessageRow, args.senderId);
+  return mapMessage(data as ChatMessageRow, args.senderId, sb);
 }
 
 export function subscribeToChatThread(threadId: string, onChange: () => void) {

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState, useEffect } from "react";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card } from "@/components/ui/card";
@@ -9,7 +10,15 @@ import { Modal, ModalFooter } from "@/components/ui/modal";
 import { Toast, type ToastData } from "@/components/ui/toast";
 import { usePharmacyStore } from "@/lib/hooks/use-pharmacy-store";
 import { useHMSSession } from "@/modules/rbac/hooks";
-import { fetchPharmacyInventory, upsertPharmacyInventoryItem, fetchStoreInventory, type StoreInventoryItem } from "@/lib/supabase/db";
+import {
+  fetchPharmacyInventory,
+  adjustPharmacyInventoryStock,
+  upsertPharmacyInventoryItem,
+  fetchStoreInventory,
+  insertPharmacyStockMovement,
+  type StoreInventoryItem,
+  type PharmacyInventoryItem,
+} from "@/lib/supabase/db";
 import {
   addRestockRequest,
   addPharmacyBill,
@@ -20,19 +29,7 @@ import {
 
 type StockStatus = "ok" | "low" | "critical" | "out";
 
-type InventoryItem = {
-  id: string;
-  product: string;
-  category: string;
-  form: string;
-  stock: number;
-  reorderLevel: number;
-  price: string;
-  unitPrice: number;
-  expiry: string;
-  supplier: string;
-  status: StockStatus;
-};
+type InventoryItem = PharmacyInventoryItem & { price: string };
 
 const DOSAGE_FORMS = [
   "Tablet", "Capsule", "Syrup", "Suspension", "Solution",
@@ -58,11 +55,32 @@ function calcStockStatus(stock: number, reorder: number): StockStatus {
   return "ok";
 }
 
+function normalizeName(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+function findStoreMatch(product: string, storeItems: StoreInventoryItem[]) {
+  const normalizedProduct = normalizeName(product);
+  const pharmaItems = storeItems.filter((item) => item.category === "Pharmaceutical");
+  const pool = pharmaItems.length > 0 ? pharmaItems : storeItems;
+  return (
+    pool.find((item) => {
+      const normalizedName = normalizeName(item.name);
+      return (
+        normalizedName === normalizedProduct ||
+        normalizedName.includes(normalizedProduct) ||
+        normalizedProduct.includes(normalizedName)
+      );
+    }) ?? null
+  );
+}
+
 export default function PharmacyInventoryPage() {
   const session = useHMSSession();
   const staffName = session?.full_name ?? "Pharmacist";
   const [items, setItems] = useState<InventoryItem[]>([]);
   const [loadingItems, setLoadingItems] = useState(true);
+  const [storeItems, setStoreItems] = useState<StoreInventoryItem[]>([]);
 
   useEffect(() => {
     fetchPharmacyInventory().then((data) => {
@@ -71,6 +89,7 @@ export default function PharmacyInventoryPage() {
         product: d.product,
         category: d.category,
         form: d.form,
+        storeInventoryId: d.storeInventoryId,
         stock: d.stock,
         reorderLevel: d.reorderLevel,
         price: `₦ ${d.unitPrice.toFixed(2)}`,
@@ -82,6 +101,40 @@ export default function PharmacyInventoryPage() {
       setLoadingItems(false);
     }).catch(() => setLoadingItems(false));
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function linkStoreRows() {
+      try {
+        const storeData = await fetchStoreInventory();
+        if (cancelled) return;
+
+        setStoreItems(storeData);
+        const storeById = new Map(storeData.map((item) => [item.id, item]));
+        setItems((current) => current.map((item) => {
+          if (item.storeInventoryId) {
+            return item;
+          }
+          const linkedStore = findStoreMatch(item.product, storeData);
+          if (!linkedStore) {
+            return item;
+          }
+          const storeInventoryId = storeById.get(linkedStore.id)?.id ?? linkedStore.id;
+          void upsertPharmacyInventoryItem({ ...item, storeInventoryId });
+          return { ...item, storeInventoryId };
+        }));
+      } catch {
+        // Leave the existing inventory list in place if store inventory cannot be read.
+      }
+    }
+
+    linkStoreRows();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("All categories");
   const [page, setPage] = useState(0);
@@ -92,7 +145,6 @@ export default function PharmacyInventoryPage() {
   const [restockQty, setRestockQty] = useState("");
   const [restockUrgency, setRestockUrgency] = useState<"Routine" | "Urgent" | "Critical">("Urgent");
   const [restockNotes, setRestockNotes] = useState("");
-  const [storeItems, setStoreItems] = useState<StoreInventoryItem[]>([]);
   const [restockStoreItemId, setRestockStoreItemId] = useState("");
   const [toast, setToast] = useState<ToastData | null>(null);
 
@@ -208,8 +260,9 @@ export default function PharmacyInventoryPage() {
     const imported: InventoryItem[] = [];
     for (const item of csvPreview.valid) {
       try {
-        await upsertPharmacyInventoryItem({ id: item.id, product: item.product, category: item.category, form: item.form, stock: item.stock, reorderLevel: item.reorderLevel, unitPrice: item.unitPrice, expiry: item.expiry, supplier: item.supplier, status: item.status });
-        imported.push(item);
+        const linkedStore = item.storeInventoryId ?? findStoreMatch(item.product, storeItems)?.id;
+        await upsertPharmacyInventoryItem({ id: item.id, product: item.product, category: item.category, form: item.form, storeInventoryId: linkedStore, stock: item.stock, reorderLevel: item.reorderLevel, unitPrice: item.unitPrice, expiry: item.expiry, supplier: item.supplier, status: item.status });
+        imported.push({ ...item, storeInventoryId: linkedStore, price: `₦ ${item.unitPrice.toFixed(2)}` });
       } catch {
         // skip failed rows silently — they'll appear in next sync
       }
@@ -225,11 +278,13 @@ export default function PharmacyInventoryPage() {
     const stock = parseInt(aStock) || 0;
     const reorder = parseInt(aReorder) || 0;
     const unitPrice = parseFloat(aPrice) || 0;
+    const linkedStore = findStoreMatch(aProduct, storeItems);
     const newItem: InventoryItem = {
       id: `INV-${String(items.length + 1).padStart(3, "0")}-${Date.now().toString().slice(-4)}`,
       product: aProduct,
       category: aCategory,
       form: aForm,
+      storeInventoryId: linkedStore?.id,
       stock,
       reorderLevel: reorder,
       price: `₦ ${unitPrice.toFixed(2)}`,
@@ -239,7 +294,7 @@ export default function PharmacyInventoryPage() {
       status: calcStockStatus(stock, reorder),
     };
     setItems((prev) => [newItem, ...prev]);
-    upsertPharmacyInventoryItem({ id: newItem.id, product: newItem.product, category: newItem.category, form: newItem.form, stock: newItem.stock, reorderLevel: newItem.reorderLevel, unitPrice: newItem.unitPrice, expiry: newItem.expiry, supplier: newItem.supplier, status: newItem.status }).catch(() => {});
+    upsertPharmacyInventoryItem({ id: newItem.id, product: newItem.product, category: newItem.category, form: newItem.form, storeInventoryId: newItem.storeInventoryId, stock: newItem.stock, reorderLevel: newItem.reorderLevel, unitPrice: newItem.unitPrice, expiry: newItem.expiry, supplier: newItem.supplier, status: newItem.status }).catch(() => {});
     setToast({ message: `${aProduct} added to inventory.`, type: "success" });
     setShowAdd(false);
     setAProduct(""); setACategory("Analgesic"); setAForm("Tablet");
@@ -262,12 +317,12 @@ export default function PharmacyInventoryPage() {
     const status = calcStockStatus(newStock, editItem.reorderLevel);
     const updatedItem = { ...editItem, stock: newStock, price: editPrice, expiry: editExpiry, supplier: editSupplier, form: editForm, status };
     setItems((prev) => prev.map((i) => i.id === editItem.id ? updatedItem : i));
-    upsertPharmacyInventoryItem({ id: updatedItem.id, product: updatedItem.product, category: updatedItem.category, form: updatedItem.form, stock: updatedItem.stock, reorderLevel: updatedItem.reorderLevel, unitPrice: updatedItem.unitPrice, expiry: updatedItem.expiry, supplier: updatedItem.supplier, status: updatedItem.status }).catch(() => {});
+    upsertPharmacyInventoryItem({ id: updatedItem.id, product: updatedItem.product, category: updatedItem.category, form: updatedItem.form, storeInventoryId: updatedItem.storeInventoryId, stock: updatedItem.stock, reorderLevel: updatedItem.reorderLevel, unitPrice: updatedItem.unitPrice, expiry: updatedItem.expiry, supplier: updatedItem.supplier, status: updatedItem.status }).catch(() => {});
     setToast({ message: `${editItem.product} updated.`, type: "success" });
     setEditItem(null);
   }
 
-  function handleDispense(e: React.FormEvent) {
+  async function handleDispense(e: React.FormEvent) {
     e.preventDefault();
     if (!dispenseItem) return;
     const qty = parseInt(dispenseQty) || 0;
@@ -278,6 +333,16 @@ export default function PharmacyInventoryPage() {
     const newStock = dispenseItem.stock - qty;
     const status = calcStockStatus(newStock, dispenseItem.reorderLevel);
     setItems((prev) => prev.map((i) => i.id === dispenseItem.id ? { ...i, stock: newStock, status } : i));
+    await adjustPharmacyInventoryStock(dispenseItem.id, -qty).catch(() => {});
+    await insertPharmacyStockMovement({
+      inventoryId: dispenseItem.id,
+      movementType: "dispense",
+      quantity: qty,
+      sourceDestination: "Inventory dispense",
+      refNo: `INV-${Date.now()}`,
+      createdBy: staffName,
+      createdAt: new Date().toISOString(),
+    }).catch(() => {});
 
     // Auto-suggest restock if now low/critical/out
     if (status !== "ok") {
@@ -290,6 +355,15 @@ export default function PharmacyInventoryPage() {
   }
 
   function openRestock(item: InventoryItem) {
+    const linkedStoreId = item.storeInventoryId ?? findStoreMatch(item.product, storeItems)?.id;
+    if (linkedStoreId) {
+      setRestockItem(item);
+      setRestockQty(String(item.reorderLevel * 5));
+      setRestockUrgency(item.status === "out" || item.status === "critical" ? "Critical" : "Urgent");
+      setRestockNotes(`Current stock: ${item.stock} units. Reorder level: ${item.reorderLevel} units.`);
+      setRestockStoreItemId(linkedStoreId);
+      return;
+    }
     setRestockItem(item);
     setRestockQty(String(item.reorderLevel * 5));
     setRestockUrgency(item.status === "out" || item.status === "critical" ? "Critical" : "Urgent");
@@ -308,7 +382,7 @@ export default function PharmacyInventoryPage() {
 
   function handleSendRestock(e: React.FormEvent) {
     e.preventDefault();
-    if (!restockItem || !restockQty) return;
+    if (!restockItem) return;
 
     // Check if a restock request for this item is already pending
     const existing = getRestockRequests().find(
@@ -320,15 +394,32 @@ export default function PharmacyInventoryPage() {
       return;
     }
 
+    const linkedStoreItem = storeItems.find((s) => s.id === (restockStoreItemId || restockItem.storeInventoryId))
+      ?? storeItems.find((s) => normalizeName(s.name) === normalizeName(restockItem.product));
+    const qtyRequested = restockQty ? parseInt(restockQty) : null;
     const now = new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
     addRestockRequest({
       id: `PRX-${Date.now()}`,
       drug: restockItem.product,
       inventoryItemId: restockItem.id,
-      storeInventoryId: restockStoreItemId || undefined,
+      storeInventoryId: linkedStoreItem?.id || restockStoreItemId || restockItem.storeInventoryId || undefined,
+      storeSnapshot: linkedStoreItem
+        ? {
+            id: linkedStoreItem.id,
+            name: linkedStoreItem.name,
+            category: linkedStoreItem.category,
+            form: linkedStoreItem.form,
+            unit: linkedStoreItem.unit,
+            qty: linkedStoreItem.qty,
+            reorder: linkedStoreItem.reorder,
+            unitCost: linkedStoreItem.unitCost,
+            supplier: linkedStoreItem.supplier,
+            status: linkedStoreItem.status,
+          }
+        : undefined,
       currentStock: restockItem.stock,
       reorderLevel: restockItem.reorderLevel,
-      qtyRequested: parseInt(restockQty) || restockItem.reorderLevel * 5,
+      qtyRequested,
       unit: "Units",
       urgency: restockUrgency,
       requestedBy: staffName,
@@ -435,9 +526,9 @@ export default function PharmacyInventoryPage() {
       {pendingNurseReqs.length > 0 && (
         <div className="flex items-center gap-3 rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm">
           <span className="text-sky-600 font-semibold">{pendingNurseReqs.length} nurse request{pendingNurseReqs.length > 1 ? "s" : ""} awaiting preparation.</span>
-          <a href="/app/pharmacy/nurse-requests" className="ml-auto rounded-lg bg-sky-600 px-3 py-1 text-xs font-bold text-white hover:bg-sky-700 transition">
+          <Link href="/app/pharmacy/nurse-requests" className="ml-auto rounded-lg bg-sky-600 px-3 py-1 text-xs font-bold text-white hover:bg-sky-700 transition">
             Go to Nurse Requests →
-          </a>
+          </Link>
         </div>
       )}
 
@@ -698,8 +789,8 @@ export default function PharmacyInventoryPage() {
               <div className="flex justify-between"><span className="text-slate-500">Supplier</span><span>{restockItem.supplier}</span></div>
             </div>
             <div>
-              <label className="mb-1 block text-sm font-semibold text-slate-700">Quantity to Request</label>
-              <input type="number" min="1" required value={restockQty} onChange={(e) => setRestockQty(e.target.value)} className={inputCls} />
+              <label className="mb-1 block text-sm font-semibold text-slate-700">Quantity to Request <span className="font-normal text-slate-400">(optional)</span></label>
+              <input type="number" min="1" value={restockQty} onChange={(e) => setRestockQty(e.target.value)} placeholder="Leave blank for Store to choose" className={inputCls} />
             </div>
             <div>
               <label className="mb-1 block text-sm font-semibold text-slate-700">Urgency</label>

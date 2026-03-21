@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { ChatMessage } from "@/lib/chat/types";
+import type { ChangeEvent, FormEvent } from "react";
+import type { ChatMessage, ChatSendAttachment } from "@/lib/chat/types";
 import { cn } from "@/lib/utils/cn";
 
 function getInitials(name: string) {
@@ -60,6 +61,40 @@ function ChatAvatar({
   );
 }
 
+function MessageAttachment({
+  url,
+  name,
+  mimeType,
+}: {
+  url: string;
+  name?: string;
+  mimeType?: string;
+}) {
+  if (mimeType && !mimeType.startsWith("image/")) {
+    return (
+      <a
+        href={url}
+        target="_blank"
+        rel="noreferrer"
+        className="block rounded-xl border border-white/20 bg-black/10 px-3 py-2 text-xs font-medium text-current underline-offset-2 hover:underline"
+      >
+        {name ?? "Open attachment"}
+      </a>
+    );
+  }
+
+  return (
+    <a href={url} target="_blank" rel="noreferrer" className="block overflow-hidden rounded-xl">
+      <img
+        src={url}
+        alt={name ?? "Chat attachment"}
+        className="max-h-60 w-full rounded-xl object-cover"
+        loading="lazy"
+      />
+    </a>
+  );
+}
+
 export function ChatWindow({
   contactName,
   contactRole,
@@ -79,7 +114,7 @@ export function ChatWindow({
   messages: ChatMessage[];
   placeholder?: string;
   myName?: string;
-  onSend: (body: string) => Promise<void> | void;
+  onSend: (body: string, attachment?: ChatSendAttachment) => Promise<void> | void;
   isLoading?: boolean;
   isSending?: boolean;
   emptyStateTitle?: string;
@@ -87,7 +122,9 @@ export function ChatWindow({
 }) {
   const [input, setInput] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [attachment, setAttachment] = useState<{ file: File; previewUrl: string } | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     listRef.current?.scrollTo({
@@ -96,15 +133,60 @@ export function ChatWindow({
     });
   }, [messages, isLoading]);
 
-  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+  useEffect(() => {
+    return () => {
+      if (attachment?.previewUrl) {
+        URL.revokeObjectURL(attachment.previewUrl);
+      }
+    };
+  }, [attachment?.previewUrl]);
+
+  function clearAttachment() {
+    setAttachment((current) => {
+      if (current?.previewUrl) {
+        URL.revokeObjectURL(current.previewUrl);
+      }
+      return null;
+    });
+
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  }
+
+  function handleAttachmentChange(event: ChangeEvent<HTMLInputElement>) {
+    setError(null);
+    const file = event.target.files?.[0];
+
+    if (!file) {
+      return;
+    }
+
+    if (!file.type.startsWith("image/")) {
+      setError("Please choose an image file.");
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+      return;
+    }
+
+    clearAttachment();
+    setAttachment({
+      file,
+      previewUrl: URL.createObjectURL(file),
+    });
+  }
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const body = input.trim();
-    if (!body || isSending) return;
+    if ((!body && !attachment) || isSending) return;
 
     try {
       setError(null);
-      await onSend(body);
+      await onSend(body, attachment?.file ?? null);
       setInput("");
+      clearAttachment();
     } catch {
       setError("Could not send message. Please try again.");
     }
@@ -173,7 +255,18 @@ export function ChatWindow({
                           {message.senderRole ? ` · ${message.senderRole}` : ""}
                         </p>
                       ) : null}
-                      <p className="text-sm leading-relaxed text-slate-900">{message.body}</p>
+                      <div className="space-y-2">
+                        {message.body ? (
+                          <p className="text-sm leading-relaxed text-slate-900">{message.body}</p>
+                        ) : null}
+                        {message.attachmentUrl ? (
+                          <MessageAttachment
+                            url={message.attachmentUrl}
+                            name={message.attachmentName}
+                            mimeType={message.attachmentMimeType}
+                          />
+                        ) : null}
+                      </div>
                       <p className="mt-1 text-right text-[10px] text-slate-400">{message.time}</p>
                     </div>
                   </div>
@@ -185,7 +278,18 @@ export function ChatWindow({
                           {message.senderRole}
                         </p>
                       ) : null}
-                      <p className="text-sm leading-relaxed text-white">{message.body}</p>
+                      <div className="space-y-2">
+                        {message.body ? (
+                          <p className="text-sm leading-relaxed text-white">{message.body}</p>
+                        ) : null}
+                        {message.attachmentUrl ? (
+                          <MessageAttachment
+                            url={message.attachmentUrl}
+                            name={message.attachmentName}
+                            mimeType={message.attachmentMimeType}
+                          />
+                        ) : null}
+                      </div>
                       <div className="mt-1 flex items-center justify-end gap-1">
                         <span className="text-[10px] text-white/70">{message.time}</span>
                       </div>
@@ -199,7 +303,53 @@ export function ChatWindow({
 
       <div className="shrink-0 border-t border-slate-200 bg-[#f0f2f5] px-3 py-2">
         {error ? <p className="mb-2 text-xs text-red-600">{error}</p> : null}
+        {attachment ? (
+          <div className="mb-2 rounded-2xl border border-slate-200 bg-white p-2 shadow-sm">
+            <div className="flex items-start gap-3">
+              <img
+                src={attachment.previewUrl}
+                alt={attachment.file.name}
+                className="h-16 w-16 shrink-0 rounded-xl object-cover"
+              />
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-medium text-slate-900">
+                  {attachment.file.name}
+                </p>
+                <p className="mt-0.5 text-xs text-slate-500">
+                  {(attachment.file.size / 1024 / 1024).toFixed(1)} MB
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={clearAttachment}
+                className="rounded-full px-2 py-1 text-xs font-semibold text-slate-500 transition hover:bg-slate-100 hover:text-slate-700"
+              >
+                Remove
+              </button>
+            </div>
+          </div>
+        ) : null}
         <form onSubmit={handleSubmit} className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            className="shrink-0 rounded-full border border-slate-200 bg-white p-2 text-slate-600 shadow-sm transition hover:bg-slate-50"
+            aria-label="Add image attachment"
+            title="Add image"
+          >
+            <svg
+              className="h-4 w-4"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M21.44 11.05 12 20.49a5.5 5.5 0 1 1-7.78-7.78l9.44-9.44a3.5 3.5 0 0 1 4.95 4.95l-9.19 9.19a1.5 1.5 0 0 1-2.12-2.12l8.49-8.49" />
+            </svg>
+          </button>
           <input
             type="text"
             value={input}
@@ -210,7 +360,7 @@ export function ChatWindow({
           />
           <button
             type="submit"
-            disabled={!input.trim() || isSending}
+            disabled={(!input.trim() && !attachment) || isSending}
             className="shrink-0 rounded-full bg-[var(--accent)] px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:opacity-90 disabled:pointer-events-none disabled:opacity-40"
           >
             {isSending ? "Sending..." : "Send"}
@@ -219,6 +369,13 @@ export function ChatWindow({
         <p className="mt-1 px-2 text-[10px] text-slate-400">
           Signed in as {myName}
         </p>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={handleAttachmentChange}
+        />
       </div>
     </div>
   );

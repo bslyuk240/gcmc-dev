@@ -10,6 +10,7 @@ import {
   getPharmacyBills,
   getPharmacyMetrics,
 } from "@/lib/data/pharmacy-store";
+import { ACCOUNTS_PAYMENT_UPDATED_EVENT } from "@/lib/constants/accounts-events";
 
 export function usePharmacyStore() {
   const [, rerender] = useReducer((x: number) => x + 1, 0);
@@ -20,7 +21,16 @@ export function usePharmacyStore() {
     syncPharmacyFromSupabase();
     const unsub = subscribePharmacyStore(rerender);
     const poll = setInterval(() => syncPharmacyFromSupabase(true), 30_000);
-    return () => { window.clearTimeout(hydrationId); unsub(); clearInterval(poll); };
+    const refresh = () => {
+      void syncPharmacyFromSupabase(true);
+    };
+    window.addEventListener(ACCOUNTS_PAYMENT_UPDATED_EVENT, refresh);
+    return () => {
+      window.clearTimeout(hydrationId);
+      window.removeEventListener(ACCOUNTS_PAYMENT_UPDATED_EVENT, refresh);
+      unsub();
+      clearInterval(poll);
+    };
   }, []);
 
   if (!hydrated) {

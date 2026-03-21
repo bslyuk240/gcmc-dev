@@ -66,17 +66,18 @@ export default function PharmacyRestockRequestsPage() {
 
   async function handleNew(e: React.FormEvent) {
     e.preventDefault();
-    if (!drugName || !newQty) return;
+    if (!drugName) return;
     setSubmitting(true);
     const now = new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
     addRestockRequest({
       id: `PRX-${Date.now()}`,
       drug: drugName,
-      inventoryItemId: "",
+      inventoryItemId: undefined,
       storeInventoryId: selectedStoreItemId || undefined,
+      storeSnapshot: selectedStoreItem ? { ...selectedStoreItem } : undefined,
       currentStock: 0,
       reorderLevel: selectedStoreItem?.reorder ?? 0,
-      qtyRequested: parseInt(newQty),
+      qtyRequested: newQty ? parseInt(newQty) : null,
       unit: selectedStoreItem?.unit ?? newUnit,
       urgency: newUrgency,
       requestedBy: staffName,
@@ -118,7 +119,9 @@ export default function PharmacyRestockRequestsPage() {
                 <tr key={row.id} className="hover:bg-slate-50">
                   <td className="px-5 py-3 font-mono text-xs text-slate-500">{row.id}</td>
                   <td className="px-5 py-3 font-semibold text-slate-900">{row.drug}</td>
-                  <td className="px-5 py-3 text-slate-600">{row.qtyRequested} {row.unit}</td>
+                  <td className="px-5 py-3 text-slate-600">
+                    {row.qtyRequested != null ? `${row.qtyRequested} ${row.unit}` : <span className="text-slate-400">Store decides</span>}
+                  </td>
                   <td className="px-5 py-3">
                     <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${URGENCY_STYLES[row.urgency]}`}>{row.urgency}</span>
                   </td>
@@ -195,8 +198,8 @@ export default function PharmacyRestockRequestsPage() {
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Quantity <span className="text-red-500">*</span></label>
-              <input required type="number" min="1" value={newQty} onChange={(e) => setNewQty(e.target.value)} placeholder="e.g. 100" className={inputCls} />
+              <label className="block text-sm font-medium text-slate-700 mb-1">Quantity <span className="text-slate-400 font-normal">(optional)</span></label>
+              <input type="number" min="1" value={newQty} onChange={(e) => setNewQty(e.target.value)} placeholder="Leave blank for Store to choose" className={inputCls} />
             </div>
             {!selectedStoreItem && (
               <div>
@@ -248,10 +251,10 @@ export default function PharmacyRestockRequestsPage() {
             </div>
             {([
               ["Drug", viewReq.drug],
-              ["Quantity", `${viewReq.qtyRequested} ${viewReq.unit}`],
+              ["Quantity", viewReq.qtyRequested != null ? `${viewReq.qtyRequested} ${viewReq.unit}` : "Store decides"],
               ["Requested By", viewReq.requestedBy],
               ["Date", fmtDate(viewReq.requestedAt)],
-              ...(viewReq.approvedQty ? [["Approved Qty", String(viewReq.approvedQty)]] : []),
+              ...(viewReq.approvedQty != null ? [["Approved Qty", String(viewReq.approvedQty)]] : []),
               ...(viewReq.fulfilledAt ? [["Fulfilled At", viewReq.fulfilledAt]] : []),
             ] as [string, string][]).map(([label, val]) => (
               <div key={label} className="flex justify-between">
@@ -260,6 +263,17 @@ export default function PharmacyRestockRequestsPage() {
               </div>
             ))}
             {viewReq.notes && <div className="rounded-lg bg-slate-50 p-3 text-slate-600">{viewReq.notes}</div>}
+            {viewReq.storeSnapshot && (
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600 space-y-1">
+                <p className="font-semibold text-slate-700">Store Snapshot</p>
+                <div className="flex justify-between"><span>Name</span><span>{viewReq.storeSnapshot.name}</span></div>
+                <div className="flex justify-between"><span>Category</span><span>{viewReq.storeSnapshot.category}</span></div>
+                <div className="flex justify-between"><span>Unit</span><span>{viewReq.storeSnapshot.unit}</span></div>
+                <div className="flex justify-between"><span>Qty</span><span>{viewReq.storeSnapshot.qty}</span></div>
+                <div className="flex justify-between"><span>Reorder</span><span>{viewReq.storeSnapshot.reorder}</span></div>
+                <div className="flex justify-between"><span>Supplier</span><span>{viewReq.storeSnapshot.supplier || "—"}</span></div>
+              </div>
+            )}
             {viewReq.storeInventoryId && (
               <div className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-700">
                 ✓ Linked to Store inventory item — stock will be automatically updated on fulfillment.

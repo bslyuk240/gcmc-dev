@@ -78,7 +78,7 @@ export function LiveSupportChat({
     });
   }, [loadThread, thread?.id]);
 
-  async function handleSend(body: string) {
+  async function handleSend(body: string, attachmentFile: File | null = null) {
     if (!session) return;
 
     setSending(true);
@@ -107,6 +107,7 @@ export function LiveSupportChat({
         senderRole: formatRoleLabel(session.role),
         senderPortal,
         body,
+        attachmentFile,
       });
 
       const nextMessages = await fetchChatMessages(currentThread.id, session.staff_id);

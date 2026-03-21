@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -8,45 +8,83 @@ import { Modal, ModalFooter } from "@/components/ui/modal";
 import { Toast, type ToastData } from "@/components/ui/toast";
 import { SearchableSelect, type SelectOption } from "@/components/ui/searchable-select";
 import { usePharmacyStore } from "@/lib/hooks/use-pharmacy-store";
+import { addPharmacyBill, type PharmacyBill } from "@/lib/data/pharmacy-store";
 import {
-  addPharmacyBill,
-  PHARMACY_DRUG_LIST,
-  type PharmacyBill,
-} from "@/lib/data/pharmacy-store";
+  adjustPharmacyInventoryStock,
+  fetchPharmacyInventory,
+  fetchPharmacyStockMovements,
+  insertPharmacyStockMovement,
+  type PharmacyInventoryItem,
+  type PharmacyStockMovement,
+} from "@/lib/supabase/db";
 import { printReceipt } from "@/lib/utils/print-receipt";
 
-type MoveType = "all" | "in" | "out" | "dispense" | "adjustment";
+type MoveType = "all" | "in" | "dispense" | "adjustment";
 
 type StockMove = {
   id: string;
   date: string;
   item: string;
-  type: "in" | "out" | "dispense" | "adjustment";
+  type: "in" | "dispense" | "adjustment";
   qty: number;
   source: string;
   ref: string;
   performedBy: string;
 };
 
-const SEED_MOVES: StockMove[] = [];
-
-const TYPE_STYLE: Record<string, string> = {
+const TYPE_STYLE: Record<StockMove["type"], string> = {
   in: "bg-emerald-100 text-emerald-700",
-  out: "bg-red-100 text-red-700",
-  dispense: "bg-violet-100 text-violet-700",
+  dispense: "bg-red-100 text-red-700",
   adjustment: "bg-amber-100 text-amber-700",
 };
 
-const TYPE_LABEL: Record<string, string> = {
+const TYPE_LABEL: Record<StockMove["type"], string> = {
   in: "Stock In",
-  out: "Stock Out",
   dispense: "Dispensed",
   adjustment: "Adjustment",
 };
 
+function calcStockStatus(stock: number, reorder: number) {
+  if (stock === 0) return "out";
+  if (stock <= reorder * 0.3) return "critical";
+  if (stock <= reorder) return "low";
+  return "ok";
+}
+
+function fmtMovementDate(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function mapMovement(row: PharmacyStockMovement, inventoryById: Map<string, PharmacyInventoryItem>): StockMove {
+  const item = inventoryById.get(row.inventoryId);
+  const type: StockMove["type"] = row.movementType === "in" ? "in" : row.movementType === "adjustment" ? "adjustment" : "dispense";
+  const signedQty = row.movementType === "in" ? row.quantity : -Math.abs(row.quantity);
+
+  return {
+    id: row.id,
+    date: fmtMovementDate(row.createdAt),
+    item: item?.product ?? row.sourceDestination ?? row.refNo ?? "Unknown item",
+    type,
+    qty: signedQty,
+    source: row.sourceDestination ?? row.refNo ?? "Pharmacy",
+    ref: row.refNo ?? row.referenceId ?? row.id,
+    performedBy: row.createdBy ?? "System",
+  };
+}
+
 export default function PharmacyStockMovementsPage() {
   const { bills } = usePharmacyStore();
-  const [moves, setMoves] = useState<StockMove[]>(SEED_MOVES);
+  const [moves, setMoves] = useState<StockMove[]>([]);
+  const [inventoryItems, setInventoryItems] = useState<PharmacyInventoryItem[]>([]);
+  const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<MoveType>("all");
   const [searchQ, setSearchQ] = useState("");
   const [walkinOpen, setWalkinOpen] = useState(false);
@@ -55,61 +93,113 @@ export default function PharmacyStockMovementsPage() {
 
   // Walk-in dispense form
   const [wiPatient, setWiPatient] = useState("");
-  const [wiDrug, setWiDrug] = useState("");
+  const [wiDrugId, setWiDrugId] = useState("");
   const [wiQty, setWiQty] = useState("1");
   const [wiNotes, setWiNotes] = useState("");
 
   // Adjustment form
-  const [adjItem, setAdjItem] = useState("");
+  const [adjItemId, setAdjItemId] = useState("");
   const [adjQty, setAdjQty] = useState("");
   const [adjType, setAdjType] = useState<"in" | "adjustment">("adjustment");
   const [adjReason, setAdjReason] = useState("");
 
-  const allItems: SelectOption[] = PHARMACY_DRUG_LIST.map((d) => ({
-    value: d.id,
-    label: d.name,
-    sublabel: `${d.category} · ₦${d.unitPrice}/unit`,
-    group: d.category,
+  useEffect(() => {
+    let cancelled = false;
+
+    async function load() {
+      setLoading(true);
+      try {
+        const [inventory, movementRows] = await Promise.all([
+          fetchPharmacyInventory(),
+          fetchPharmacyStockMovements(),
+        ]);
+        if (cancelled) return;
+
+        setInventoryItems(inventory);
+        const inventoryById = new Map(inventory.map((item) => [item.id, item]));
+        setMoves(movementRows.map((row) => mapMovement(row, inventoryById)));
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const inventoryById = useMemo(() => new Map(inventoryItems.map((item) => [item.id, item])), [inventoryItems]);
+
+  const allItems: SelectOption[] = inventoryItems.map((item) => ({
+    value: item.id,
+    label: item.product,
+    sublabel: `${item.category} · ${item.form} · ₦${item.unitPrice.toFixed(2)}/unit · stock ${item.stock}`,
+    group: item.category,
   }));
 
-  const displayed = moves.filter((m) => {
-    if (filter !== "all" && m.type !== filter) return false;
-    if (searchQ && !m.item.toLowerCase().includes(searchQ.toLowerCase()) && !m.source.toLowerCase().includes(searchQ.toLowerCase())) return false;
-    return true;
-  });
+  const displayed = useMemo(() => {
+    const q = searchQ.toLowerCase();
+    return moves.filter((move) => {
+      if (filter !== "all" && move.type !== filter) return false;
+      if (!q) return true;
+      return move.item.toLowerCase().includes(q) || move.source.toLowerCase().includes(q) || move.ref.toLowerCase().includes(q);
+    });
+  }, [filter, moves, searchQ]);
 
-  const totalIn = moves.filter((m) => m.qty > 0).reduce((s, m) => s + m.qty, 0);
-  const totalOut = moves.filter((m) => m.qty < 0).reduce((s, m) => s + Math.abs(m.qty), 0);
+  const totalIn = moves.filter((move) => move.qty > 0).reduce((sum, move) => sum + move.qty, 0);
+  const totalOut = moves.filter((move) => move.qty < 0).reduce((sum, move) => sum + Math.abs(move.qty), 0);
 
-  function handleWalkinDispense(e: React.FormEvent) {
+  function updateInventoryItem(itemId: string, delta: number) {
+    setInventoryItems((prev) => prev.map((item) => {
+      if (item.id !== itemId) return item;
+      const stock = Math.max(0, item.stock + delta);
+      return { ...item, stock, status: calcStockStatus(stock, item.reorderLevel) };
+    }));
+  }
+
+  async function handleWalkinDispense(e: React.FormEvent) {
     e.preventDefault();
-    const drug = PHARMACY_DRUG_LIST.find((d) => d.id === wiDrug);
-    if (!drug || !wiPatient) return;
-    const qty = parseInt(wiQty) || 1;
-    const total = qty * drug.unitPrice;
-    const now = new Date().toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" });
+    const item = inventoryById.get(wiDrugId);
+    if (!item || !wiPatient.trim()) return;
+
+    const qty = Math.max(1, parseInt(wiQty) || 1);
+    const total = qty * item.unitPrice;
+    const now = new Date().toISOString();
+    const displayTime = fmtMovementDate(now);
     const refId = `WI-${Date.now()}`;
 
+    await adjustPharmacyInventoryStock(item.id, -qty).catch(() => {});
+    await insertPharmacyStockMovement({
+      inventoryId: item.id,
+      movementType: "dispense",
+      quantity: qty,
+      sourceDestination: `Walk-in - ${wiPatient.trim()}`,
+      refNo: refId,
+      createdBy: "Pharmacist (You)",
+      createdAt: now,
+    });
+
+    updateInventoryItem(item.id, -qty);
     setMoves((prev) => [{
       id: refId,
-      date: now,
-      item: drug.name,
+      date: displayTime,
+      item: item.product,
       type: "dispense",
       qty: -qty,
-      source: `Walk-in – ${wiPatient}`,
+      source: `Walk-in - ${wiPatient.trim()}`,
       ref: refId,
       performedBy: "Pharmacist (You)",
     }, ...prev]);
 
-    // Bill for accounts
     addPharmacyBill({
       id: `PBILL-${Date.now()}`,
       prescriptionId: refId,
-      patientName: wiPatient,
+      patientName: wiPatient.trim(),
       patientId: `WI-${Date.now()}`,
-      drugs: `${drug.name} × ${qty}`,
+      drugs: `${item.product} × ${qty}`,
       totalCost: total,
-      dispensedAt: now,
+      dispensedAt: displayTime,
       billStatus: "Pending",
       source: "walk-in",
     } as PharmacyBill);
@@ -117,75 +207,92 @@ export default function PharmacyStockMovementsPage() {
     setToast({ message: `Walk-in dispense recorded. ₦${total.toFixed(2)} bill sent to Accounts.`, type: "success" });
     setWalkinOpen(false);
 
-    // Auto-print receipt
     printReceipt({
       title: "Pharmacy Dispense Receipt",
-      subtitle: drug.name,
-      refNumber: `WI-${Date.now().toString().slice(-6)}`,
+      subtitle: item.product,
+      refNumber: refId,
       lines: [
-        { label: "Patient/Customer", value: wiPatient },
-        { label: "Medication",       value: drug.name },
-        { label: "Form",             value: drug.unit },
-        { label: "Quantity",         value: `${qty}` },
-        { label: "Unit Price",       value: `₦${drug.unitPrice.toFixed(2)}` },
-        { label: "Notes",            value: wiNotes || "—" },
-        { label: "Status",           value: "DISPENSED", bold: true },
+        { label: "Patient/Customer", value: wiPatient.trim() },
+        { label: "Medication", value: item.product },
+        { label: "Form", value: item.form || "—" },
+        { label: "Quantity", value: `${qty}` },
+        { label: "Unit Price", value: `₦${item.unitPrice.toFixed(2)}` },
+        { label: "Notes", value: wiNotes || "—" },
+        { label: "Status", value: "DISPENSED", bold: true },
       ],
       total: { label: "Total Amount", value: `₦${total.toFixed(2)}` },
       footer: "Medication dispensed over the counter. Proof of purchase.",
       copyLabel: "CUSTOMER COPY",
     });
 
-    setWiPatient(""); setWiDrug(""); setWiQty("1"); setWiNotes("");
+    setWiPatient("");
+    setWiDrugId("");
+    setWiQty("1");
+    setWiNotes("");
   }
 
-  function handleAdjustment(e: React.FormEvent) {
+  async function handleAdjustment(e: React.FormEvent) {
     e.preventDefault();
-    const drug = PHARMACY_DRUG_LIST.find((d) => d.id === adjItem);
-    if (!drug || !adjQty) return;
-    const qty = parseInt(adjQty);
-    const now = new Date().toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" });
+    const item = inventoryById.get(adjItemId);
+    if (!item || !adjQty) return;
+
+    const qty = Math.max(1, parseInt(adjQty) || 1);
+    const delta = adjType === "in" ? qty : -qty;
+    const now = new Date().toISOString();
+    const displayTime = fmtMovementDate(now);
     const refId = `ADJ-${Date.now()}`;
 
+    await adjustPharmacyInventoryStock(item.id, delta).catch(() => {});
+    await insertPharmacyStockMovement({
+      inventoryId: item.id,
+      movementType: adjType,
+      quantity: qty,
+      sourceDestination: adjReason.trim() || "Manual adjustment",
+      refNo: refId,
+      createdBy: "Pharmacist (You)",
+      createdAt: now,
+    });
+
+    updateInventoryItem(item.id, delta);
     setMoves((prev) => [{
       id: refId,
-      date: now,
-      item: drug.name,
-      type: adjType,
-      qty: adjType === "in" ? Math.abs(qty) : -Math.abs(qty),
-      source: adjReason || "Manual adjustment",
+      date: displayTime,
+      item: item.product,
+      type: adjType === "in" ? "in" : "adjustment",
+      qty: delta,
+      source: adjReason.trim() || "Manual adjustment",
       ref: refId,
       performedBy: "Pharmacist (You)",
     }, ...prev]);
 
-    setToast({ message: `Stock ${adjType === "in" ? "addition" : "adjustment"} recorded for ${drug.name}.`, type: "success" });
+    setToast({ message: `Stock ${adjType === "in" ? "addition" : "adjustment"} recorded for ${item.product}.`, type: "success" });
     setAdjustOpen(false);
-    setAdjItem(""); setAdjQty(""); setAdjReason("");
+    setAdjItemId("");
+    setAdjQty("");
+    setAdjReason("");
   }
 
   return (
     <div className="space-y-6">
       <PageHeader
         title="Stock Movements"
-        description="Track all pharmacy stock in, dispenses, nurse requests, adjustments, and walk-in sales."
+        description="Track pharmacy stock in, dispenses, adjustments, and walk-in sales."
       />
 
-      {/* Summary cards */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 sm:gap-4">
         {[
           { label: "Total Movements", value: String(moves.length), color: "text-slate-900" },
           { label: "Units Received", value: `+${totalIn}`, color: "text-emerald-600" },
           { label: "Units Dispensed", value: `-${totalOut}`, color: "text-red-600" },
-          { label: "Billed Revenue", value: `₦${bills.reduce((s, b) => s + b.totalCost, 0).toLocaleString()}`, color: "text-violet-700" },
-        ].map((c) => (
-          <Card key={c.label} className="p-4">
-            <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">{c.label}</p>
-            <p className={`mt-1 text-xl font-bold sm:text-2xl ${c.color}`}>{c.value}</p>
+          { label: "Billed Revenue", value: `₦${bills.reduce((sum, bill) => sum + bill.totalCost, 0).toLocaleString()}`, color: "text-violet-700" },
+        ].map((card) => (
+          <Card key={card.label} className="p-4">
+            <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">{card.label}</p>
+            <p className={`mt-1 text-xl font-bold sm:text-2xl ${card.color}`}>{card.value}</p>
           </Card>
         ))}
       </div>
 
-      {/* Filters and actions */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2">
           <div className="relative">
@@ -197,18 +304,20 @@ export default function PharmacyStockMovementsPage() {
               value={searchQ}
               onChange={(e) => setSearchQ(e.target.value)}
               placeholder="Search item or source…"
-              className="rounded-lg border border-slate-200 bg-slate-50 py-2 pl-9 pr-4 text-sm outline-none focus:border-accent focus:bg-white w-full sm:w-52"
+              className="w-full rounded-lg border border-slate-200 bg-slate-50 py-2 pl-9 pr-4 text-sm outline-none focus:border-accent focus:bg-white sm:w-52"
             />
           </div>
           <div className="flex gap-1 rounded-lg border border-slate-200 bg-slate-50 p-1">
-            {(["all", "in", "dispense", "adjustment"] as MoveType[]).map((t) => (
+            {(["all", "in", "dispense", "adjustment"] as MoveType[]).map((type) => (
               <button
-                key={t}
+                key={type}
                 type="button"
-                onClick={() => setFilter(t)}
-                className={`rounded-md px-3 py-1.5 text-xs font-semibold transition ${filter === t ? "bg-white shadow text-slate-900" : "text-slate-500 hover:text-slate-700"}`}
+                onClick={() => setFilter(type)}
+                className={`rounded-md px-3 py-1.5 text-xs font-semibold transition ${
+                  filter === type ? "bg-white shadow text-slate-900" : "text-slate-500 hover:text-slate-700"
+                }`}
               >
-                {t === "all" ? "All" : TYPE_LABEL[t] ?? t}
+                {type === "all" ? "All" : type === "in" ? "Stock In" : type === "dispense" ? "Dispensed" : "Adjustment"}
               </button>
             ))}
           </div>
@@ -219,48 +328,52 @@ export default function PharmacyStockMovementsPage() {
         </div>
       </div>
 
-      {/* Movements table */}
       <Card className="overflow-hidden p-0">
         <div className="overflow-x-auto">
           <table className="min-w-full text-left text-sm">
             <thead className="bg-slate-50">
               <tr>
-                {["Date", "Item", "Type", "Qty", "Source / Description", "Ref", "By"].map((h) => (
-                  <th key={h} className="whitespace-nowrap px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-slate-500">{h}</th>
+                {["Date", "Item", "Type", "Qty", "Source / Description", "Ref", "By"].map((heading) => (
+                  <th key={heading} className="whitespace-nowrap px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-slate-500">
+                    {heading}
+                  </th>
                 ))}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {displayed.map((row) => (
+              {!loading && displayed.map((row) => (
                 <tr key={row.id} className="hover:bg-slate-50/70">
-                  <td className="px-4 py-3 text-xs text-slate-500 whitespace-nowrap">{row.date}</td>
+                  <td className="whitespace-nowrap px-4 py-3 text-xs text-slate-500">{row.date}</td>
                   <td className="px-4 py-3 font-medium text-slate-900">{row.item}</td>
                   <td className="px-4 py-3">
-                    <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${TYPE_STYLE[row.type]}`}>
-                      {TYPE_LABEL[row.type]}
-                    </span>
+                    <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${TYPE_STYLE[row.type]}`}>{TYPE_LABEL[row.type]}</span>
                   </td>
                   <td className={`px-4 py-3 font-bold ${row.qty > 0 ? "text-emerald-600" : "text-red-600"}`}>
                     {row.qty > 0 ? `+${row.qty}` : row.qty}
                   </td>
-                  <td className="px-4 py-3 text-slate-600 max-w-xs truncate">{row.source}</td>
+                  <td className="max-w-xs truncate px-4 py-3 text-slate-600">{row.source}</td>
                   <td className="px-4 py-3 font-mono text-xs text-slate-400">{row.ref}</td>
                   <td className="px-4 py-3 text-xs text-slate-500">{row.performedBy}</td>
                 </tr>
               ))}
-              {displayed.length === 0 && (
+              {loading ? (
                 <tr>
-                  <td colSpan={7} className="px-6 py-10 text-center text-sm text-slate-400">
-                    No movements match your filter.
-                  </td>
+                  <td colSpan={7} className="px-6 py-10 text-center text-sm text-slate-400">Loading movements…</td>
                 </tr>
-              )}
+              ) : displayed.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="px-6 py-10 text-center text-sm text-slate-400">No movements match your filter.</td>
+                </tr>
+              ) : null}
             </tbody>
           </table>
         </div>
       </Card>
 
-      {/* Walk-in dispense modal */}
+      <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-500">
+        <p><strong className="text-slate-700">Flow:</strong> real stock changes are written to the ledger when pharmacy records a walk-in sale or adjustment, and when Store fulfills a restock request.</p>
+      </div>
+
       <Modal open={walkinOpen} onClose={() => setWalkinOpen(false)} title="Walk-in Dispense">
         <form onSubmit={handleWalkinDispense} className="space-y-4">
           <p className="text-sm text-slate-500">Record a direct counter sale or dispensing without a doctor prescription.</p>
@@ -279,9 +392,9 @@ export default function PharmacyStockMovementsPage() {
             <div className="mt-1.5">
               <SearchableSelect
                 options={allItems}
-                value={wiDrug}
-                onChange={setWiDrug}
-                placeholder="Search or select drug…"
+                value={wiDrugId}
+                onChange={setWiDrugId}
+                placeholder={inventoryItems.length ? "Search or select medication…" : "No inventory items available"}
               />
             </div>
           </div>
@@ -295,9 +408,9 @@ export default function PharmacyStockMovementsPage() {
               className="mt-1.5 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-accent focus:ring-2 focus:ring-(--accent)/20"
             />
           </div>
-          {wiDrug && wiQty && (
+          {wiDrugId && wiQty && inventoryById.get(wiDrugId) && (
             <div className="rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
-              Estimated total: <strong>₦{((parseInt(wiQty) || 1) * (PHARMACY_DRUG_LIST.find((d) => d.id === wiDrug)?.unitPrice ?? 0)).toFixed(2)}</strong>
+              Estimated total: <strong>₦{((parseInt(wiQty) || 1) * inventoryById.get(wiDrugId)!.unitPrice).toFixed(2)}</strong>
             </div>
           )}
           <div>
@@ -312,12 +425,11 @@ export default function PharmacyStockMovementsPage() {
           </div>
           <ModalFooter>
             <Button type="button" variant="ghost" onClick={() => setWalkinOpen(false)}>Cancel</Button>
-            <Button type="submit" disabled={!wiPatient || !wiDrug}>Record Dispense</Button>
+            <Button type="submit" disabled={!wiPatient || !wiDrugId}>Record Dispense</Button>
           </ModalFooter>
         </form>
       </Modal>
 
-      {/* Adjustment modal */}
       <Modal open={adjustOpen} onClose={() => setAdjustOpen(false)} title="Stock Adjustment">
         <form onSubmit={handleAdjustment} className="space-y-4">
           <p className="text-sm text-slate-500">Record expired stock removal, counting errors, or manual stock additions.</p>
@@ -326,19 +438,19 @@ export default function PharmacyStockMovementsPage() {
             <div className="mt-1.5">
               <SearchableSelect
                 options={allItems}
-                value={adjItem}
-                onChange={setAdjItem}
-                placeholder="Search or select drug…"
+                value={adjItemId}
+                onChange={setAdjItemId}
+                placeholder={inventoryItems.length ? "Search or select medication…" : "No inventory items available"}
               />
             </div>
           </div>
           <div>
             <label className="block text-sm font-medium text-slate-700">Type</label>
             <div className="mt-1.5 flex gap-3">
-              {(["in", "adjustment"] as const).map((t) => (
-                <label key={t} className="flex cursor-pointer items-center gap-2 text-sm">
-                  <input type="radio" name="adjType" value={t} checked={adjType === t} onChange={() => setAdjType(t)} />
-                  <span>{t === "in" ? "Stock Addition" : "Removal / Correction"}</span>
+              {(["in", "adjustment"] as const).map((type) => (
+                <label key={type} className="flex cursor-pointer items-center gap-2 text-sm">
+                  <input type="radio" name="adjType" value={type} checked={adjType === type} onChange={() => setAdjType(type)} />
+                  <span>{type === "in" ? "Stock Addition" : "Removal / Correction"}</span>
                 </label>
               ))}
             </div>
@@ -360,13 +472,13 @@ export default function PharmacyStockMovementsPage() {
             <input
               value={adjReason}
               onChange={(e) => setAdjReason(e.target.value)}
-              placeholder="e.g., Expired stock removed, Counting error corrected…"
+              placeholder="Expired, count correction, write-off…"
               className="mt-1.5 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-accent focus:ring-2 focus:ring-(--accent)/20"
             />
           </div>
           <ModalFooter>
             <Button type="button" variant="ghost" onClick={() => setAdjustOpen(false)}>Cancel</Button>
-            <Button type="submit" disabled={!adjItem || !adjQty}>Save Adjustment</Button>
+            <Button type="submit" disabled={!adjItemId || !adjQty}>Save Adjustment</Button>
           </ModalFooter>
         </form>
       </Modal>

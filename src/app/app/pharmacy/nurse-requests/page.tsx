@@ -46,6 +46,7 @@ export default function PharmacyNurseRequestsPage() {
 
   function handlePrepare(id: string, drug: string, patient: string) {
     updateNurseRequestStatus(id, "Preparing");
+    setFilter("Preparing");
     setToast({ message: `Preparing ${drug} for ${patient}...`, type: "info" });
   }
 
@@ -54,11 +55,13 @@ export default function PharmacyNurseRequestsPage() {
       preparedAt: new Date().toISOString(),
       preparedBy: staffName,
     });
+    setFilter("Ready");
     setToast({ message: `${drug} for ${patient} is ready for collection.`, type: "success" });
   }
 
   function handleCancel(id: string, drug: string) {
     updateNurseRequestStatus(id, "Cancelled");
+    setFilter("Cancelled");
     setToast({ message: `${drug} request cancelled.`, type: "info" });
   }
 

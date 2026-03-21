@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card } from "@/components/ui/card";
@@ -10,97 +10,170 @@ import { Modal, ModalFooter } from "@/components/ui/modal";
 import { Toast, type ToastData } from "@/components/ui/toast";
 import { INTERNAL_PREFIX } from "@/lib/constants/navigation";
 import { printReceipt } from "@/lib/utils/print-receipt";
-import { fetchInvoices, insertInvoice, type InvoiceRecord } from "@/lib/supabase/db";
+import {
+  fetchInvoices,
+  fetchPatientRegistrations,
+  insertInvoice,
+  type InvoiceRecord,
+  type InvoiceStatus,
+  type PatientRegistration,
+} from "@/lib/supabase/db";
 
-type InvoiceStatus = "paid" | "pending" | "overdue" | "draft";
-
-type Invoice = {
-  id: string;
-  patient: string;
-  amount: number;
-  dueDate: string;
-  status: InvoiceStatus;
-  items: string;
-};
-
-
-const STATUS_BADGE: Record<
-  InvoiceStatus,
-  "success" | "warning" | "destructive" | "neutral"
-> = {
-  paid: "success",
-  pending: "warning",
-  overdue: "destructive",
+const STATUS_BADGE: Record<InvoiceStatus, "success" | "warning" | "destructive" | "neutral"> = {
   draft: "neutral",
+  issued: "warning",
+  part_paid: "warning",
+  paid: "success",
+  overdue: "destructive",
+  cancelled: "neutral",
 };
+
+const STATUS_FILTERS = [
+  "All status",
+  "Draft",
+  "Issued",
+  "Part paid",
+  "Paid",
+  "Overdue",
+  "Cancelled",
+] as const;
 
 const PAGE_SIZE = 8;
 
-
 export default function AccountsInvoicesPage() {
-  const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [invoices, setInvoices] = useState<InvoiceRecord[]>([]);
+  const [patients, setPatients] = useState<PatientRegistration[]>([]);
   const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    fetchInvoices().then((data) => {
-      setInvoices(data.map((d) => ({
-        id: d.id,
-        patient: d.patient,
-        amount: d.amount,
-        dueDate: d.dueDate,
-        status: d.status,
-        items: d.items,
-      })));
-      setLoading(false);
-    }).catch(() => setLoading(false));
-  }, []);
+  const [patientsLoading, setPatientsLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState("All status");
+  const [statusFilter, setStatusFilter] = useState<(typeof STATUS_FILTERS)[number]>("All status");
   const [page, setPage] = useState(0);
   const [showCreate, setShowCreate] = useState(false);
   const [toast, setToast] = useState<ToastData | null>(null);
-  const [newPatient, setNewPatient] = useState("");
+  const [patientQuery, setPatientQuery] = useState("");
+  const [selectedPatientId, setSelectedPatientId] = useState("");
   const [newItems, setNewItems] = useState("");
   const [newAmount, setNewAmount] = useState("");
   const [newDue, setNewDue] = useState("");
 
+  useEffect(() => {
+    let alive = true;
+
+    fetchInvoices()
+      .then((data) => {
+        if (alive) setInvoices(data);
+      })
+      .catch((error) => {
+        if (!alive) return;
+        setToast({
+          message: error instanceof Error ? error.message : "Failed to load invoices.",
+          type: "error",
+        });
+      })
+      .finally(() => {
+        if (alive) setLoading(false);
+      });
+
+    fetchPatientRegistrations()
+      .then((data) => {
+        if (alive) setPatients(data);
+      })
+      .catch((error) => {
+        if (!alive) return;
+        setToast({
+          message: error instanceof Error ? error.message : "Failed to load front desk patients.",
+          type: "error",
+        });
+      })
+      .finally(() => {
+        if (alive) setPatientsLoading(false);
+      });
+
+    return () => {
+      alive = false;
+    };
+  }, []);
+
   const filtered = invoices.filter((invoice) => {
-    const query = search.toLowerCase();
+    const query = search.toLowerCase().trim();
     const matchesSearch =
       !query ||
-      invoice.id.toLowerCase().includes(query) ||
-      invoice.patient.toLowerCase().includes(query);
+      invoice.invoiceNumber.toLowerCase().includes(query) ||
+      invoice.patient.toLowerCase().includes(query) ||
+      invoice.items.toLowerCase().includes(query);
     const matchesStatus =
       statusFilter === "All status" ||
-      invoice.status === statusFilter.toLowerCase();
+      invoice.status === statusFilter.toLowerCase().replace(/ /g, "_");
 
     return matchesSearch && matchesStatus;
   });
 
-  const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
-  const paginated = filtered.slice(
-    page * PAGE_SIZE,
-    page * PAGE_SIZE + PAGE_SIZE,
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const paginated = filtered.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE);
+  const selectedPatient = useMemo(
+    () => patients.find((patient) => patient.id === selectedPatientId) ?? null,
+    [patients, selectedPatientId],
   );
+  const patientMatches = useMemo(() => {
+    const query = patientQuery.toLowerCase().trim();
+    if (!query) return patients.slice(0, 8);
+    return patients
+      .filter((patient) => {
+        const fields = [
+          patient.patientName,
+          patient.patientId,
+          patient.contact ?? "",
+          patient.email ?? "",
+        ]
+          .join(" ")
+          .toLowerCase();
+        return fields.includes(query);
+      })
+      .slice(0, 8);
+  }, [patients, patientQuery]);
 
-  function handleCreate(event: React.FormEvent) {
+  async function handleCreate(event: React.FormEvent) {
     event.preventDefault();
-    if (!newPatient || !newAmount) return;
+    if (!selectedPatient || !newAmount.trim()) return;
 
-    const invoice: Invoice = {
-      id: `INV-2026-${String(86 + invoices.length).padStart(4, "0")}`,
-      patient: newPatient,
-      items: newItems || "General services",
-      amount: parseFloat(newAmount),
-      dueDate: newDue || "2026-04-01",
-      status: "draft",
-    };
+    setSaving(true);
 
-    setInvoices((previous) => [invoice, ...previous]);
-    insertInvoice(invoice).catch(() => {});
-    setToast({ message: `Invoice ${invoice.id} created as draft.`, type: "success" });
-    setShowCreate(false);
-    setNewPatient(""); setNewItems(""); setNewAmount(""); setNewDue("");
+    try {
+      const invoiceNumber = `INV-${new Date().getFullYear()}-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
+      const created = await insertInvoice({
+        invoiceNumber,
+        patient: selectedPatient.patientName,
+        items: newItems.trim() || "General services",
+        amountDue: Number.parseFloat(newAmount),
+        amountPaid: 0,
+        dueDate: newDue || new Date().toISOString().slice(0, 10),
+        status: "draft",
+        notes: JSON.stringify({
+          patient: selectedPatient.patientName,
+          patientRecordId: selectedPatient.id,
+          patientDisplayId: selectedPatient.patientId,
+          patientContact: selectedPatient.contact ?? "",
+          items: newItems.trim() || "General services",
+        }),
+      });
+
+      setInvoices((previous) => [created, ...previous]);
+      setToast({ message: `Invoice ${created.invoiceNumber} created as draft.`, type: "success" });
+      setShowCreate(false);
+      setPatientQuery("");
+      setSelectedPatientId("");
+      setNewItems("");
+      setNewAmount("");
+      setNewDue("");
+    } catch (error) {
+      setToast({
+        message: error instanceof Error ? error.message : "Failed to create invoice.",
+        type: "error",
+      });
+    } finally {
+      setSaving(false);
+    }
   }
 
   const inputCls =
@@ -111,10 +184,20 @@ export default function AccountsInvoicesPage() {
       <PageHeader
         title="Invoices"
         description="Patient invoices and payment tracking."
-        action={<Button onClick={() => setShowCreate(true)}>+ Create New Invoice</Button>}
+        action={
+          <Button
+            onClick={() => {
+              setPatientQuery("");
+              setSelectedPatientId("");
+              setShowCreate(true);
+            }}
+          >
+            + Create New Invoice
+          </Button>
+        }
       />
 
-      {loading && <p className="text-sm text-slate-400">Loading invoices…</p>}
+      {loading && <p className="text-sm text-slate-400">Loading invoices...</p>}
 
       <Card className="overflow-hidden p-0">
         <div className="flex flex-wrap items-center gap-3 border-b border-slate-100 px-5 py-4">
@@ -145,16 +228,14 @@ export default function AccountsInvoicesPage() {
           <select
             value={statusFilter}
             onChange={(event) => {
-              setStatusFilter(event.target.value);
+              setStatusFilter(event.target.value as (typeof STATUS_FILTERS)[number]);
               setPage(0);
             }}
             className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-700 outline-none focus:border-[var(--accent)]"
           >
-            {["All status", "Paid", "Pending", "Overdue", "Draft"].map(
-              (status) => (
-                <option key={status}>{status}</option>
-              ),
-            )}
+            {STATUS_FILTERS.map((status) => (
+              <option key={status}>{status}</option>
+            ))}
           </select>
         </div>
 
@@ -166,7 +247,8 @@ export default function AccountsInvoicesPage() {
                   "Invoice ID",
                   "Patient",
                   "Services",
-                  "Amount (N)",
+                  "Amount Due (NGN)",
+                  "Paid",
                   "Due Date",
                   "Status",
                   "",
@@ -181,67 +263,73 @@ export default function AccountsInvoicesPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {paginated.map((row) => (
-                <tr key={row.id} className="hover:bg-slate-50">
-                  <td className="px-5 py-3 font-mono text-xs text-slate-600">
-                    {row.id}
-                  </td>
-                  <td className="px-5 py-3 font-semibold text-slate-900">
-                    {row.patient}
-                  </td>
-                  <td className="max-w-[180px] truncate px-5 py-3 text-slate-500">
-                    {row.items}
-                  </td>
-                  <td className="px-5 py-3 font-bold text-slate-900">
-                    {row.amount.toLocaleString()}
-                  </td>
-                  <td className="px-5 py-3 text-slate-600">{row.dueDate}</td>
-                  <td className="px-5 py-3">
-                    <StatusBadge variant={STATUS_BADGE[row.status]}>
-                      {row.status}
-                    </StatusBadge>
-                  </td>
-                  <td className="px-5 py-3">
-                    {row.status !== "paid" ? (
-                      <Link
-                        href={`${INTERNAL_PREFIX}/accounts/receive-payment?invoice=${row.id}`}
-                        className="text-xs font-semibold text-accent hover:underline"
-                      >
-                        Receive Payment →
-                      </Link>
-                    ) : (
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs font-semibold text-emerald-700">✓ Paid</span>
-                        <button
-                          className="text-xs font-semibold text-slate-500 hover:text-accent transition"
-                          onClick={() => printReceipt({
-                            title: "Payment Receipt",
-                            subtitle: row.items,
-                            refNumber: row.id,
-                            lines: [
-                              { label: "Patient",   value: row.patient },
-                              { label: "Invoice",   value: row.id },
-                              { label: "Services",  value: row.items },
-                              { label: "Due Date",  value: row.dueDate },
-                              { label: "Status",    value: "PAID", bold: true },
-                            ],
-                            total: { label: "Amount Paid", value: `₦${row.amount.toLocaleString()}` },
-                            copyLabel: "PATIENT COPY",
-                          })}
+              {paginated.map((row) => {
+                const balance = Math.max(0, row.amountDue - row.amountPaid);
+                return (
+                  <tr key={row.id} className="hover:bg-slate-50">
+                    <td className="px-5 py-3 font-mono text-xs text-slate-600">
+                      {row.invoiceNumber}
+                    </td>
+                    <td className="px-5 py-3 font-semibold text-slate-900">
+                      {row.patient}
+                    </td>
+                    <td className="max-w-[180px] truncate px-5 py-3 text-slate-500">
+                      {row.items}
+                    </td>
+                    <td className="px-5 py-3 font-bold text-slate-900">
+                      NGN {row.amountDue.toLocaleString()}
+                    </td>
+                    <td className="px-5 py-3 text-slate-600">
+                      NGN {row.amountPaid.toLocaleString()}
+                      {balance > 0 ? <span className="ml-2 text-xs text-slate-400">(bal. {balance.toLocaleString()})</span> : null}
+                    </td>
+                    <td className="px-5 py-3 text-slate-600">{row.dueDate}</td>
+                    <td className="px-5 py-3">
+                      <StatusBadge variant={STATUS_BADGE[row.status]}>{row.status}</StatusBadge>
+                    </td>
+                    <td className="px-5 py-3">
+                      {row.status !== "paid" && row.status !== "cancelled" ? (
+                        <Link
+                          href={`${INTERNAL_PREFIX}/accounts/receive-payment?invoice=${encodeURIComponent(row.invoiceNumber)}`}
+                          className="text-xs font-semibold text-accent hover:underline"
                         >
-                          🖨 Receipt
-                        </button>
-                      </div>
-                    )}
-                  </td>
-                </tr>
-              ))}
+                          Receive Payment
+                        </Link>
+                      ) : (
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-semibold text-emerald-700">Paid</span>
+                          <button
+                            type="button"
+                            className="text-xs font-semibold text-slate-500 hover:text-accent transition"
+                            onClick={() =>
+                              printReceipt({
+                                title: "Payment Receipt",
+                                subtitle: `${row.invoiceNumber} | ${row.items}`,
+                                refNumber: row.invoiceNumber,
+                                lines: [
+                                  { label: "Patient", value: row.patient },
+                                  { label: "Invoice", value: row.invoiceNumber },
+                                  { label: "Services", value: row.items },
+                                  { label: "Due Date", value: row.dueDate },
+                                  { label: "Amount Due", value: `NGN ${row.amountDue.toLocaleString()}` },
+                                  { label: "Amount Paid", value: `NGN ${row.amountPaid.toLocaleString()}`, bold: true },
+                                ],
+                                total: { label: "Balance", value: `NGN ${balance.toLocaleString()}` },
+                                copyLabel: "PATIENT COPY",
+                              })
+                            }
+                          >
+                            Print Receipt
+                          </button>
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
               {paginated.length === 0 ? (
                 <tr>
-                  <td
-                    colSpan={7}
-                    className="px-5 py-10 text-center text-sm text-slate-400"
-                  >
+                  <td colSpan={8} className="px-5 py-10 text-center text-sm text-slate-400">
                     No invoices found.
                   </td>
                 </tr>
@@ -252,8 +340,7 @@ export default function AccountsInvoicesPage() {
 
         <div className="flex items-center justify-between border-t border-slate-100 px-5 py-4">
           <p className="text-xs text-slate-400">
-            {filtered.length} invoices - Page {page + 1} of{" "}
-            {Math.max(1, totalPages)}
+            {filtered.length} invoices - Page {page + 1} of {totalPages}
           </p>
           <div className="flex gap-2">
             <Button
@@ -267,9 +354,7 @@ export default function AccountsInvoicesPage() {
             <Button
               variant="outline"
               size="sm"
-              onClick={() =>
-                setPage((current) => Math.min(totalPages - 1, current + 1))
-              }
+              onClick={() => setPage((current) => Math.min(totalPages - 1, current + 1))}
               disabled={page >= totalPages - 1}
             >
               Next
@@ -278,11 +363,7 @@ export default function AccountsInvoicesPage() {
         </div>
       </Card>
 
-      <Modal
-        open={showCreate}
-        onClose={() => setShowCreate(false)}
-        title="Create New Invoice"
-      >
+      <Modal open={showCreate} onClose={() => setShowCreate(false)} title="Create New Invoice">
         <form id="invoice-form" onSubmit={handleCreate} className="space-y-4">
           <div>
             <label className="mb-1 block text-sm font-medium text-slate-700">
@@ -290,12 +371,56 @@ export default function AccountsInvoicesPage() {
             </label>
             <input
               required
-              type="text"
-              placeholder="Patient name..."
-              value={newPatient}
-              onChange={(event) => setNewPatient(event.target.value)}
+              type="search"
+              placeholder={patientsLoading ? "Loading front desk patients..." : "Search front desk patient..."}
+              value={patientQuery}
+              onChange={(event) => {
+                setPatientQuery(event.target.value);
+                if (selectedPatient && event.target.value.toLowerCase() !== selectedPatient.patientName.toLowerCase()) {
+                  setSelectedPatientId("");
+                }
+              }}
               className={inputCls}
+              disabled={patientsLoading}
             />
+            <div className="mt-2 max-h-56 overflow-auto rounded-lg border border-slate-200 bg-slate-50">
+              {patientMatches.length > 0 ? (
+                patientMatches.map((patient) => {
+                  const selected = selectedPatientId === patient.id;
+                  return (
+                    <button
+                      key={patient.id}
+                      type="button"
+                      onClick={() => {
+                        setSelectedPatientId(patient.id);
+                        setPatientQuery(patient.patientName);
+                      }}
+                      className={`flex w-full items-center justify-between gap-3 border-b border-slate-100 px-3 py-2.5 text-left text-sm last:border-b-0 ${
+                        selected ? "bg-[var(--accent)]/10" : "hover:bg-white"
+                      }`}
+                    >
+                      <span className="min-w-0">
+                        <span className="block font-semibold text-slate-900">{patient.patientName}</span>
+                        <span className="block text-xs text-slate-500">
+                          {patient.patientId || "No patient ID"} {patient.contact ? `· ${patient.contact}` : ""}
+                        </span>
+                      </span>
+                      {selected ? <span className="text-xs font-bold text-[var(--accent)]">Selected</span> : null}
+                    </button>
+                  );
+                })
+              ) : (
+                <p className="px-3 py-3 text-xs text-slate-400">No matching front desk patients found.</p>
+              )}
+            </div>
+            {selectedPatient ? (
+              <p className="mt-2 text-xs text-slate-500">
+                Selected: <span className="font-semibold text-slate-700">{selectedPatient.patientName}</span>
+                {selectedPatient.patientId ? ` (${selectedPatient.patientId})` : ""}
+              </p>
+            ) : (
+              <p className="mt-2 text-xs text-slate-400">Choose a patient record from Front Desk before creating the invoice.</p>
+            )}
           </div>
           <div>
             <label className="mb-1 block text-sm font-medium text-slate-700">
@@ -312,7 +437,7 @@ export default function AccountsInvoicesPage() {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="mb-1 block text-sm font-medium text-slate-700">
-                Amount (N) <span className="text-red-500">*</span>
+                Amount (NGN) <span className="text-red-500">*</span>
               </label>
               <input
                 required
@@ -343,12 +468,16 @@ export default function AccountsInvoicesPage() {
             variant="ghost"
             size="md"
             type="button"
-            onClick={() => setShowCreate(false)}
+            onClick={() => {
+              setShowCreate(false);
+              setPatientQuery("");
+              setSelectedPatientId("");
+            }}
           >
             Cancel
           </Button>
-          <Button size="md" type="submit" form="invoice-form">
-            Create Invoice
+          <Button size="md" type="submit" form="invoice-form" disabled={saving || !selectedPatient}>
+            {saving ? "Creating..." : "Create Invoice"}
           </Button>
         </ModalFooter>
       </Modal>

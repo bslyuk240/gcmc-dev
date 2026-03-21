@@ -13,6 +13,8 @@ import { Icon } from "@/components/ui/icon";
 import { cn } from "@/lib/utils/cn";
 import { logoutStaffAction } from "@/server/actions/auth/logout";
 import { useHMSSession } from "@/modules/rbac/hooks";
+import { useAccountsStore } from "@/lib/hooks/use-accounts-store";
+import { usePharmacyStore } from "@/lib/hooks/use-pharmacy-store";
 
 /** Labels that are only visible to HODs, HR, and Admin */
 const HOD_ONLY_LABELS = new Set(["Rota Management", "Leave Requests", "Staff Performance"]);
@@ -30,6 +32,15 @@ function SidebarInner({
   const current = findNavigationItem(pathname);
   const department = getDepartmentFromPath(pathname);
   const rawSections = getSidebarSections(department);
+  const { frontDeskCharges, consultationFees, labCharges, nursingCharges } = useAccountsStore();
+  const { bills } = usePharmacyStore();
+  const isAccountsSection = department === "accounts";
+  const frontDeskQueued = frontDeskCharges.filter((charge) => charge.status === "Billed").length;
+  const pharmacyQueued = bills.filter((bill) => bill.billStatus === "Pending").length;
+  const consultationQueued = consultationFees.filter((fee) => fee.status === "Pending").length;
+  const labQueued = labCharges.filter((charge) => charge.status === "Pending").length;
+  const nursingQueued = nursingCharges.filter((charge) => charge.status === "Pending").length;
+  const receivePaymentQueued = frontDeskQueued + consultationQueued + labQueued + nursingQueued + pharmacyQueued;
 
   // Hide HOD-only items from staff who are not HOD / HR / Admin
   const isHodAllowed = HOD_ALLOWED_ROLES.has(session?.role ?? "");
@@ -105,6 +116,35 @@ function SidebarInner({
                         )}
                       />
                       <span>{item.label}</span>
+                      {isAccountsSection ? (
+                        <>
+                          {item.label === "Receive Payment" && receivePaymentQueued > 0 ? (
+                            <span className="ml-auto rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-700">
+                              {receivePaymentQueued} due
+                            </span>
+                          ) : null}
+                          {item.label === "Consultation Fees" && consultationQueued > 0 ? (
+                            <span className="ml-auto rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-700">
+                              {consultationQueued} due
+                            </span>
+                          ) : null}
+                          {item.label === "Lab Billing" && labQueued > 0 ? (
+                            <span className="ml-auto rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-700">
+                              {labQueued} due
+                            </span>
+                          ) : null}
+                          {item.label === "Nursing Billing" && nursingQueued > 0 ? (
+                            <span className="ml-auto rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-700">
+                              {nursingQueued} due
+                            </span>
+                          ) : null}
+                          {item.label === "Pharmacy Billing" && pharmacyQueued > 0 ? (
+                            <span className="ml-auto rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-700">
+                              {pharmacyQueued} due
+                            </span>
+                          ) : null}
+                        </>
+                      ) : null}
                       {!item.href ? (
                         <span className="ml-auto rounded bg-slate-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-500">
                           Planned

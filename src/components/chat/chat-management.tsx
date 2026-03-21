@@ -193,7 +193,7 @@ export function ChatManagement({
     [activeId, threads],
   );
 
-  async function handleSend(body: string) {
+  async function handleSend(body: string, attachmentFile: File | null = null) {
     if (!session || !activeThread) return;
 
     setSending(true);
@@ -205,6 +205,7 @@ export function ChatManagement({
         senderRole: formatRoleLabel(session.role),
         senderPortal: "management",
         body,
+        attachmentFile,
       });
       await Promise.all([loadThreads(), loadMessages(activeThread.id)]);
     } finally {

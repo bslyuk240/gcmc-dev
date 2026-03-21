@@ -1,12 +1,14 @@
 "use client";
 
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Card } from "@/components/ui/card";
 import { PageHeader } from "@/components/layout/page-header";
 import { INTERNAL_PREFIX } from "@/lib/constants/navigation";
+import { ACCOUNTS_PAYMENT_UPDATED_EVENT } from "@/lib/constants/accounts-events";
 import { useAccountsStore } from "@/lib/hooks/use-accounts-store";
 import { usePharmacyStore } from "@/lib/hooks/use-pharmacy-store";
-import { useLabStore } from "@/lib/hooks/use-lab-store";
+import { fetchInvoices, fetchPayments, type InvoiceRecord, type PaymentRecord } from "@/lib/supabase/db";
 
 const STATUS_STYLES: Record<string, string> = {
   Paid: "bg-emerald-50 text-emerald-700",
@@ -20,8 +22,53 @@ const STATUS_STYLES: Record<string, string> = {
 
 export default function AccountsDashboardPage() {
   const { frontDeskCharges, consultationFees, supplierPayments, payrollBatches, kioskSales, metrics, nursingCharges, labCharges } = useAccountsStore();
-  const { prescriptions, metrics: rxMetrics } = usePharmacyStore();
-  const { metrics: labMetrics } = useLabStore();
+  const { prescriptions } = usePharmacyStore();
+  const [invoiceRows, setInvoiceRows] = useState<InvoiceRecord[]>([]);
+  const [invoicePayments, setInvoicePayments] = useState<PaymentRecord[]>([]);
+
+  useEffect(() => {
+    let alive = true;
+
+    const loadData = async () => {
+      try {
+        const [rows, payments] = await Promise.all([fetchInvoices(), fetchPayments()]);
+        if (!alive) return;
+        setInvoiceRows(rows);
+        setInvoicePayments(payments);
+      } catch (error) {
+        if (!alive) return;
+        console.error("[accounts-dashboard] invoice payment load failed:", error);
+      }
+    };
+
+    void loadData();
+    const refresh = () => {
+      void loadData();
+    };
+    window.addEventListener(ACCOUNTS_PAYMENT_UPDATED_EVENT, refresh);
+
+    return () => {
+      alive = false;
+      window.removeEventListener(ACCOUNTS_PAYMENT_UPDATED_EVENT, refresh);
+    };
+  }, []);
+
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const invoiceRevenueToday = useMemo(
+    () => invoicePayments.filter((payment) => payment.paidAt.startsWith(todayIso)).reduce((sum, payment) => sum + payment.amount, 0),
+    [invoicePayments, todayIso],
+  );
+  const invoicePendingBalance = useMemo(
+    () =>
+      invoiceRows
+        .filter((invoice) => invoice.status !== "paid" && invoice.status !== "cancelled")
+        .reduce((sum, invoice) => sum + Math.max(0, invoice.amountDue - invoice.amountPaid), 0),
+    [invoiceRows],
+  );
+  const invoicePendingCount = useMemo(
+    () => invoiceRows.filter((invoice) => invoice.status !== "paid" && invoice.status !== "cancelled").length,
+    [invoiceRows],
+  );
 
   const pendingFD = frontDeskCharges.filter((c) => c.status === "Pending" || c.status === "Billed").slice(0, 4);
   const pendingCF = consultationFees.filter((c) => c.status === "Pending").slice(0, 3);
@@ -29,8 +76,6 @@ export default function AccountsDashboardPage() {
   const pendingSupplier = supplierPayments.filter((p) => p.status === "Pending").slice(0, 3);
   const recentKiosk = kioskSales.slice(0, 3);
 
-  // Pharmacy prescriptions that are dispensed and need payment
-  const pendingPharmacyBills = prescriptions.filter((p) => p.status === "Dispensed" && !p.totalCost).slice(0, 4);
   const dispensedRx = prescriptions.filter((p) => p.status === "Dispensed");
   const pharmacyRevToday = dispensedRx.reduce((s, p) => s + (p.totalCost ?? 0), 0);
 
@@ -38,6 +83,7 @@ export default function AccountsDashboardPage() {
   const totalRevenue =
     metrics.frontDeskPaidToday +
     consultationFees.filter((f) => f.status === "Paid").reduce((s, f) => s + f.fee, 0) +
+    invoiceRevenueToday +
     (labCharges ?? []).filter((c) => c.status === "Paid").reduce((s, c) => s + c.amount, 0) +
     (nursingCharges ?? []).filter((c) => c.status === "Paid").reduce((s, c) => s + c.amount, 0) +
     metrics.kioskRevenueToday +
@@ -52,7 +98,8 @@ export default function AccountsDashboardPage() {
   const totalPendingAmount =
     metrics.frontDeskPendingValue +
     metrics.consultationPendingValue +
-    metrics.supplierPendingValue;
+    metrics.supplierPendingValue +
+    invoicePendingBalance;
 
   return (
     <div className="space-y-5 sm:space-y-6">
@@ -86,8 +133,8 @@ export default function AccountsDashboardPage() {
       {/* KPIs */}
       <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
         {[
-          { label: "Revenue Today", value: `₦${metrics.revenueToday.toLocaleString()}`, sub: "Front Desk + Consult + Kiosk", color: "text-emerald-700" },
-          { label: "Pending Collections", value: `₦${totalPendingAmount.toLocaleString()}`, sub: `${metrics.frontDeskPendingCount + metrics.consultationPendingCount} unpaid charges`, color: "text-amber-600" },
+          { label: "Revenue Today", value: `₦${totalRevenue.toLocaleString()}`, sub: "Front Desk + Consult + Invoice + Kiosk", color: "text-emerald-700" },
+          { label: "Pending Collections", value: `₦${totalPendingAmount.toLocaleString()}`, sub: `${metrics.frontDeskPendingCount + metrics.consultationPendingCount + invoicePendingCount} unpaid items`, color: "text-amber-600" },
           { label: "Payroll Pending", value: `₦${metrics.payrollPendingValue.toLocaleString()}`, sub: `${metrics.payrollPendingCount} batch(es) to disburse`, color: "text-sky-700" },
           { label: "Supplier Payable", value: `₦${metrics.supplierPendingValue.toLocaleString()}`, sub: `${metrics.supplierPendingCount} outstanding invoices`, color: metrics.supplierPendingCount > 0 ? "text-red-600" : "text-slate-900" },
         ].map((k) => (
@@ -109,7 +156,7 @@ export default function AccountsDashboardPage() {
                 <h3 className="font-bold text-slate-900">Front Desk Charges</h3>
                 <p className="text-xs text-slate-400 mt-0.5">Registration and visit fees from Front Desk</p>
               </div>
-              <Link href={`${INTERNAL_PREFIX}/accounts/billing`} className="text-sm font-semibold text-accent hover:underline">All charges →</Link>
+              <Link href={`${INTERNAL_PREFIX}/accounts/invoices`} className="text-sm font-semibold text-accent hover:underline">All invoices →</Link>
             </div>
             <div className="divide-y divide-slate-100">
               {pendingFD.map((c) => (
@@ -160,39 +207,19 @@ export default function AccountsDashboardPage() {
             </div>
           </Card>
 
-          {/* Pharmacy Medication Bills */}
+          {/* Lab Billing */}
           <Card className="overflow-hidden p-0">
             <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
               <div>
-                <h3 className="font-bold text-slate-900">Pharmacy Medication Bills</h3>
-                <p className="text-xs text-slate-400 mt-0.5">Dispensed prescriptions — collect patient payment</p>
+                <h3 className="font-bold text-slate-900">Lab Billing</h3>
+                <p className="text-xs text-slate-400 mt-0.5">Outstanding lab charges and lab revenue tracking.</p>
               </div>
               <div className="flex items-center gap-3">
                 <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-bold text-amber-700">
-                  {rxMetrics.pendingBills} pending
+                  {metrics.labPendingCount} pending
                 </span>
-                <Link href={`${INTERNAL_PREFIX}/accounts/invoices`} className="text-sm font-semibold text-accent hover:underline">All →</Link>
+                <Link href={`${INTERNAL_PREFIX}/accounts/lab-billing`} className="text-sm font-semibold text-accent hover:underline">Open page →</Link>
               </div>
-            </div>
-            <div className="divide-y divide-slate-100">
-              {dispensedRx.slice(0, 4).map((rx) => (
-                <div key={rx.id} className="flex items-center gap-4 px-5 py-3">
-                  <div className="h-2 w-2 shrink-0 rounded-full bg-amber-400" />
-                  <div className="flex-1 min-w-0">
-                    <p className="font-medium text-slate-900 text-sm">{rx.patientName}</p>
-                    <p className="text-xs text-slate-400">{rx.doctorName} · {rx.drugs.map(d => d.name).join(", ").slice(0, 50)}</p>
-                  </div>
-                  <div className="text-right shrink-0">
-                    <p className="font-bold text-slate-900 text-sm">
-                      ₦{rx.totalCost ?? rx.drugs.reduce((s, d) => s + (d.unitPrice ?? 0), 0)}
-                    </p>
-                    <span className="text-xs font-semibold text-amber-600">Collect</span>
-                  </div>
-                </div>
-              ))}
-              {dispensedRx.length === 0 && (
-                <p className="px-5 py-4 text-sm text-slate-400">No pharmacy bills pending.</p>
-              )}
             </div>
             {/* Lab Bills summary row */}
             <div className="grid grid-cols-2 divide-x divide-slate-100 border-t border-slate-100">
@@ -332,6 +359,7 @@ export default function AccountsDashboardPage() {
               {[
                 { label: "Front Desk", value: metrics.frontDeskPaidToday },
                 { label: "Consultations", value: consultationFees.filter((f) => f.status === "Paid").reduce((s, f) => s + f.fee, 0) },
+                { label: "Invoices", value: invoiceRevenueToday },
                 { label: "Pharmacy", value: pharmacyRevToday },
                 { label: "Lab Tests", value: metrics.labPaidToday },
                 { label: "Kiosk", value: metrics.kioskRevenueToday },
@@ -377,6 +405,7 @@ export default function AccountsDashboardPage() {
             <div className="space-y-3 text-sm">
               {[
                 { label: "Front Desk", value: metrics.frontDeskPaidToday, max: totalRevenue },
+                { label: "Invoices", value: invoiceRevenueToday, max: totalRevenue },
                 { label: "Pharmacy", value: pharmacyRevToday, max: totalRevenue },
                 { label: "Consultations", value: consultationFees.filter((f) => f.status === "Paid").reduce((s, f) => s + f.fee, 0), max: totalRevenue },
                 { label: "Lab Tests", value: metrics.labPaidToday, max: totalRevenue },

@@ -12,6 +12,11 @@ import {
   syncPharmacyFromSupabase,
   type SharedPrescription,
 } from "@/lib/data/pharmacy-store";
+import {
+  adjustPharmacyInventoryStock,
+  fetchPharmacyInventory,
+  insertPharmacyStockMovement,
+} from "@/lib/supabase/db";
 
 type Tab = "All Pending" | "Urgent" | "Waiting for Pickup" | "Dispensed";
 
@@ -34,6 +39,10 @@ function fmtRxTime(s: string) {
     hour: "2-digit", minute: "2-digit",
     day: "numeric", month: "short", year: "numeric",
   });
+}
+
+function normalizeName(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 }
 
 export default function PendingPrescriptionsPage() {
@@ -92,7 +101,7 @@ export default function PendingPrescriptionsPage() {
     }, 0);
   }
 
-  function handleDispense() {
+  async function handleDispense() {
     if (!dispenseTarget) return;
     setDispensing(true);
     const target = dispenseTarget; // capture before clearing
@@ -100,6 +109,8 @@ export default function PendingPrescriptionsPage() {
     const dateStr = new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
     const dispensedAt = `${now} · ${dateStr}`; // display format (db.ts writes ISO separately)
     const total = calcTotal(target);
+    const inventory = await fetchPharmacyInventory().catch(() => []);
+    const inventoryByName = new Map((inventory ?? []).map((item) => [normalizeName(item.product), item]));
 
     // Instant UI — row leaves list before any network call
     setOptimisticDispensed(prev => new Set([...prev, target.id]));
@@ -109,6 +120,26 @@ export default function PendingPrescriptionsPage() {
       dispensedBy: staffName,
       totalCost: total,
     });
+
+    for (const drug of target.drugs) {
+      const qty = Math.max(1, parseInt(drug.qty) || 1);
+      const matchedItem = inventoryByName.get(normalizeName(drug.name))
+        ?? [...(inventory ?? [])].find((item) =>
+          normalizeName(item.product).includes(normalizeName(drug.name)) ||
+          normalizeName(drug.name).includes(normalizeName(item.product))
+        );
+      if (!matchedItem) continue;
+      await adjustPharmacyInventoryStock(matchedItem.id, -qty).catch(() => {});
+      await insertPharmacyStockMovement({
+        inventoryId: matchedItem.id,
+        movementType: "dispense",
+        quantity: qty,
+        sourceDestination: `Prescription ${target.id}`,
+        refNo: target.id,
+        createdBy: staffName,
+        createdAt: new Date().toISOString(),
+      }).catch(() => {});
+    }
 
     addPharmacyBill({
       id: `PBILL-${Date.now()}`,

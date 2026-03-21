@@ -4,7 +4,6 @@
  * Admin always sees everything.
  */
 
-import { INTERNAL_PREFIX } from "@/lib/constants/navigation";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -101,8 +100,6 @@ const SEED: AppNotification[] = [];
 
 // ─── Storage ──────────────────────────────────────────────────────────────────
 
-// Bumped to v2 to flush old cache that lacked targetDepartments
-const STORAGE_KEY = "hms-notifications-v2";
 const EMPTY_STATE: NotifState = { notifications: [], toastedIds: [] };
 
 function loadState(): NotifState {
@@ -232,6 +229,9 @@ export function pushNotification(
     isRead: false,
   };
   mutate((s) => { s.notifications = [full, ...s.notifications]; });
+  void import("@/lib/supabase/db")
+    .then(({ insertNotification }) => insertNotification(full))
+    .catch((err) => console.error("[notification-store] pushNotification failed:", err));
   toastListeners.forEach((fn) => fn(full));
   return full;
 }
