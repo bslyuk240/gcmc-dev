@@ -63,6 +63,15 @@ export default function AccountsConsultationFeesPage() {
   const [method, setMethod] = useState<PayMethod>("Cash");
   const [refNote, setRefNote] = useState("");
   const [processing, setProcessing] = useState(false);
+  // Optimistic local state — instant UI update regardless of store subscription timing
+  const [optimisticPaidIds, setOptimisticPaidIds] = useState<Set<string>>(new Set());
+  const [optimisticWaivedIds, setOptimisticWaivedIds] = useState<Set<string>>(new Set());
+
+  function effectiveStatus(f: { id: string; status: string }) {
+    if (optimisticPaidIds.has(f.id)) return "Paid";
+    if (optimisticWaivedIds.has(f.id)) return "Waived";
+    return f.status;
+  }
 
   function openReceiveModal(fee: ConsultationFee) {
     setPayTarget(fee);
@@ -72,27 +81,31 @@ export default function AccountsConsultationFeesPage() {
 
   function handleReceivePayment() {
     if (!payTarget) return;
+    // Instant optimistic update
+    setOptimisticPaidIds((prev) => new Set([...prev, payTarget.id]));
+    setPayTarget(null);
+    setToast({
+      message: `Consultation fee of ₦${payTarget.fee} received from ${payTarget.patientName} via ${method}${refNote.trim() ? ` (${refNote.trim()})` : ""}.`,
+      type: "success",
+    });
     updateConsultationFeeStatus(payTarget.id, "Paid", {
       paidAt: new Date().toISOString(),
       paymentMethod: method,
     });
     window.dispatchEvent(new Event(ACCOUNTS_PAYMENT_UPDATED_EVENT));
-    setToast({
-      message: `Consultation fee of ₦${payTarget.fee} received from ${payTarget.patientName} via ${method}${refNote.trim() ? ` (${refNote.trim()})` : ""}.`,
-      type: "success",
-    });
-    setPayTarget(null);
   }
 
   function handleWaive() {
     if (!waiverTarget) return;
+    // Instant optimistic update
+    setOptimisticWaivedIds((prev) => new Set([...prev, waiverTarget.id]));
+    setWaiverTarget(null);
+    setToast({ message: `Fee for ${waiverTarget.patientName} waived.`, type: "info" });
     updateConsultationFeeStatus(waiverTarget.id, "Waived");
     window.dispatchEvent(new Event(ACCOUNTS_PAYMENT_UPDATED_EVENT));
-    setToast({ message: `Fee for ${waiverTarget.patientName} waived.`, type: "info" });
-    setWaiverTarget(null);
   }
 
-  const filtered = filter === "All" ? consultationFees : consultationFees.filter((f) => f.status === filter);
+  const filtered = filter === "All" ? consultationFees : consultationFees.filter((f) => effectiveStatus(f) === filter);
 
   return (
     <div className="space-y-6">
@@ -170,16 +183,16 @@ export default function AccountsConsultationFeesPage() {
                     <span className="text-[11px] text-slate-400">{f.paidAt ? "Paid" : "Consulted"}</span>
                   </td>
                   <td className="px-5 py-3">
-                    <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${STATUS_STYLES[f.status]}`}>{f.status}</span>
+                    <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${STATUS_STYLES[effectiveStatus(f)] ?? STATUS_STYLES[f.status]}`}>{effectiveStatus(f)}</span>
                   </td>
                   <td className="px-5 py-3">
-                    {f.status === "Pending" && (
+                    {effectiveStatus(f) === "Pending" && (
                       <div className="flex gap-2">
                         <Button size="sm" disabled={processing} onClick={() => openReceiveModal(f)}>Receive Payment</Button>
                         <Button size="sm" variant="ghost" disabled={processing} onClick={() => setWaiverTarget(f)}>Waive</Button>
                       </div>
                     )}
-                    {f.status === "Paid" && (
+                    {effectiveStatus(f) === "Paid" && (
                       <div className="flex items-center gap-2">
                         <span className="text-xs font-semibold text-emerald-700">✓ Paid</span>
                         <Button size="sm" variant="ghost" className="text-slate-500" onClick={() => printReceipt({
@@ -199,7 +212,7 @@ export default function AccountsConsultationFeesPage() {
                         })}>🖨 Receipt</Button>
                       </div>
                     )}
-                    {f.status === "Waived" && <span className="text-xs text-slate-400">Waived</span>}
+                    {effectiveStatus(f) === "Waived" && <span className="text-xs text-slate-400">Waived</span>}
                   </td>
                 </tr>
               ))}

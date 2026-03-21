@@ -6,6 +6,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Modal, ModalFooter } from "@/components/ui/modal";
 import { Toast, type ToastData } from "@/components/ui/toast";
+import { ACCOUNTS_PAYMENT_UPDATED_EVENT } from "@/lib/constants/accounts-events";
 import { useAccountsStore } from "@/lib/hooks/use-accounts-store";
 import { updateLabChargeStatus, type LabCharge } from "@/lib/data/accounts-store";
 import { printReceipt } from "@/lib/utils/print-receipt";
@@ -17,28 +18,72 @@ const STATUS_STYLES: Record<string, string> = {
   Partial: "bg-sky-50 text-sky-700",
 };
 
+type PayMethod = "Cash" | "POS / Card" | "Mobile Money" | "Insurance";
+
+function formatLabTimestamp(value?: string) {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 export default function AccountsLabBillingPage() {
   const { labCharges, metrics } = useAccountsStore();
   const [payTarget, setPayTarget] = useState<LabCharge | null>(null);
   const [waiverTarget, setWaiverTarget] = useState<LabCharge | null>(null);
   const [toast, setToast] = useState<ToastData | null>(null);
   const [filter, setFilter] = useState<"All" | "Pending" | "Paid">("All");
+  const [method, setMethod] = useState<PayMethod>("Cash");
+  const [refNote, setRefNote] = useState("");
+  // Optimistic local state — instant UI update regardless of store subscription timing
+  const [optimisticPaidIds, setOptimisticPaidIds] = useState<Set<string>>(new Set());
+  const [optimisticWaivedIds, setOptimisticWaivedIds] = useState<Set<string>>(new Set());
+
+  function effectiveStatus(c: { id: string; status: string }) {
+    if (optimisticPaidIds.has(c.id)) return "Paid";
+    if (optimisticWaivedIds.has(c.id)) return "Waived";
+    return c.status;
+  }
+
+  function openReceiveModal(charge: LabCharge) {
+    setPayTarget(charge);
+    setMethod("Cash");
+    setRefNote("");
+  }
 
   function handleReceivePayment() {
     if (!payTarget) return;
-    updateLabChargeStatus(payTarget.id, "Paid");
-    setToast({ message: `Lab fee of ₦${payTarget.amount} received from ${payTarget.patientName}.`, type: "success" });
+    // Instant optimistic update
+    setOptimisticPaidIds((prev) => new Set([...prev, payTarget.id]));
     setPayTarget(null);
+    setToast({
+      message: `Lab fee of ₦${payTarget.amount} received from ${payTarget.patientName} via ${method}${refNote.trim() ? ` (${refNote.trim()})` : ""}.`,
+      type: "success",
+    });
+    updateLabChargeStatus(payTarget.id, "Paid", {
+      paidAt: new Date().toISOString(),
+      paymentMethod: method,
+    });
+    window.dispatchEvent(new Event(ACCOUNTS_PAYMENT_UPDATED_EVENT));
   }
 
   function handleWaive() {
     if (!waiverTarget) return;
-    updateLabChargeStatus(waiverTarget.id, "Waived");
-    setToast({ message: `Lab fee for ${waiverTarget.patientName} waived.`, type: "info" });
+    // Instant optimistic update
+    setOptimisticWaivedIds((prev) => new Set([...prev, waiverTarget.id]));
     setWaiverTarget(null);
+    setToast({ message: `Lab fee for ${waiverTarget.patientName} waived.`, type: "info" });
+    updateLabChargeStatus(waiverTarget.id, "Waived");
+    window.dispatchEvent(new Event(ACCOUNTS_PAYMENT_UPDATED_EVENT));
   }
 
-  const filtered = filter === "All" ? labCharges : labCharges.filter((c) => c.status === filter);
+  const filtered = filter === "All" ? labCharges : labCharges.filter((c) => effectiveStatus(c) === filter);
 
   return (
     <div className="space-y-6">
@@ -93,18 +138,21 @@ export default function AccountsLabBillingPage() {
                   <td className="px-5 py-3 font-medium text-slate-800">{c.testName}</td>
                   <td className="px-5 py-3 text-slate-500">{c.orderedBy}</td>
                   <td className="px-5 py-3 font-bold text-slate-900">₦{c.amount}</td>
-                  <td className="px-5 py-3 text-xs text-slate-400">{c.completedAt}</td>
-                  <td className="px-5 py-3">
-                    <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${STATUS_STYLES[c.status]}`}>{c.status}</span>
+                  <td className="px-5 py-3 text-xs text-slate-500">
+                    <span className="block font-medium text-slate-700">{formatLabTimestamp(c.paidAt ?? c.completedAt)}</span>
+                    <span className="text-[11px] text-slate-400">{c.paidAt ? "Paid" : "Completed"}</span>
                   </td>
                   <td className="px-5 py-3">
-                    {c.status === "Pending" && (
+                    <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${STATUS_STYLES[effectiveStatus(c)] ?? STATUS_STYLES[c.status]}`}>{effectiveStatus(c)}</span>
+                  </td>
+                  <td className="px-5 py-3">
+                    {effectiveStatus(c) === "Pending" && (
                       <div className="flex gap-2">
-                        <Button size="sm" onClick={() => setPayTarget(c)}>Receive Payment</Button>
+                        <Button size="sm" onClick={() => openReceiveModal(c)}>Receive Payment</Button>
                         <Button size="sm" variant="ghost" onClick={() => setWaiverTarget(c)}>Waive</Button>
                       </div>
                     )}
-                    {c.status === "Paid" && (
+                    {effectiveStatus(c) === "Paid" && (
                       <div className="flex items-center gap-2">
                         <span className="text-xs font-semibold text-emerald-700">✓ Paid</span>
                         <Button size="sm" variant="ghost" className="text-slate-500" onClick={() => printReceipt({
@@ -116,7 +164,8 @@ export default function AccountsLabBillingPage() {
                             { label: "Patient ID", value: c.patientId },
                             { label: "Test", value: c.testName },
                             { label: "Ordered By", value: c.orderedBy },
-                            { label: "Completed", value: c.completedAt },
+                            { label: "Payment Method", value: c.paymentMethod ?? "Cash" },
+                            { label: "Completed", value: formatLabTimestamp(c.paidAt ?? c.completedAt) },
                             { label: "Status", value: "PAID", bold: true },
                           ],
                           total: { label: "Amount Paid", value: `₦${c.amount.toLocaleString()}` },
@@ -124,7 +173,7 @@ export default function AccountsLabBillingPage() {
                         })}>🖨 Receipt</Button>
                       </div>
                     )}
-                    {c.status === "Waived" && <span className="text-xs text-slate-400">Waived</span>}
+                    {effectiveStatus(c) === "Waived" && <span className="text-xs text-slate-400">Waived</span>}
                   </td>
                 </tr>
               ))}
@@ -147,7 +196,41 @@ export default function AccountsLabBillingPage() {
               <div className="flex justify-between"><span className="text-slate-500">Patient</span><span className="font-semibold">{payTarget.patientName}</span></div>
               <div className="flex justify-between"><span className="text-slate-500">Test</span><span>{payTarget.testName}</span></div>
               <div className="flex justify-between"><span className="text-slate-500">Ordered By</span><span>{payTarget.orderedBy}</span></div>
+              <div className="flex justify-between"><span className="text-slate-500">Completed</span><span className="text-slate-700">{formatLabTimestamp(payTarget.completedAt)}</span></div>
               <div className="flex justify-between"><span className="font-semibold text-slate-600">Amount</span><span className="font-bold text-xl text-slate-900">₦{payTarget.amount}</span></div>
+            </div>
+
+            <div>
+              <label className="mb-2 block text-sm font-semibold text-slate-700">Payment Method</label>
+              <div className="grid grid-cols-2 gap-2">
+                {(["Cash", "POS / Card", "Mobile Money", "Insurance"] as PayMethod[]).map((value) => (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => setMethod(value)}
+                    className={`rounded-xl border-2 p-2.5 text-xs font-bold transition ${
+                      method === value
+                        ? "border-[var(--accent)] bg-[var(--accent)]/5 text-[var(--accent)]"
+                        : "border-slate-100 text-slate-500 hover:border-slate-200"
+                    }`}
+                  >
+                    {value}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <label className="mb-1.5 block text-sm font-semibold text-slate-700">
+                Reference / Note <span className="font-normal text-slate-400">(optional)</span>
+              </label>
+              <textarea
+                value={refNote}
+                onChange={(e) => setRefNote(e.target.value)}
+                rows={3}
+                placeholder="Receipt number, note, or payment reference"
+                className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 outline-none transition focus:border-[var(--accent)]"
+              />
             </div>
           </div>
         )}

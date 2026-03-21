@@ -13,7 +13,7 @@ import { pushNotification } from "@/lib/data/notification-store";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-export type PrescriptionStatus = "Pending" | "Processing" | "Dispensed" | "Cancelled";
+export type PrescriptionStatus = "Pending" | "Processing" | "Dispensed" | "Collected" | "Cancelled";
 export type PrescriptionUrgency = "Routine" | "Urgent";
 
 export type PrescribedDrug = {
@@ -181,6 +181,15 @@ export function subscribePharmacyStore(fn: () => void) {
 
 // ─── Supabase sync ────────────────────────────────────────────────────────────
 
+/** Local wins for existing items — remote only adds NEW records not yet in local.
+ *  Prevents in-flight Supabase syncs from overwriting optimistic local updates. */
+function mergeById<T extends { id: string }>(remote: T[], local: T[]): T[] {
+  if (!remote.length) return local;
+  const localIds = new Set(local.map((x) => x.id));
+  const newFromRemote = remote.filter((r) => !localIds.has(r.id));
+  return [...local, ...newFromRemote];
+}
+
 let _lastSync = 0;
 
 export async function syncPharmacyFromSupabase(force = false) {
@@ -198,10 +207,10 @@ export async function syncPharmacyFromSupabase(force = false) {
     ]);
     const current = getState();
     _state = {
-      prescriptions: prescriptions.length ? prescriptions : current.prescriptions,
-      nurseRequests: nurseRequests.length ? nurseRequests : current.nurseRequests,
-      restockRequests: restockRequests.length ? restockRequests : current.restockRequests,
-      bills: bills.length ? bills : current.bills,
+      prescriptions: mergeById(prescriptions, current.prescriptions),
+      nurseRequests: mergeById(nurseRequests, current.nurseRequests),
+      restockRequests: mergeById(restockRequests, current.restockRequests),
+      bills: mergeById(bills, current.bills),
     };
     saveState(_state);
     listeners.forEach((l) => l());
@@ -293,7 +302,8 @@ export function getPharmacyBills(): PharmacyBill[] {
   return [...getState().bills];
 }
 
-export function addPharmacyBill(bill: PharmacyBill) {
+export async function addPharmacyBill(bill: PharmacyBill): Promise<void> {
+  // Optimistic: add to local store instantly
   mutate((s) => { s.bills = [bill, ...s.bills]; });
   pushNotification({
     category: "pharmacy",
@@ -306,8 +316,9 @@ export function addPharmacyBill(bill: PharmacyBill) {
   if (typeof window !== "undefined") {
     window.dispatchEvent(new Event(ACCOUNTS_PAYMENT_UPDATED_EVENT));
   }
-  import("@/lib/supabase/db").then(({ insertPharmacyBill }) => insertPharmacyBill(bill))
-    .catch((err) => console.error("[pharmacy-store] addPharmacyBill failed:", err));
+  // Await the Supabase write — throws on failure so callers can show real error toasts
+  const { insertPharmacyBill } = await import("@/lib/supabase/db");
+  await insertPharmacyBill(bill);
 }
 
 export function updateBillStatus(

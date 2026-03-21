@@ -255,6 +255,15 @@ export function subscribeAccountsStore(fn: () => void) {
 
 // ─── Supabase sync ────────────────────────────────────────────────────────────
 
+/** Local wins for existing items — remote only adds NEW records we don't have yet.
+ *  This prevents in-flight Supabase syncs from overwriting optimistic UI updates. */
+function mergeById<T extends { id: string }>(remote: T[], local: T[]): T[] {
+  if (!remote.length) return local;
+  const localIds = new Set(local.map((x) => x.id));
+  const newFromRemote = remote.filter((r) => !localIds.has(r.id));
+  return [...local, ...newFromRemote];
+}
+
 let _lastSync = 0;
 export async function syncAccountsFromSupabase(force = false) {
   if (typeof window === "undefined") return;
@@ -269,13 +278,13 @@ export async function syncAccountsFromSupabase(force = false) {
     ]);
     const current = getState();
     _state = {
-      frontDeskCharges: frontDeskCharges.length ? frontDeskCharges : current.frontDeskCharges,
-      consultationFees: consultationFees.length ? consultationFees : current.consultationFees,
-      supplierPayments: supplierPayments.length ? supplierPayments : current.supplierPayments,
-      payrollBatches: payrollBatches.length ? payrollBatches : current.payrollBatches,
-      kioskSales: kioskSales.length ? kioskSales : current.kioskSales,
-      labCharges: labCharges.length ? labCharges : current.labCharges,
-      nursingCharges: nursingCharges.length ? nursingCharges : current.nursingCharges,
+      frontDeskCharges: mergeById(frontDeskCharges, current.frontDeskCharges),
+      consultationFees: mergeById(consultationFees, current.consultationFees),
+      supplierPayments: mergeById(supplierPayments, current.supplierPayments),
+      payrollBatches: mergeById(payrollBatches, current.payrollBatches),
+      kioskSales: mergeById(kioskSales, current.kioskSales),
+      labCharges: mergeById(labCharges, current.labCharges ?? []),
+      nursingCharges: mergeById(nursingCharges, current.nursingCharges ?? []),
     };
     saveState(_state);
     listeners.forEach((l) => l());

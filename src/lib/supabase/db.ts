@@ -959,7 +959,7 @@ export async function insertPharmacyBill(bill: PharmacyBill): Promise<void> {
     paid_at: bill.paidAt ?? null,
     payment_method: bill.paymentMethod ?? null,
   });
-  if (error) console.error("[db] insertPharmacyBill:", error.message);
+  if (error) throw new Error(error.message);
 }
 
 type PharmacyPaymentMethod = "Cash" | "POS / Card" | "Mobile Money" | "Insurance";
