@@ -66,6 +66,10 @@ export default function PharmacyRestockRequestsPage() {
 
   async function handleNew(e: React.FormEvent) {
     e.preventDefault();
+    if (storeItems.length > 0 && !selectedStoreItemId) {
+      setToast({ message: "Select a Store inventory item before submitting.", type: "error" });
+      return;
+    }
     if (!drugName) return;
     setSubmitting(true);
     const now = new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
@@ -126,7 +130,7 @@ export default function PharmacyRestockRequestsPage() {
                     <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${URGENCY_STYLES[row.urgency]}`}>{row.urgency}</span>
                   </td>
                   <td className="px-5 py-3 text-slate-600">{row.requestedBy}</td>
-                  <td className="px-5 py-3 whitespace-nowrap text-slate-500">{fmtDate(row.requestedAt)}</td>
+                  <td className="px-5 py-3 whitespace-nowrap text-xs text-slate-500">{fmtDate(row.requestedAt)}</td>
                   <td className="px-5 py-3">
                     <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${STATUS_STYLES[row.status] ?? "bg-slate-100 text-slate-600"}`}>
                       {row.status}
@@ -255,7 +259,7 @@ export default function PharmacyRestockRequestsPage() {
               ["Requested By", viewReq.requestedBy],
               ["Date", fmtDate(viewReq.requestedAt)],
               ...(viewReq.approvedQty != null ? [["Approved Qty", String(viewReq.approvedQty)]] : []),
-              ...(viewReq.fulfilledAt ? [["Fulfilled At", viewReq.fulfilledAt]] : []),
+              ...(viewReq.fulfilledAt ? [["Fulfilled At", fmtDate(viewReq.fulfilledAt)]] : []),
             ] as [string, string][]).map(([label, val]) => (
               <div key={label} className="flex justify-between">
                 <span className="text-slate-500">{label}</span>

@@ -18,6 +18,7 @@ export type DepartmentKey =
   | "hr"
   | "it"
   | "non_clinical"
+  | "nhis"
   | "support"
   | "notifications"
   | "profile";
@@ -41,12 +42,13 @@ export type DBDepartmentKey =
   | "admin"
   | "hr"
   | "it"
-  | "non_clinical";
+  | "non_clinical"
+  | "nhis";
 
 /** All valid DB department key values as a runtime array for validation */
 export const DB_DEPARTMENT_KEYS: DBDepartmentKey[] = [
   "frontdesk", "doctors", "nurses", "pharmacy", "lab",
-  "accounts", "store", "admin", "hr", "it", "non_clinical",
+  "accounts", "store", "admin", "hr", "it", "non_clinical", "nhis",
 ];
 
 export function isDBDepartmentKey(value: string): value is DBDepartmentKey {
@@ -195,6 +197,12 @@ export const dashboardNavigation: Array<{
         description: "User administration, incidents, and support tooling.",
         department: "it",
       },
+      {
+        href: `${INTERNAL_PREFIX}/nhis`,
+        label: "NHIS / HMO",
+        description: "HMO schemes, patient enrollments, and claims processing.",
+        department: "nhis",
+      },
     ],
   },
   {
@@ -226,6 +234,7 @@ export const departmentThemes: Record<
   hr: { label: "HR", chipClass: "bg-violet-50 text-violet-700" },
   it: { label: "IT", chipClass: "bg-cyan-50 text-cyan-800" },
   non_clinical: { label: "Non-Clinical", chipClass: "bg-lime-50 text-lime-700" },
+  nhis: { label: "NHIS", chipClass: "bg-blue-50 text-blue-700" },
   support: { label: "Support", chipClass: "bg-blue-50 text-blue-700" },
   notifications: {
     label: "Notifications",
@@ -502,6 +511,24 @@ export const sidebarNavigationByDepartment: Record<
       ],
     },
   ],
+  nhis: [
+    {
+      section: "NHIS",
+      items: [
+        { label: "Dashboard",          href: `${INTERNAL_PREFIX}/nhis`,              icon: "dashboard" },
+        { label: "HMO Schemes",        href: `${INTERNAL_PREFIX}/nhis/schemes`,      icon: "billing" },
+        { label: "Enrolled Patients",  href: `${INTERNAL_PREFIX}/nhis/patients`,     icon: "patients" },
+        { label: "Claims",             href: `${INTERNAL_PREFIX}/nhis/claims`,       icon: "reports" },
+        { label: "Tariffs",            href: `${INTERNAL_PREFIX}/nhis/tariffs`,      icon: "money" },
+      ],
+    },
+    {
+      section: "Profile",
+      items: [
+        { label: "Chat to IT", href: `${INTERNAL_PREFIX}/nhis/chat`, icon: "support" },
+      ],
+    },
+  ],
   support: [],
   notifications: [],
   profile: [
@@ -627,6 +654,7 @@ export const workspaceBoards: Record<DepartmentKey, WorkspaceBoard> = {
   hr: makeBoard("HR Workspace", "Staff records, roles, department postings, and document controls.", [["EMP-0042", "Doctors", "Medical Officer", "Active"], ["EMP-0043", "Nurses", "Charge Nurse", "Credential review"], ["EMP-0044", "Accounts", "Cashier", "Onboarding"], ["EMP-0045", "IT", "Support Analyst", "Role update"]], [{ title: "Profile separation", copy: "Staff profile data should stay distinct from operational department workspace state." }, { title: "Document security", copy: "Sensitive files belong in private storage with signed access links only." }, { title: "Access hygiene", copy: "Role changes should trigger approval and downstream permission refresh." }]),
   it: makeBoard("IT Workspace", "User support, access management, incidents, and diagnostics.", [["IT-1021", "Front Desk", "Access reset", "In progress"], ["IT-1022", "Pharmacy", "Printer", "Queued"], ["IT-1023", "HR", "Role provisioning", "Awaiting approval"], ["IT-1024", "Admin", "Audit export", "Review"]], [{ title: "Least privilege", copy: "IT can support access and devices without broad read access to clinical notes." }, { title: "Device awareness", copy: "Suspicious auth events should combine IP, user agent, and failed-attempt context." }, { title: "Support channels", copy: "Realtime ticket threads must stay scoped by department or ticket identifier only." }]),
   non_clinical: makeBoard("Non-Clinical Staff", "Staff portal access for non-clinical hospital personnel.", [["NCS-001", "Maintenance", "Equipment check", "Scheduled"], ["NCS-002", "Security", "Access patrol", "Active"], ["NCS-003", "Catering", "Ward round delivery", "Completed"], ["NCS-004", "Housekeeping", "Ward A cleaning", "In progress"]], [{ title: "Staff portal access", copy: "Non-clinical staff manage their rota, leave, and payslips through the staff self-service portal." }, { title: "No clinical access", copy: "This category has no access to patient records, clinical notes, or dispensing systems." }, { title: "HR visibility", copy: "HR manages payroll, leave, and onboarding for non-clinical staff through the HR department module." }]),
+  nhis: makeBoard("NHIS / HMO Workspace", "HMO scheme management, patient enrollments, and claims processing.", [["CLM-001", "NHIS Scheme", "Consultation claim", "Draft"], ["CLM-002", "Zuma HMO", "Lab claim", "Submitted"], ["CLM-003", "Leadway HMO", "Pharmacy claim", "Approved"], ["CLM-004", "AXA Mansard", "Nursing claim", "Paid"]], [{ title: "Enrollment accuracy", copy: "Verify member ID and scheme validity before processing any claim." }, { title: "Claim discipline", copy: "Claims must link to actual service charges from billing departments." }, { title: "Reconciliation", copy: "Track HMO receivables separately from patient copay to avoid revenue mismatches." }]),
   support: makeBoard("Support Board", "Internal support intake spanning helpdesk updates and ownership.", [["IT-1021", "Daniel Cole", "Access issue", "In progress"], ["IT-1022", "Unassigned", "Printer", "New"], ["IT-1023", "Grace Adebayo", "Provisioning", "Awaiting approval"], ["IT-1024", "Daniel Cole", "Export request", "Escalated"]], [{ title: "Ownership", copy: "Every ticket should show creator, assignee, timestamps, and status history." }, { title: "Realtime safety", copy: "Ticket conversations must stay scoped to authorized users and departments." }, { title: "Escalation clarity", copy: "Tickets affecting patient flow should surface directly on the dashboard." }]),
   notifications: makeBoard("Notifications", "Operational feed for approvals, stock risk, and internal updates.", [["09:14", "Pharmacy", "Amoxicillin low stock", "Critical"], ["09:27", "Accounts", "Refund approval needed", "Pending"], ["09:42", "Support", "Ticket IT-1022 assigned", "New"], ["10:05", "Public", "Appointment request submitted", "Info"]], [{ title: "Signal quality", copy: "Notifications should stay concise and action-oriented instead of duplicating full records." }, { title: "Routing", copy: "Department-specific alerts should use the user's assignment and permissions." }, { title: "Audit support", copy: "Important delivery and read events should be attributable when required." }]),
   profile: makeBoard("Staff Profile", "Personal profile, security settings, and session visibility.", [["08:21", "Login", "Chrome / London", "Success"], ["08:34", "Dashboard", "Global board", "Allowed"], ["09:12", "Ticket update", "IT-1021", "Logged"], ["09:38", "Profile", "Security tab", "Allowed"]], [{ title: "Separation of concerns", copy: "Profile management should never be confused with departmental workspace permissions." }, { title: "Session control", copy: "The user should be able to see and revoke active devices later in the auth flow." }, { title: "Security readiness", copy: "The structure already anticipates MFA, device fingerprinting, and breach monitoring." }]),
@@ -667,6 +695,7 @@ export const departmentHomePaths: Record<DepartmentKey, string> = {
   hr: `${INTERNAL_PREFIX}/hr`,
   it: `${INTERNAL_PREFIX}/it`,
   non_clinical: `${INTERNAL_PREFIX}/non_clinical`,
+  nhis: `${INTERNAL_PREFIX}/nhis`,
   support: `${INTERNAL_PREFIX}/chat`,
   notifications: `${INTERNAL_PREFIX}/notifications`,
   profile: `${INTERNAL_PREFIX}/profile`,

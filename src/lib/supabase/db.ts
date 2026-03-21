@@ -67,6 +67,12 @@ import type {
 } from "@/lib/data/admin-store";
 import { pushNotification } from "@/lib/data/notification-store";
 import type { AppNotification } from "@/lib/data/notification-store";
+import type {
+  HmoScheme,
+  HmoTariff,
+  HmoEnrollment,
+  HmoClaim,
+} from "@/lib/data/nhis-store";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -2209,7 +2215,7 @@ export async function fetchPatientRegistrations(): Promise<PatientRegistration[]
 }
 
 export async function insertPatientRegistration(
-  reg: Omit<PatientRegistration, "id"> & { id?: string }
+  reg: Omit<PatientRegistration, "id"> & { id?: string; hasHmo?: boolean; primaryHmoSchemeId?: string }
 ): Promise<{ id: string } | null> {
   const sb = getSupabase();
   if (!sb) return null;
@@ -2232,8 +2238,10 @@ export async function insertPatientRegistration(
     blood_group: reg.bloodGroup ?? null,
     nationality: reg.nationality ?? "Ghanaian",
     occupation: reg.occupation ?? null,
+    has_hmo: reg.hasHmo ?? false,
+    primary_hmo_scheme_id: reg.primaryHmoSchemeId ?? null,
   }).select("id").single();
-  if (error) { console.error("insertPatientRegistration:", error.message); return null; }
+  if (error) throw new Error(error.message);
   return data as { id: string };
 }
 
@@ -3010,4 +3018,325 @@ export async function upsertPharmacyInventoryFromStoreSnapshot(snapshot: StoreIn
     sourceDestination: snapshot.supplier || "Store transfer",
     refNo: `STORE-${snapshot.id}`,
   });
+}
+
+// ─── HMO / NHIS ──────────────────────────────────────────────────────────────
+
+function mapHmoScheme(r: Record<string, unknown>): HmoScheme {
+  return {
+    id: r.id as string,
+    name: r.name as string,
+    code: r.code as string,
+    type: (r.type as HmoScheme["type"]) ?? "fee_for_service",
+    contactPerson: r.contact_person as string | undefined,
+    contactPhone: r.contact_phone as string | undefined,
+    contactEmail: r.contact_email as string | undefined,
+    address: r.address as string | undefined,
+    isActive: (r.is_active as boolean) ?? true,
+    notes: r.notes as string | undefined,
+    createdAt: (r.created_at as string) ?? new Date().toISOString(),
+  };
+}
+
+function mapHmoTariff(r: Record<string, unknown>): HmoTariff {
+  return {
+    id: r.id as string,
+    schemeId: r.scheme_id as string,
+    serviceCategory: r.service_category as HmoTariff["serviceCategory"],
+    serviceName: r.service_name as string,
+    hmoPrice: Number(r.hmo_price ?? 0),
+    copayType: (r.copay_type as HmoTariff["copayType"]) ?? "percentage",
+    copayValue: Number(r.copay_value ?? 10),
+    isActive: (r.is_active as boolean) ?? true,
+    notes: r.notes as string | undefined,
+  };
+}
+
+function mapHmoEnrollment(r: Record<string, unknown>): HmoEnrollment {
+  return {
+    id: r.id as string,
+    patientId: r.patient_id as string,
+    patientName: (r.patient_name as string) ?? "",
+    schemeId: r.scheme_id as string,
+    schemeName: (r.scheme_name as string) ?? "",
+    memberId: r.member_id as string,
+    planName: r.plan_name as string | undefined,
+    copayPercentage: Number(r.copay_percentage ?? 10),
+    isActive: (r.is_active as boolean) ?? true,
+    validFrom: r.valid_from as string | undefined,
+    validUntil: r.valid_until as string | undefined,
+    authorizedBy: r.authorized_by as string | undefined,
+    notes: r.notes as string | undefined,
+    createdAt: (r.created_at as string) ?? new Date().toISOString(),
+  };
+}
+
+function mapHmoClaim(r: Record<string, unknown>): HmoClaim {
+  return {
+    id: r.id as string,
+    claimNumber: r.claim_number as string,
+    schemeId: r.scheme_id as string,
+    schemeName: (r.scheme_name as string) ?? "",
+    patientId: r.patient_id as string,
+    patientName: (r.patient_name as string) ?? "",
+    enrollmentId: r.enrollment_id as string | undefined,
+    services: (r.services as HmoClaim["services"]) ?? [],
+    totalCost: Number(r.total_cost ?? 0),
+    copayAmount: Number(r.copay_amount ?? 0),
+    hmoAmount: Number(r.hmo_amount ?? 0),
+    status: (r.status as HmoClaim["status"]) ?? "draft",
+    submittedAt: r.submitted_at as string | undefined,
+    approvedAt: r.approved_at as string | undefined,
+    rejectedAt: r.rejected_at as string | undefined,
+    rejectionReason: r.rejection_reason as string | undefined,
+    paidAt: r.paid_at as string | undefined,
+    amountPaid: r.amount_paid != null ? Number(r.amount_paid) : undefined,
+    notes: r.notes as string | undefined,
+    createdAt: (r.created_at as string) ?? new Date().toISOString(),
+  };
+}
+
+// HMO Schemes
+
+export async function fetchHmoSchemes(): Promise<HmoScheme[]> {
+  const sb = getSupabase(); if (!sb) return [];
+  const { data, error } = await sb
+    .from("hmo_schemes")
+    .select("*")
+    .order("name");
+  if (error) throw new Error(describeSupabaseError(error, "fetchHmoSchemes"));
+  return (data ?? []).map((r) => mapHmoScheme(r as Record<string, unknown>));
+}
+
+export async function insertHmoScheme(scheme: Omit<HmoScheme, "id" | "createdAt">): Promise<HmoScheme> {
+  const sb = getSupabase(); if (!sb) throw new Error("Supabase not available");
+  const { data, error } = await sb
+    .from("hmo_schemes")
+    .insert({
+      name: scheme.name,
+      code: scheme.code,
+      type: scheme.type,
+      contact_person: scheme.contactPerson ?? null,
+      contact_phone: scheme.contactPhone ?? null,
+      contact_email: scheme.contactEmail ?? null,
+      address: scheme.address ?? null,
+      is_active: scheme.isActive,
+      notes: scheme.notes ?? null,
+    })
+    .select()
+    .single();
+  if (error) throw new Error(describeSupabaseError(error, "insertHmoScheme"));
+  return mapHmoScheme(data as Record<string, unknown>);
+}
+
+export async function updateHmoSchemeDb(id: string, patch: Partial<HmoScheme>): Promise<void> {
+  const sb = getSupabase(); if (!sb) return;
+  const update: Record<string, unknown> = {};
+  if (patch.name !== undefined) update.name = patch.name;
+  if (patch.code !== undefined) update.code = patch.code;
+  if (patch.type !== undefined) update.type = patch.type;
+  if (patch.contactPerson !== undefined) update.contact_person = patch.contactPerson;
+  if (patch.contactPhone !== undefined) update.contact_phone = patch.contactPhone;
+  if (patch.contactEmail !== undefined) update.contact_email = patch.contactEmail;
+  if (patch.address !== undefined) update.address = patch.address;
+  if (patch.isActive !== undefined) update.is_active = patch.isActive;
+  if (patch.notes !== undefined) update.notes = patch.notes;
+  update.updated_at = new Date().toISOString();
+  const { error } = await sb.from("hmo_schemes").update(update).eq("id", id);
+  if (error) throw new Error(describeSupabaseError(error, "updateHmoSchemeDb"));
+}
+
+// HMO Tariffs
+
+export async function fetchHmoTariffs(schemeId?: string): Promise<HmoTariff[]> {
+  const sb = getSupabase(); if (!sb) return [];
+  let query = sb.from("hmo_tariffs").select("*").order("service_category").order("service_name");
+  if (schemeId) query = query.eq("scheme_id", schemeId);
+  const { data, error } = await query;
+  if (error) throw new Error(describeSupabaseError(error, "fetchHmoTariffs"));
+  return (data ?? []).map((r) => mapHmoTariff(r as Record<string, unknown>));
+}
+
+export async function insertHmoTariff(tariff: Omit<HmoTariff, "id">): Promise<HmoTariff> {
+  const sb = getSupabase(); if (!sb) throw new Error("Supabase not available");
+  const { data, error } = await sb
+    .from("hmo_tariffs")
+    .insert({
+      scheme_id: tariff.schemeId,
+      service_category: tariff.serviceCategory,
+      service_name: tariff.serviceName,
+      hmo_price: tariff.hmoPrice,
+      copay_type: tariff.copayType,
+      copay_value: tariff.copayValue,
+      is_active: tariff.isActive,
+      notes: tariff.notes ?? null,
+    })
+    .select()
+    .single();
+  if (error) throw new Error(describeSupabaseError(error, "insertHmoTariff"));
+  return mapHmoTariff(data as Record<string, unknown>);
+}
+
+export async function updateHmoTariffDb(id: string, patch: Partial<HmoTariff>): Promise<void> {
+  const sb = getSupabase(); if (!sb) return;
+  const update: Record<string, unknown> = {};
+  if (patch.serviceCategory !== undefined) update.service_category = patch.serviceCategory;
+  if (patch.serviceName !== undefined) update.service_name = patch.serviceName;
+  if (patch.hmoPrice !== undefined) update.hmo_price = patch.hmoPrice;
+  if (patch.copayType !== undefined) update.copay_type = patch.copayType;
+  if (patch.copayValue !== undefined) update.copay_value = patch.copayValue;
+  if (patch.isActive !== undefined) update.is_active = patch.isActive;
+  if (patch.notes !== undefined) update.notes = patch.notes;
+  const { error } = await sb.from("hmo_tariffs").update(update).eq("id", id);
+  if (error) throw new Error(describeSupabaseError(error, "updateHmoTariffDb"));
+}
+
+export async function deleteHmoTariff(id: string): Promise<void> {
+  const sb = getSupabase(); if (!sb) return;
+  const { error } = await sb.from("hmo_tariffs").delete().eq("id", id);
+  if (error) throw new Error(describeSupabaseError(error, "deleteHmoTariff"));
+}
+
+// HMO Enrollments
+
+export async function fetchHmoEnrollments(): Promise<HmoEnrollment[]> {
+  const sb = getSupabase(); if (!sb) return [];
+  const { data, error } = await sb
+    .from("patient_hmo_enrollments")
+    .select(`
+      *,
+      patients!patient_hmo_enrollments_patient_id_fkey(name),
+      hmo_schemes!patient_hmo_enrollments_scheme_id_fkey(name)
+    `)
+    .order("created_at", { ascending: false });
+  if (error) throw new Error(describeSupabaseError(error, "fetchHmoEnrollments"));
+  return (data ?? []).map((r) => {
+    const row = r as Record<string, unknown>;
+    const patientName = (row.patients as { name?: string } | null)?.name ?? (row.patient_name as string) ?? "";
+    const schemeName = (row.hmo_schemes as { name?: string } | null)?.name ?? (row.scheme_name as string) ?? "";
+    return { ...mapHmoEnrollment(row), patientName, schemeName };
+  });
+}
+
+export async function insertHmoEnrollment(
+  e: Omit<HmoEnrollment, "id" | "createdAt" | "schemeName" | "patientName">,
+): Promise<HmoEnrollment> {
+  const sb = getSupabase(); if (!sb) throw new Error("Supabase not available");
+  const { data, error } = await sb
+    .from("patient_hmo_enrollments")
+    .insert({
+      patient_id: e.patientId,
+      scheme_id: e.schemeId,
+      member_id: e.memberId,
+      plan_name: e.planName ?? null,
+      copay_percentage: e.copayPercentage,
+      is_active: e.isActive,
+      valid_from: e.validFrom ?? null,
+      valid_until: e.validUntil ?? null,
+      authorized_by: e.authorizedBy ?? null,
+      notes: e.notes ?? null,
+    })
+    .select()
+    .single();
+  if (error) throw new Error(describeSupabaseError(error, "insertHmoEnrollment"));
+  return mapHmoEnrollment(data as Record<string, unknown>);
+}
+
+export async function updateHmoEnrollmentDb(id: string, patch: Partial<HmoEnrollment>): Promise<void> {
+  const sb = getSupabase(); if (!sb) return;
+  const update: Record<string, unknown> = {};
+  if (patch.memberId !== undefined) update.member_id = patch.memberId;
+  if (patch.planName !== undefined) update.plan_name = patch.planName;
+  if (patch.copayPercentage !== undefined) update.copay_percentage = patch.copayPercentage;
+  if (patch.isActive !== undefined) update.is_active = patch.isActive;
+  if (patch.validFrom !== undefined) update.valid_from = patch.validFrom;
+  if (patch.validUntil !== undefined) update.valid_until = patch.validUntil;
+  if (patch.authorizedBy !== undefined) update.authorized_by = patch.authorizedBy;
+  if (patch.notes !== undefined) update.notes = patch.notes;
+  const { error } = await sb.from("patient_hmo_enrollments").update(update).eq("id", id);
+  if (error) throw new Error(describeSupabaseError(error, "updateHmoEnrollmentDb"));
+}
+
+export async function fetchPatientEnrollment(patientId: string): Promise<HmoEnrollment | null> {
+  const sb = getSupabase(); if (!sb) return null;
+  const { data, error } = await sb
+    .from("patient_hmo_enrollments")
+    .select(`
+      *,
+      patients!patient_hmo_enrollments_patient_id_fkey(name),
+      hmo_schemes!patient_hmo_enrollments_scheme_id_fkey(name)
+    `)
+    .eq("patient_id", patientId)
+    .eq("is_active", true)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw new Error(describeSupabaseError(error, "fetchPatientEnrollment"));
+  if (!data) return null;
+  const row = data as Record<string, unknown>;
+  const patientName = (row.patients as { name?: string } | null)?.name ?? "";
+  const schemeName = (row.hmo_schemes as { name?: string } | null)?.name ?? "";
+  return { ...mapHmoEnrollment(row), patientName, schemeName };
+}
+
+// HMO Claims
+
+export async function fetchHmoClaims(schemeId?: string): Promise<HmoClaim[]> {
+  const sb = getSupabase(); if (!sb) return [];
+  let query = sb
+    .from("hmo_claims")
+    .select(`
+      *,
+      hmo_schemes!hmo_claims_scheme_id_fkey(name),
+      patients!hmo_claims_patient_id_fkey(name)
+    `)
+    .order("created_at", { ascending: false });
+  if (schemeId) query = query.eq("scheme_id", schemeId);
+  const { data, error } = await query;
+  if (error) throw new Error(describeSupabaseError(error, "fetchHmoClaims"));
+  return (data ?? []).map((r) => {
+    const row = r as Record<string, unknown>;
+    const schemeName = (row.hmo_schemes as { name?: string } | null)?.name ?? (row.scheme_name as string) ?? "";
+    const patientName = (row.patients as { name?: string } | null)?.name ?? (row.patient_name as string) ?? "";
+    return { ...mapHmoClaim(row), schemeName, patientName };
+  });
+}
+
+export async function insertHmoClaim(
+  claim: Omit<HmoClaim, "id" | "claimNumber" | "createdAt" | "schemeName" | "patientName">,
+): Promise<HmoClaim> {
+  const sb = getSupabase(); if (!sb) throw new Error("Supabase not available");
+  const { data, error } = await sb
+    .from("hmo_claims")
+    .insert({
+      scheme_id: claim.schemeId,
+      patient_id: claim.patientId,
+      enrollment_id: claim.enrollmentId ?? null,
+      services: claim.services,
+      source_charges: null,
+      total_cost: claim.totalCost,
+      copay_amount: claim.copayAmount,
+      hmo_amount: claim.hmoAmount,
+      status: claim.status ?? "draft",
+      notes: claim.notes ?? null,
+    })
+    .select()
+    .single();
+  if (error) throw new Error(describeSupabaseError(error, "insertHmoClaim"));
+  return mapHmoClaim(data as Record<string, unknown>);
+}
+
+export async function updateHmoClaimDb(id: string, patch: Partial<HmoClaim>): Promise<void> {
+  const sb = getSupabase(); if (!sb) return;
+  const update: Record<string, unknown> = {};
+  if (patch.status !== undefined) update.status = patch.status;
+  if (patch.submittedAt !== undefined) update.submitted_at = patch.submittedAt;
+  if (patch.approvedAt !== undefined) update.approved_at = patch.approvedAt;
+  if (patch.rejectedAt !== undefined) update.rejected_at = patch.rejectedAt;
+  if (patch.rejectionReason !== undefined) update.rejection_reason = patch.rejectionReason;
+  if (patch.paidAt !== undefined) update.paid_at = patch.paidAt;
+  if (patch.amountPaid !== undefined) update.amount_paid = patch.amountPaid;
+  if (patch.notes !== undefined) update.notes = patch.notes;
+  const { error } = await sb.from("hmo_claims").update(update).eq("id", id);
+  if (error) throw new Error(describeSupabaseError(error, "updateHmoClaimDb"));
 }

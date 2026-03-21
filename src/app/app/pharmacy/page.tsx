@@ -28,7 +28,9 @@ const STATUS_STYLES: Record<string, string> = {
 export default function PharmacyDashboardPage() {
   const { prescriptions, nurseRequests, restockRequests, bills, metrics } = usePharmacyStore();
 
-  const recentRx = prescriptions.slice(0, 5);
+  const recentRx = prescriptions
+    .filter((rx) => rx.status === "Pending" || rx.status === "Processing")
+    .slice(0, 5);
   const lowStockItems = restockRequests.filter((r) => r.status === "Pending").slice(0, 4);
   const urgentCount = prescriptions.filter(
     (p) => p.urgency === "Urgent" && p.status !== "Dispensed" && p.status !== "Cancelled",

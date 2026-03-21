@@ -7,9 +7,11 @@ import {
   fetchPatientById,
   fetchVisitsByPatientId,
   updatePatientRegistration,
+  fetchPatientEnrollment,
   type PatientRegistration,
   type VisitRow,
 } from "@/lib/supabase/db";
+import type { HmoEnrollment } from "@/lib/data/nhis-store";
 import { Modal, ModalFooter } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
 import { Toast, type ToastData } from "@/components/ui/toast";
@@ -77,9 +79,10 @@ export default function PatientDetailPage() {
   const { frontDeskCharges, labCharges, nursingCharges } = useAccountsStore();
   const { prescriptions } = usePharmacyStore();
 
-  const [patient,  setPatient]  = useState<PatientRegistration | null>(null);
-  const [visits,   setVisits]   = useState<VisitRow[]>([]);
-  const [loading,  setLoading]  = useState(true);
+  const [patient,     setPatient]     = useState<PatientRegistration | null>(null);
+  const [visits,      setVisits]      = useState<VisitRow[]>([]);
+  const [enrollment,  setEnrollment]  = useState<HmoEnrollment | null>(null);
+  const [loading,     setLoading]     = useState(true);
   const [tab,      setTab]      = useState<Tab>("Overview");
   const [toast,    setToast]    = useState<ToastData | null>(null);
 
@@ -104,6 +107,9 @@ export default function PatientDetailPage() {
         const vis = await fetchVisitsByPatientId(pat.patientId);
         setVisits(vis);
       }
+      // load HMO enrollment if patient has one
+      const enroll = await fetchPatientEnrollment(id).catch(() => null);
+      setEnrollment(enroll);
       setLoading(false);
     }).catch(() => setLoading(false));
   }, [id]);
@@ -204,7 +210,41 @@ export default function PatientDetailPage() {
               <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold uppercase tracking-wider ${PATIENT_STATUS_STYLES[patient.status] ?? "bg-slate-100 text-slate-600"}`}>
                 {patient.status}
               </span>
+              {enrollment?.isActive && (
+                <span className="rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-bold text-blue-700">
+                  HMO · {enrollment.schemeName}
+                </span>
+              )}
             </div>
+
+            {enrollment?.isActive && (
+              <div className="flex flex-wrap gap-4 rounded-xl border border-blue-100 bg-blue-50 px-4 py-2.5 text-xs">
+                <div>
+                  <span className="font-bold uppercase tracking-wider text-blue-400">Scheme</span>
+                  <p className="mt-0.5 font-semibold text-blue-900">{enrollment.schemeName}</p>
+                </div>
+                <div>
+                  <span className="font-bold uppercase tracking-wider text-blue-400">Member ID</span>
+                  <p className="mt-0.5 font-semibold text-blue-900">{enrollment.memberId}</p>
+                </div>
+                {enrollment.planName && (
+                  <div>
+                    <span className="font-bold uppercase tracking-wider text-blue-400">Plan</span>
+                    <p className="mt-0.5 font-semibold text-blue-900">{enrollment.planName}</p>
+                  </div>
+                )}
+                <div>
+                  <span className="font-bold uppercase tracking-wider text-blue-400">Copay</span>
+                  <p className="mt-0.5 font-semibold text-blue-900">{enrollment.copayPercentage}%</p>
+                </div>
+                {enrollment.validUntil && (
+                  <div>
+                    <span className="font-bold uppercase tracking-wider text-blue-400">Expires</span>
+                    <p className="mt-0.5 font-semibold text-blue-900">{new Date(enrollment.validUntil).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}</p>
+                  </div>
+                )}
+              </div>
+            )}
 
             <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-xs sm:grid-cols-4">
               {[

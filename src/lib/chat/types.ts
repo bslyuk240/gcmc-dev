@@ -58,6 +58,7 @@ export const CHAT_DEPARTMENT_LABELS: Record<DBDepartmentKey | ChatTargetDepartme
   hr:           "HR",
   it:           "IT",
   non_clinical: "Non-Clinical",
+  nhis:         "NHIS / HMO",
 };
 
 export function formatRoleLabel(role: string) {

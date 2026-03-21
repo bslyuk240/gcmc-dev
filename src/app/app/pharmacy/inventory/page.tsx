@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState, useEffect } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -31,6 +31,8 @@ type StockStatus = "ok" | "low" | "critical" | "out";
 
 type InventoryItem = PharmacyInventoryItem & { price: string };
 
+const INPUT_CLASS = "w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/20";
+
 const DOSAGE_FORMS = [
   "Tablet", "Capsule", "Syrup", "Suspension", "Solution",
   "Vial", "Ampoule", "Infusion Bag", "Injection",
@@ -59,6 +61,89 @@ function normalizeName(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 }
 
+function pharmacySourceItems(storeItems: StoreInventoryItem[]) {
+  const pharma = storeItems.filter((item) => item.category === "Pharmaceutical");
+  return pharma.length > 0 ? pharma : storeItems;
+}
+
+function StoreInventoryPicker({
+  label,
+  description,
+  items,
+  query,
+  onQueryChange,
+  selectedId,
+  onSelect,
+}: {
+  label: string;
+  description?: string;
+  items: StoreInventoryItem[];
+  query: string;
+  onQueryChange: (value: string) => void;
+  selectedId: string;
+  onSelect: (item: StoreInventoryItem | null) => void;
+}) {
+  const selected = items.find((item) => item.id === selectedId) ?? null;
+  const filtered = items.filter((item) => {
+    const q = query.trim().toLowerCase();
+    if (!q) return true;
+    return (
+      item.name.toLowerCase().includes(q) ||
+      item.id.toLowerCase().includes(q) ||
+      item.category.toLowerCase().includes(q) ||
+      item.supplier.toLowerCase().includes(q)
+    );
+  });
+  const options = selected && !filtered.some((item) => item.id === selected.id) ? [selected, ...filtered] : filtered;
+
+  return (
+    <div className="space-y-2">
+      <div>
+        <label className="block text-sm font-semibold text-slate-700 mb-1">{label}</label>
+        {description && <p className="text-xs text-slate-500">{description}</p>}
+      </div>
+      <input
+        value={query}
+        onChange={(e) => onQueryChange(e.target.value)}
+        placeholder="Search Store inventory..."
+        className={INPUT_CLASS}
+      />
+      <select
+        value={selectedId}
+        onChange={(e) => {
+          const item = items.find((entry) => entry.id === e.target.value) ?? null;
+          onSelect(item);
+        }}
+        className={INPUT_CLASS}
+      >
+        <option value="">Select from Store inventory</option>
+        {options.map((item) => (
+          <option key={item.id} value={item.id}>
+            {item.name} · {item.category} · {item.id}
+          </option>
+        ))}
+      </select>
+      {selected ? (
+        <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="font-semibold text-emerald-900">{selected.name}</span>
+            <span>{selected.id}</span>
+          </div>
+          <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-emerald-700">
+            <span>{selected.category}</span>
+            <span>{selected.form ?? "No form"}</span>
+            <span>{selected.unit}</span>
+            <span>Qty: {selected.qty}</span>
+            <span>Reorder: {selected.reorder}</span>
+          </div>
+        </div>
+      ) : (
+        <p className="text-xs text-slate-400">Select a Store item to link this pharmacy record to a source of truth.</p>
+      )}
+    </div>
+  );
+}
+
 function findStoreMatch(product: string, storeItems: StoreInventoryItem[]) {
   const normalizedProduct = normalizeName(product);
   const pharmaItems = storeItems.filter((item) => item.category === "Pharmaceutical");
@@ -81,6 +166,7 @@ export default function PharmacyInventoryPage() {
   const [items, setItems] = useState<InventoryItem[]>([]);
   const [loadingItems, setLoadingItems] = useState(true);
   const [storeItems, setStoreItems] = useState<StoreInventoryItem[]>([]);
+  const storeSourceItems = useMemo(() => pharmacySourceItems(storeItems), [storeItems]);
 
   useEffect(() => {
     fetchPharmacyInventory().then((data) => {
@@ -141,11 +227,13 @@ export default function PharmacyInventoryPage() {
   const [editItem, setEditItem] = useState<InventoryItem | null>(null);
   const [dispenseItem, setDispenseItem] = useState<InventoryItem | null>(null);
   const [dispenseQty, setDispenseQty] = useState("1");
+  const [eReorder, setEReorder] = useState("");
   const [restockItem, setRestockItem] = useState<InventoryItem | null>(null);
   const [restockQty, setRestockQty] = useState("");
   const [restockUrgency, setRestockUrgency] = useState<"Routine" | "Urgent" | "Critical">("Urgent");
   const [restockNotes, setRestockNotes] = useState("");
   const [restockStoreItemId, setRestockStoreItemId] = useState("");
+  const [restockStoreQuery, setRestockStoreQuery] = useState("");
   const [toast, setToast] = useState<ToastData | null>(null);
 
   // Counter sale state
@@ -153,6 +241,12 @@ export default function PharmacyInventoryPage() {
   const [salePatient, setSalePatient] = useState("");
   const [salePatientId, setSalePatientId] = useState("");
   const [saleQty, setSaleQty] = useState(1);
+
+  // Store-source selection for pharmacy stock
+  const [stockStoreItemId, setStockStoreItemId] = useState("");
+  const [stockStoreQuery, setStockStoreQuery] = useState("");
+  const [editStoreItemId, setEditStoreItemId] = useState("");
+  const [editStoreQuery, setEditStoreQuery] = useState("");
 
   // CSV import state
   const [csvPreview, setCsvPreview] = useState<{ valid: InventoryItem[]; errors: string[] } | null>(null);
@@ -235,11 +329,17 @@ export default function PharmacyInventoryPage() {
         if (isNaN(stock) || stock < 0) { errors.push(`Row ${rowNum}: invalid stock`); return; }
         if (isNaN(reorder) || reorder < 0) { errors.push(`Row ${rowNum}: invalid reorder_level`); return; }
         if (isNaN(unitPrice) || unitPrice < 0) { errors.push(`Row ${rowNum}: invalid unit_price`); return; }
+        const linkedStore = findStoreMatch(product, storeSourceItems);
+        if (!linkedStore) {
+          errors.push(`Row ${rowNum}: no matching Store inventory item found for "${product}"`);
+          return;
+        }
         valid.push({
           id: `INV-CSV-${Date.now()}-${i}`,
           product,
           category: category || "Other",
           form: form || "Tablet",
+          storeInventoryId: linkedStore.id,
           stock,
           reorderLevel: reorder,
           price: `₦ ${unitPrice.toFixed(2)}`,
@@ -254,15 +354,52 @@ export default function PharmacyInventoryPage() {
     reader.readAsText(file);
   }
 
+  function applyStoreItemToAdd(item: StoreInventoryItem | null) {
+    if (!item) {
+      setStockStoreItemId("");
+      return;
+    }
+    setStockStoreItemId(item.id);
+    setAProduct(item.name);
+    setACategory(item.category);
+    setAForm(item.form ?? "Tablet");
+    setAStock(String(item.qty || 0));
+    setAReorder(String(item.reorder || 0));
+    setAPrice(String(item.unitCost || 0));
+    setAExpiry("");
+    setASupplier(item.supplier);
+  }
+
+  function applyStoreItemToEdit(item: StoreInventoryItem | null) {
+    if (!item) {
+      setEditStoreItemId("");
+      return;
+    }
+    setEditStoreItemId(item.id);
+    setEditForm(item.form ?? "Tablet");
+    setEditSupplier(item.supplier);
+    setEditPrice(String(item.unitCost || 0));
+    setEReorder(String(item.reorder || 0));
+  }
+
+  function applyStoreItemToRestock(item: StoreInventoryItem | null) {
+    if (!item) {
+      setRestockStoreItemId("");
+      return;
+    }
+    setRestockStoreItemId(item.id);
+    setRestockQty(String(Math.max(1, item.reorder * 5 || 1)));
+    setRestockNotes(`Store stock: ${item.qty} units. Reorder level: ${item.reorder} units.`);
+  }
+
   async function handleConfirmImport() {
     if (!csvPreview?.valid.length) return;
     setImporting(true);
     const imported: InventoryItem[] = [];
     for (const item of csvPreview.valid) {
       try {
-        const linkedStore = item.storeInventoryId ?? findStoreMatch(item.product, storeItems)?.id;
-        await upsertPharmacyInventoryItem({ id: item.id, product: item.product, category: item.category, form: item.form, storeInventoryId: linkedStore, stock: item.stock, reorderLevel: item.reorderLevel, unitPrice: item.unitPrice, expiry: item.expiry, supplier: item.supplier, status: item.status });
-        imported.push({ ...item, storeInventoryId: linkedStore, price: `₦ ${item.unitPrice.toFixed(2)}` });
+        await upsertPharmacyInventoryItem({ id: item.id, product: item.product, category: item.category, form: item.form, storeInventoryId: item.storeInventoryId, stock: item.stock, reorderLevel: item.reorderLevel, unitPrice: item.unitPrice, expiry: item.expiry, supplier: item.supplier, status: item.status });
+        imported.push({ ...item, storeInventoryId: item.storeInventoryId, price: `₦ ${item.unitPrice.toFixed(2)}` });
       } catch {
         // skip failed rows silently — they'll appear in next sync
       }
@@ -275,22 +412,26 @@ export default function PharmacyInventoryPage() {
 
   function handleAddMedication(e: React.FormEvent) {
     e.preventDefault();
-    const stock = parseInt(aStock) || 0;
-    const reorder = parseInt(aReorder) || 0;
-    const unitPrice = parseFloat(aPrice) || 0;
-    const linkedStore = findStoreMatch(aProduct, storeItems);
+    const selectedStore = storeSourceItems.find((item) => item.id === stockStoreItemId) ?? null;
+    if (!selectedStore) {
+      setToast({ message: "Select a Store inventory item first.", type: "error" });
+      return;
+    }
+    const stock = parseInt(aStock) || selectedStore.qty || 0;
+    const reorder = parseInt(aReorder) || selectedStore.reorder || 0;
+    const unitPrice = parseFloat(aPrice) || selectedStore.unitCost || 0;
     const newItem: InventoryItem = {
       id: `INV-${String(items.length + 1).padStart(3, "0")}-${Date.now().toString().slice(-4)}`,
-      product: aProduct,
-      category: aCategory,
-      form: aForm,
-      storeInventoryId: linkedStore?.id,
+      product: aProduct || selectedStore.name,
+      category: aCategory || selectedStore.category,
+      form: aForm || selectedStore.form || "Tablet",
+      storeInventoryId: selectedStore.id,
       stock,
       reorderLevel: reorder,
       price: `₦ ${unitPrice.toFixed(2)}`,
       unitPrice,
       expiry: aExpiry,
-      supplier: aSupplier,
+      supplier: aSupplier || selectedStore.supplier,
       status: calcStockStatus(stock, reorder),
     };
     setItems((prev) => [newItem, ...prev]);
@@ -299,6 +440,7 @@ export default function PharmacyInventoryPage() {
     setShowAdd(false);
     setAProduct(""); setACategory("Analgesic"); setAForm("Tablet");
     setAStock(""); setAReorder(""); setAPrice(""); setAExpiry(""); setASupplier("");
+    setStockStoreItemId(""); setStockStoreQuery("");
   }
 
   function openEdit(item: InventoryItem) {
@@ -308,14 +450,35 @@ export default function PharmacyInventoryPage() {
     setEditExpiry(item.expiry);
     setEditSupplier(item.supplier);
     setEditForm(item.form);
+    setEReorder(String(item.reorderLevel));
+    setEditStoreItemId(item.storeInventoryId ?? "");
+    setEditStoreQuery("");
   }
 
   function handleSaveEdit(e: React.FormEvent) {
     e.preventDefault();
     if (!editItem) return;
+    const selectedStore = storeSourceItems.find((item) => item.id === editStoreItemId) ?? null;
+    if (!selectedStore) {
+      setToast({ message: "Select a Store inventory item first.", type: "error" });
+      return;
+    }
     const newStock = parseInt(editStock) || 0;
-    const status = calcStockStatus(newStock, editItem.reorderLevel);
-    const updatedItem = { ...editItem, stock: newStock, price: editPrice, expiry: editExpiry, supplier: editSupplier, form: editForm, status };
+    const reorder = parseInt(eReorder) || selectedStore.reorder || editItem.reorderLevel;
+    const status = calcStockStatus(newStock, reorder);
+    const updatedItem = {
+      ...editItem,
+      product: editItem.product || selectedStore.name,
+      category: selectedStore.category || editItem.category,
+      stock: newStock,
+      reorderLevel: reorder,
+      price: editPrice,
+      expiry: editExpiry,
+      supplier: editSupplier || selectedStore.supplier,
+      form: editForm || selectedStore.form || editItem.form,
+      storeInventoryId: selectedStore.id,
+      status,
+    };
     setItems((prev) => prev.map((i) => i.id === editItem.id ? updatedItem : i));
     upsertPharmacyInventoryItem({ id: updatedItem.id, product: updatedItem.product, category: updatedItem.category, form: updatedItem.form, storeInventoryId: updatedItem.storeInventoryId, stock: updatedItem.stock, reorderLevel: updatedItem.reorderLevel, unitPrice: updatedItem.unitPrice, expiry: updatedItem.expiry, supplier: updatedItem.supplier, status: updatedItem.status }).catch(() => {});
     setToast({ message: `${editItem.product} updated.`, type: "success" });
@@ -355,34 +518,22 @@ export default function PharmacyInventoryPage() {
   }
 
   function openRestock(item: InventoryItem) {
-    const linkedStoreId = item.storeInventoryId ?? findStoreMatch(item.product, storeItems)?.id;
-    if (linkedStoreId) {
-      setRestockItem(item);
-      setRestockQty(String(item.reorderLevel * 5));
-      setRestockUrgency(item.status === "out" || item.status === "critical" ? "Critical" : "Urgent");
-      setRestockNotes(`Current stock: ${item.stock} units. Reorder level: ${item.reorderLevel} units.`);
-      setRestockStoreItemId(linkedStoreId);
-      return;
-    }
     setRestockItem(item);
     setRestockQty(String(item.reorderLevel * 5));
     setRestockUrgency(item.status === "out" || item.status === "critical" ? "Critical" : "Urgent");
     setRestockNotes(`Current stock: ${item.stock} units. Reorder level: ${item.reorderLevel} units.`);
-    setRestockStoreItemId("");
-    // Auto-match store item by name — no manual selection needed
-    fetchStoreInventory().then((all) => {
-      const pharma = all.filter((s) => s.category === "Pharmaceutical");
-      const drugLower = item.product.toLowerCase();
-      const match = pharma.find((s) =>
-        s.name.toLowerCase().includes(drugLower) || drugLower.includes(s.name.toLowerCase())
-      );
-      if (match) setRestockStoreItemId(match.id);
-    }).catch(() => {});
+    setRestockStoreItemId(item.storeInventoryId ?? findStoreMatch(item.product, storeSourceItems)?.id ?? "");
+    setRestockStoreQuery("");
   }
 
   function handleSendRestock(e: React.FormEvent) {
     e.preventDefault();
     if (!restockItem) return;
+    const selectedStore = storeSourceItems.find((item) => item.id === restockStoreItemId) ?? null;
+    if (!selectedStore) {
+      setToast({ message: "Select a Store inventory item first.", type: "error" });
+      return;
+    }
 
     // Check if a restock request for this item is already pending
     const existing = getRestockRequests().find(
@@ -394,27 +545,25 @@ export default function PharmacyInventoryPage() {
       return;
     }
 
-    const linkedStoreItem = storeItems.find((s) => s.id === (restockStoreItemId || restockItem.storeInventoryId))
-      ?? storeItems.find((s) => normalizeName(s.name) === normalizeName(restockItem.product));
     const qtyRequested = restockQty ? parseInt(restockQty) : null;
     const now = new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
     addRestockRequest({
       id: `PRX-${Date.now()}`,
       drug: restockItem.product,
       inventoryItemId: restockItem.id,
-      storeInventoryId: linkedStoreItem?.id || restockStoreItemId || restockItem.storeInventoryId || undefined,
-      storeSnapshot: linkedStoreItem
+      storeInventoryId: selectedStore.id,
+      storeSnapshot: selectedStore
         ? {
-            id: linkedStoreItem.id,
-            name: linkedStoreItem.name,
-            category: linkedStoreItem.category,
-            form: linkedStoreItem.form,
-            unit: linkedStoreItem.unit,
-            qty: linkedStoreItem.qty,
-            reorder: linkedStoreItem.reorder,
-            unitCost: linkedStoreItem.unitCost,
-            supplier: linkedStoreItem.supplier,
-            status: linkedStoreItem.status,
+            id: selectedStore.id,
+            name: selectedStore.name,
+            category: selectedStore.category,
+            form: selectedStore.form,
+            unit: selectedStore.unit,
+            qty: selectedStore.qty,
+            reorder: selectedStore.reorder,
+            unitCost: selectedStore.unitCost,
+            supplier: selectedStore.supplier,
+            status: selectedStore.status,
           }
         : undefined,
       currentStock: restockItem.stock,
@@ -431,6 +580,8 @@ export default function PharmacyInventoryPage() {
     setToast({ message: `Restock request for ${restockItem.product} sent to Store.`, type: "success" });
     setRestockItem(null);
     setRestockNotes("");
+    setRestockStoreItemId("");
+    setRestockStoreQuery("");
   }
 
   function handlePrepareNurseReq(req: NurseMedRequest) {
@@ -475,8 +626,6 @@ export default function PharmacyInventoryPage() {
     setSaleQty(1);
   }
 
-  const inputCls = "w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/20";
-
   const lowItems = items.filter((i) => i.status === "low" || i.status === "critical" || i.status === "out");
 
   return (
@@ -495,7 +644,7 @@ export default function PharmacyInventoryPage() {
             <Button size="md" variant="outline" onClick={() => document.getElementById("csv-upload")?.click()}>
               ↑ Upload CSV
             </Button>
-            <Button size="md" onClick={() => setShowAdd(true)}>+ Add Medication</Button>
+            <Button size="md" onClick={() => { setShowAdd(true); setStockStoreItemId(""); setStockStoreQuery(""); }}>+ Add Medication</Button>
           </div>
         }
       />
@@ -610,6 +759,15 @@ export default function PharmacyInventoryPage() {
       {/* Add Medication modal */}
       <Modal open={showAdd} onClose={() => setShowAdd(false)} title="Add New Medication" className="max-w-xl">
         <form id="add-med-form" onSubmit={handleAddMedication} className="space-y-4">
+          <StoreInventoryPicker
+            label="Source Store Item *"
+            description="Choose the Store inventory record this pharmacy medication will be linked to."
+            items={storeSourceItems}
+            query={stockStoreQuery}
+            onQueryChange={setStockStoreQuery}
+            selectedId={stockStoreItemId}
+            onSelect={applyStoreItemToAdd}
+          />
           <div>
             <label className="block text-sm font-semibold text-slate-700 mb-1">
               Drug / Product Name <span className="text-red-500">*</span>
@@ -619,20 +777,20 @@ export default function PharmacyInventoryPage() {
               value={aProduct}
               onChange={(e) => setAProduct(e.target.value)}
               placeholder="e.g. Amoxicillin 250mg"
-              className={inputCls}
+              className={INPUT_CLASS}
             />
           </div>
 
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-semibold text-slate-700 mb-1">Category <span className="text-red-500">*</span></label>
-              <select required value={aCategory} onChange={(e) => setACategory(e.target.value)} className={inputCls}>
+              <select required value={aCategory} onChange={(e) => setACategory(e.target.value)} className={INPUT_CLASS}>
                 {CATEGORIES.filter((c) => c !== "All categories").map((c) => <option key={c}>{c}</option>)}
               </select>
             </div>
             <div>
               <label className="block text-sm font-semibold text-slate-700 mb-1">Dosage Form <span className="text-red-500">*</span></label>
-              <select required value={aForm} onChange={(e) => setAForm(e.target.value)} className={inputCls}>
+              <select required value={aForm} onChange={(e) => setAForm(e.target.value)} className={INPUT_CLASS}>
                 {DOSAGE_FORMS.map((f) => <option key={f}>{f}</option>)}
               </select>
             </div>
@@ -648,7 +806,7 @@ export default function PharmacyInventoryPage() {
                 value={aStock}
                 onChange={(e) => setAStock(e.target.value)}
                 placeholder="e.g. 100"
-                className={inputCls}
+                className={INPUT_CLASS}
               />
             </div>
             <div>
@@ -660,7 +818,7 @@ export default function PharmacyInventoryPage() {
                 value={aReorder}
                 onChange={(e) => setAReorder(e.target.value)}
                 placeholder="e.g. 30"
-                className={inputCls}
+                className={INPUT_CLASS}
               />
             </div>
           </div>
@@ -676,7 +834,7 @@ export default function PharmacyInventoryPage() {
                 value={aPrice}
                 onChange={(e) => setAPrice(e.target.value)}
                 placeholder="e.g. 2.50"
-                className={inputCls}
+                className={INPUT_CLASS}
               />
             </div>
             <div>
@@ -686,7 +844,7 @@ export default function PharmacyInventoryPage() {
                 value={aExpiry}
                 onChange={(e) => setAExpiry(e.target.value)}
                 placeholder="2027-06"
-                className={inputCls}
+                className={INPUT_CLASS}
               />
             </div>
           </div>
@@ -697,7 +855,7 @@ export default function PharmacyInventoryPage() {
               value={aSupplier}
               onChange={(e) => setASupplier(e.target.value)}
               placeholder="e.g. PharmaCorp Ltd"
-              className={inputCls}
+              className={INPUT_CLASS}
             />
           </div>
 
@@ -722,28 +880,41 @@ export default function PharmacyInventoryPage() {
       {editItem && (
         <Modal open={true} onClose={() => setEditItem(null)} title={`Edit — ${editItem.product}`}>
           <form id="edit-inv-form" onSubmit={handleSaveEdit} className="space-y-4">
+            <StoreInventoryPicker
+              label="Linked Store Item *"
+              description="This pharmacy row should always map back to a Store inventory record."
+              items={storeSourceItems}
+              query={editStoreQuery}
+              onQueryChange={setEditStoreQuery}
+              selectedId={editStoreItemId}
+              onSelect={applyStoreItemToEdit}
+            />
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Dosage Form</label>
-                <select value={editForm} onChange={(e) => setEditForm(e.target.value)} className={inputCls}>
+                <select value={editForm} onChange={(e) => setEditForm(e.target.value)} className={INPUT_CLASS}>
                   {DOSAGE_FORMS.map((f) => <option key={f}>{f}</option>)}
                 </select>
               </div>
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Stock Qty</label>
-                <input type="number" min="0" value={editStock} onChange={(e) => setEditStock(e.target.value)} className={inputCls} />
+                <input type="number" min="0" value={editStock} onChange={(e) => setEditStock(e.target.value)} className={INPUT_CLASS} />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Reorder Level</label>
+                <input type="number" min="0" value={eReorder} onChange={(e) => setEReorder(e.target.value)} className={INPUT_CLASS} />
               </div>
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Unit Price</label>
-                <input value={editPrice} onChange={(e) => setEditPrice(e.target.value)} className={inputCls} />
+                <input value={editPrice} onChange={(e) => setEditPrice(e.target.value)} className={INPUT_CLASS} />
               </div>
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Expiry (YYYY-MM)</label>
-                <input value={editExpiry} onChange={(e) => setEditExpiry(e.target.value)} placeholder="2026-06" className={inputCls} />
+                <input value={editExpiry} onChange={(e) => setEditExpiry(e.target.value)} placeholder="2026-06" className={INPUT_CLASS} />
               </div>
               <div className="col-span-2">
                 <label className="block text-sm font-medium text-slate-700 mb-1">Supplier</label>
-                <input value={editSupplier} onChange={(e) => setEditSupplier(e.target.value)} className={inputCls} />
+                <input value={editSupplier} onChange={(e) => setEditSupplier(e.target.value)} className={INPUT_CLASS} />
               </div>
             </div>
           </form>
@@ -764,7 +935,7 @@ export default function PharmacyInventoryPage() {
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Quantity to Dispense</label>
-              <input type="number" min="1" max={dispenseItem.stock} value={dispenseQty} onChange={(e) => setDispenseQty(e.target.value)} className={inputCls} />
+              <input type="number" min="1" max={dispenseItem.stock} value={dispenseQty} onChange={(e) => setDispenseQty(e.target.value)} className={INPUT_CLASS} />
             </div>
             {dispenseItem.stock - (parseInt(dispenseQty) || 0) <= dispenseItem.reorderLevel && (
               <p className="text-xs text-orange-700 bg-orange-50 rounded-lg px-3 py-2">
@@ -783,6 +954,15 @@ export default function PharmacyInventoryPage() {
       {restockItem && (
         <Modal open={true} onClose={() => setRestockItem(null)} title={`Request Restock from Store — ${restockItem.product}`}>
           <form id="restock-form" onSubmit={handleSendRestock} className="space-y-4">
+            <StoreInventoryPicker
+              label="Store Item *"
+              description="Select the Store inventory record this restock request should draw from."
+              items={storeSourceItems}
+              query={restockStoreQuery}
+              onQueryChange={setRestockStoreQuery}
+              selectedId={restockStoreItemId}
+              onSelect={applyStoreItemToRestock}
+            />
             <div className="rounded-lg bg-slate-50 p-3 text-sm space-y-1">
               <div className="flex justify-between"><span className="text-slate-500">Current Stock</span><span className="font-bold text-red-600">{restockItem.stock} units</span></div>
               <div className="flex justify-between"><span className="text-slate-500">Reorder Level</span><span className="font-semibold">{restockItem.reorderLevel} units</span></div>
@@ -790,7 +970,7 @@ export default function PharmacyInventoryPage() {
             </div>
             <div>
               <label className="mb-1 block text-sm font-semibold text-slate-700">Quantity to Request <span className="font-normal text-slate-400">(optional)</span></label>
-              <input type="number" min="1" value={restockQty} onChange={(e) => setRestockQty(e.target.value)} placeholder="Leave blank for Store to choose" className={inputCls} />
+              <input type="number" min="1" value={restockQty} onChange={(e) => setRestockQty(e.target.value)} placeholder="Leave blank for Store to choose" className={INPUT_CLASS} />
             </div>
             <div>
               <label className="mb-1 block text-sm font-semibold text-slate-700">Urgency</label>
@@ -810,7 +990,6 @@ export default function PharmacyInventoryPage() {
             </div>
             <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
               ✓ This request will appear in the Store&apos;s supply requests queue for approval and fulfillment.
-              {restockStoreItemId && <span className="ml-1 font-semibold">Matched to Store inventory item.</span>}
             </div>
             <ModalFooter>
               <Button variant="ghost" size="md" type="button" onClick={() => setRestockItem(null)}>Cancel</Button>
@@ -831,16 +1010,16 @@ export default function PharmacyInventoryPage() {
             </div>
             <div>
               <label className="mb-1 block text-sm font-semibold text-slate-700">Patient Name</label>
-              <input value={salePatient} onChange={(e) => setSalePatient(e.target.value)} placeholder="e.g. John Doe (or leave blank for walk-in)" className={inputCls} />
+              <input value={salePatient} onChange={(e) => setSalePatient(e.target.value)} placeholder="e.g. John Doe (or leave blank for walk-in)" className={INPUT_CLASS} />
             </div>
             <div>
               <label className="mb-1 block text-sm font-semibold text-slate-700">Patient ID</label>
-              <input value={salePatientId} onChange={(e) => setSalePatientId(e.target.value)} placeholder="e.g. P-00123 (or leave blank)" className={inputCls} />
+              <input value={salePatientId} onChange={(e) => setSalePatientId(e.target.value)} placeholder="e.g. P-00123 (or leave blank)" className={INPUT_CLASS} />
             </div>
             <div>
               <label className="mb-1 block text-sm font-semibold text-slate-700">Quantity</label>
               <input type="number" min="1" max={saleItem.stock} required value={saleQty}
-                onChange={(e) => setSaleQty(Math.max(1, parseInt(e.target.value) || 1))} className={inputCls} />
+                onChange={(e) => setSaleQty(Math.max(1, parseInt(e.target.value) || 1))} className={INPUT_CLASS} />
             </div>
             <div className="flex items-center justify-between rounded-xl bg-emerald-50 border border-emerald-200 px-4 py-3">
               <span className="text-sm font-semibold text-emerald-800">Total</span>

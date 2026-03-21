@@ -181,13 +181,33 @@ export function subscribePharmacyStore(fn: () => void) {
 
 // ─── Supabase sync ────────────────────────────────────────────────────────────
 
-/** Local wins for existing items — remote only adds NEW records not yet in local.
- *  Prevents in-flight Supabase syncs from overwriting optimistic local updates. */
-function mergeById<T extends { id: string }>(remote: T[], local: T[]): T[] {
+function toTime(value?: string): number {
+  if (!value) return 0;
+  const parsed = new Date(value);
+  const time = parsed.getTime();
+  return Number.isNaN(time) ? 0 : time;
+}
+
+function isRecent(value?: string, windowMs = 10 * 60 * 1000): boolean {
+  const time = toTime(value);
+  if (!time) return false;
+  return Date.now() - time <= windowMs;
+}
+
+/**
+ * Merge remote rows with a small window of local optimistic rows.
+ * Remote data remains authoritative for existing IDs; local rows only survive
+ * if they look very recent and haven't been persisted yet.
+ */
+function mergeById<T extends { id: string }>(
+  remote: T[],
+  local: T[],
+  getTimestamp: (row: T) => string | undefined,
+): T[] {
   if (!remote.length) return local;
-  const localIds = new Set(local.map((x) => x.id));
-  const newFromRemote = remote.filter((r) => !localIds.has(r.id));
-  return [...local, ...newFromRemote];
+  const remoteIds = new Set(remote.map((x) => x.id));
+  const recentLocal = local.filter((row) => !remoteIds.has(row.id) && isRecent(getTimestamp(row)));
+  return [...remote, ...recentLocal].sort((left, right) => toTime(getTimestamp(right)) - toTime(getTimestamp(left)));
 }
 
 let _lastSync = 0;
@@ -206,12 +226,12 @@ export async function syncPharmacyFromSupabase(force = false) {
       fetchPharmacyBills(),
     ]);
     const current = getState();
-    _state = {
-      prescriptions: mergeById(prescriptions, current.prescriptions),
-      nurseRequests: mergeById(nurseRequests, current.nurseRequests),
-      restockRequests: mergeById(restockRequests, current.restockRequests),
-      bills: mergeById(bills, current.bills),
-    };
+      _state = {
+        prescriptions: mergeById(prescriptions, current.prescriptions, (row) => row.createdAt),
+        nurseRequests: mergeById(nurseRequests, current.nurseRequests, (row) => row.requestedAt),
+        restockRequests: mergeById(restockRequests, current.restockRequests, (row) => row.requestedAt),
+        bills: mergeById(bills, current.bills, (row) => row.dispensedAt ?? row.paidAt),
+      };
     saveState(_state);
     listeners.forEach((l) => l());
   } catch (err) { console.error("[pharmacy-store] sync failed:", err); }
@@ -345,7 +365,10 @@ export function updateBillStatus(
 
 export function getPharmacyMetrics() {
   const s = getState();
-  const dispensedToday = s.prescriptions.filter((p) => p.status === "Dispensed");
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const dispensedToday = s.prescriptions.filter(
+    (p) => p.status === "Dispensed" && (p.dispensedAt ?? "").startsWith(todayIso),
+  );
   const pendingRx = s.prescriptions.filter((p) => p.status === "Pending" || p.status === "Processing");
   const urgentRx = s.prescriptions.filter((p) => p.status !== "Dispensed" && p.urgency === "Urgent");
   const pendingBills = s.bills.filter((b) => b.billStatus === "Pending");

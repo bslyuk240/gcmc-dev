@@ -169,16 +169,25 @@ export default function PharmacyStockMovementsPage() {
     const displayTime = fmtMovementDate(now);
     const refId = `WI-${Date.now()}`;
 
-    await adjustPharmacyInventoryStock(item.id, -qty).catch(() => {});
-    await insertPharmacyStockMovement({
-      inventoryId: item.id,
-      movementType: "dispense",
-      quantity: qty,
-      sourceDestination: `Walk-in - ${wiPatient.trim()}`,
-      refNo: refId,
-      createdBy: "Pharmacist (You)",
-      createdAt: now,
-    });
+    try {
+      await adjustPharmacyInventoryStock(item.id, -qty);
+      await insertPharmacyStockMovement({
+        inventoryId: item.id,
+        movementType: "dispense",
+        quantity: qty,
+        sourceDestination: `Walk-in - ${wiPatient.trim()}`,
+        refNo: refId,
+        createdBy: "Pharmacist (You)",
+        createdAt: now,
+      });
+    } catch (error) {
+      await adjustPharmacyInventoryStock(item.id, qty).catch(() => {});
+      setToast({
+        message: `Could not record dispense: ${error instanceof Error ? error.message : "Unknown error"}.`,
+        type: "error",
+      });
+      return;
+    }
 
     updateInventoryItem(item.id, -qty);
     setMoves((prev) => [{
@@ -242,16 +251,25 @@ export default function PharmacyStockMovementsPage() {
     const displayTime = fmtMovementDate(now);
     const refId = `ADJ-${Date.now()}`;
 
-    await adjustPharmacyInventoryStock(item.id, delta).catch(() => {});
-    await insertPharmacyStockMovement({
-      inventoryId: item.id,
-      movementType: adjType,
-      quantity: qty,
-      sourceDestination: adjReason.trim() || "Manual adjustment",
-      refNo: refId,
-      createdBy: "Pharmacist (You)",
-      createdAt: now,
-    });
+    try {
+      await adjustPharmacyInventoryStock(item.id, delta);
+      await insertPharmacyStockMovement({
+        inventoryId: item.id,
+        movementType: adjType,
+        quantity: qty,
+        sourceDestination: adjReason.trim() || "Manual adjustment",
+        refNo: refId,
+        createdBy: "Pharmacist (You)",
+        createdAt: now,
+      });
+    } catch (error) {
+      await adjustPharmacyInventoryStock(item.id, -delta).catch(() => {});
+      setToast({
+        message: `Could not record stock update: ${error instanceof Error ? error.message : "Unknown error"}.`,
+        type: "error",
+      });
+      return;
+    }
 
     updateInventoryItem(item.id, delta);
     setMoves((prev) => [{
