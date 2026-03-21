@@ -954,7 +954,8 @@ export async function insertPharmacyBill(bill: PharmacyBill): Promise<void> {
     id: bill.id, prescription_id: bill.prescriptionId,
     patient_name: bill.patientName, patient_id: bill.patientId,
     drugs: bill.drugs, total_cost: bill.totalCost,
-    dispensed_at: bill.dispensedAt ? new Date(bill.dispensedAt).toISOString() : new Date().toISOString(),
+    // bill.dispensedAt is a display string ("02:30 · 21 Mar 2026") — always write ISO to DB
+    dispensed_at: new Date().toISOString(),
     bill_status: bill.billStatus ?? "Pending", source: bill.source ?? "prescription",
     paid_at: bill.paidAt ?? null,
     payment_method: bill.paymentMethod ?? null,
