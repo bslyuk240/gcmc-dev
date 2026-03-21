@@ -293,11 +293,16 @@ export default function StaffProfilePage() {
               <span className="text-slate-500">Department</span>
               <span className="font-semibold text-slate-900">{DEPT_LABELS[session.department] ?? session.department}</span>
             </div>
-            <form action="/staff/logout" method="post">
-              <button type="submit" className="w-full rounded-xl border border-red-200 py-2.5 text-sm font-bold text-red-600 hover:bg-red-50 transition">
-                Sign Out
-              </button>
-            </form>
+            <button
+              type="button"
+              className="w-full rounded-xl border border-red-200 py-2.5 text-sm font-bold text-red-600 hover:bg-red-50 transition"
+              onClick={async () => {
+                await fetch("/staff/logout", { method: "POST" });
+                window.location.href = "/staff/login";
+              }}
+            >
+              Sign Out
+            </button>
           </div>
         </div>
       )}
