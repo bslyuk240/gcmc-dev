@@ -73,7 +73,7 @@ function chargeDescription(charge: AnyCharge): string {
   if (charge._source === "fd") return charge.description;
   if (charge._source === "consult") return `${charge.consultationType} consultation`;
   if (charge._source === "lab") return charge.testName;
-  if (charge._source === "pharmacy") return charge.drugs;
+  if (charge._source === "pharmacy") return typeof charge.drugs === "string" ? charge.drugs : Array.isArray(charge.drugs) ? (charge.drugs as { name?: string; qty?: string }[]).map((d) => `${d.name ?? ""} × ${d.qty ?? ""}`).join(", ") : "—";
   return charge.description || charge.procedureType;
 }
 
@@ -118,6 +118,9 @@ export default function ReceivePaymentPage() {
   const [processing, setProcessing] = useState(false);
   const [toast, setToast] = useState<ToastData | null>(null);
   const [autoOpenedInvoice, setAutoOpenedInvoice] = useState<string | null>(null);
+  // Optimistic: IDs paid in this session — rows leave "Awaiting" instantly
+  const [optimisticPaidIds, setOptimisticPaidIds] = useState<Set<string>>(new Set());
+  const [optimisticPaidCharges, setOptimisticPaidCharges] = useState<AnyCharge[]>([]);
 
   useEffect(() => {
     let alive = true;
@@ -185,12 +188,14 @@ export default function ReceivePaymentPage() {
 
   const billedAll: AnyCharge[] = useMemo(
     () =>
-      [...billedFD, ...billedConsult, ...billedLab, ...billedNursing, ...billedPharmacy].sort((a, b) => {
-        const aDate = ("createdAt" in a ? a.createdAt : "dispensedAt" in a ? a.dispensedAt : "") ?? "";
-        const bDate = ("createdAt" in b ? b.createdAt : "dispensedAt" in b ? b.dispensedAt : "") ?? "";
-        return bDate.localeCompare(aDate);
-      }),
-    [billedFD, billedConsult, billedLab, billedNursing, billedPharmacy],
+      [...billedFD, ...billedConsult, ...billedLab, ...billedNursing, ...billedPharmacy]
+        .filter((c) => !optimisticPaidIds.has(c.id))
+        .sort((a, b) => {
+          const aDate = ("createdAt" in a ? a.createdAt : "dispensedAt" in a ? a.dispensedAt : "") ?? "";
+          const bDate = ("createdAt" in b ? b.createdAt : "dispensedAt" in b ? b.dispensedAt : "") ?? "";
+          return bDate.localeCompare(aDate);
+        }),
+    [billedFD, billedConsult, billedLab, billedNursing, billedPharmacy, optimisticPaidIds],
   );
 
   const pendingInvoices = useMemo(
@@ -201,33 +206,9 @@ export default function ReceivePaymentPage() {
     [invoices],
   );
 
-  const _paidToday: AnyCharge[] = useMemo(() => {
-    const todayStr = new Date().toISOString().slice(0, 10);
-    return [
-      ...(frontDeskCharges ?? [])
-        .filter((charge) => charge.status === "Paid")
-        .map((charge) => ({ ...charge, _source: "fd" as const })),
-      ...(consultationFees ?? [])
-        .filter((charge) => charge.status === "Paid")
-        .map((charge) => ({ ...charge, _source: "consult" as const })),
-      ...(labCharges ?? [])
-        .filter((charge) => charge.status === "Paid")
-        .map((charge) => ({ ...charge, _source: "lab" as const })),
-      ...(nursingCharges ?? [])
-        .filter((charge) => charge.status === "Paid")
-        .map((charge) => ({ ...charge, _source: "nursing" as const })),
-      ...(pharmacyBills ?? [])
-        .filter((bill) => bill.billStatus === "Paid")
-        .map((bill) => ({ ...bill, _source: "pharmacy" as const })),
-    ].filter((charge) => {
-      const date = chargeTimestamp(charge);
-      return date.startsWith(todayStr) || date.includes("·");
-    });
-  }, [frontDeskCharges, consultationFees, labCharges, nursingCharges, pharmacyBills]);
-
   const paidTodayResolved: AnyCharge[] = useMemo(() => {
     const todayStr = new Date().toISOString().slice(0, 10);
-    return [
+    const fromStore = [
       ...(frontDeskCharges ?? [])
         .filter((charge) => charge.status === "Paid")
         .map((charge) => ({ ...charge, _source: "fd" as const })),
@@ -247,8 +228,11 @@ export default function ReceivePaymentPage() {
       const date = chargeTimestamp(charge);
       return date.startsWith(todayStr) || date.includes("·");
     });
-  }, [frontDeskCharges, consultationFees, labCharges, nursingCharges, pharmacyBills]);
-  void _paidToday;
+    // Merge optimistic paid charges — local wins, only add from store if not already tracked
+    const optimisticIds = new Set(optimisticPaidCharges.map((c) => c.id));
+    const newFromStore = fromStore.filter((c) => !optimisticIds.has(c.id));
+    return [...optimisticPaidCharges, ...newFromStore];
+  }, [frontDeskCharges, consultationFees, labCharges, nursingCharges, pharmacyBills, optimisticPaidCharges]);
 
   const invoicePaymentsToday = useMemo(() => {
     const todayStr = new Date().toISOString().slice(0, 10);
@@ -293,7 +277,14 @@ export default function ReceivePaymentPage() {
         const id = target.charge.id;
         const paidAt = new Date().toISOString();
 
-        // All store mutations are now synchronous optimistic updates — fire and move on
+        // Optimistic: remove from "Awaiting" and add to "Paid Today" instantly
+        setOptimisticPaidIds((prev) => new Set([...prev, id]));
+        setOptimisticPaidCharges((prev) => {
+          if (prev.some((c) => c.id === id)) return prev;
+          return [target.charge, ...prev];
+        });
+
+        // Store mutations (sync to localStorage + async to Supabase)
         if (target.charge._source === "fd") updateFrontDeskChargeStatus(id, "Paid", { paidAt, paymentMethod: method });
         if (target.charge._source === "consult") updateConsultationFeeStatus(id, "Paid", { paidAt, paymentMethod: method });
         if (target.charge._source === "lab") updateLabChargeStatus(id, "Paid", { paidAt, paymentMethod: method });

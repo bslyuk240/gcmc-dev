@@ -18,7 +18,7 @@ import {
   insertPharmacyStockMovement,
 } from "@/lib/supabase/db";
 
-type Tab = "All Pending" | "Urgent" | "Waiting for Pickup" | "Dispensed";
+type Tab = "All Pending" | "Urgent" | "Dispensed";
 
 const STATUS_TONE: Record<string, string> = {
   Pending: "bg-blue-100 text-blue-800",
@@ -76,9 +76,6 @@ export default function PendingPrescriptionsPage() {
   const urgent = prescriptions.filter(
     (p) => p.urgency === "Urgent" && !isDispensedOrCollected(p) && effectiveStatus(p) !== "Cancelled"
   );
-  const waitingPickup = prescriptions.filter(
-    (p) => effectiveStatus(p) === "Dispensed"
-  );
   const allPending = prescriptions.filter(
     (p) => !isDispensedOrCollected(p) && effectiveStatus(p) !== "Cancelled"
   );
@@ -94,13 +91,11 @@ export default function PendingPrescriptionsPage() {
   const tabs: { label: string; tab: Tab; count: number; color?: string }[] = [
     { label: "All Pending", tab: "All Pending", count: allPending.length },
     { label: "Urgent", tab: "Urgent", count: urgent.length, color: urgent.length > 0 ? "text-red-600" : undefined },
-    { label: "Waiting for Pickup", tab: "Waiting for Pickup", count: waitingPickup.length },
-    { label: "Dispensed Today", tab: "Dispensed", count: dispensedToday.length },
+    { label: "Dispensed & Pickup", tab: "Dispensed", count: dispensedToday.length },
   ];
 
   const displayed =
     activeTab === "Urgent" ? urgent
-    : activeTab === "Waiting for Pickup" ? waitingPickup
     : activeTab === "Dispensed" ? dispensedToday
     : allPending;
 

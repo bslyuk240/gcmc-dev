@@ -954,8 +954,7 @@ export async function insertPharmacyBill(bill: PharmacyBill): Promise<void> {
     id: bill.id, prescription_id: bill.prescriptionId,
     patient_name: bill.patientName, patient_id: bill.patientId,
     drugs: bill.drugs, total_cost: bill.totalCost,
-    // bill.dispensedAt is a display string ("02:30 · 21 Mar 2026") — always write ISO to DB
-    dispensed_at: new Date().toISOString(),
+    dispensed_at: bill.dispensedAt ? new Date(bill.dispensedAt).toISOString() : new Date().toISOString(),
     bill_status: bill.billStatus ?? "Pending", source: bill.source ?? "prescription",
     paid_at: bill.paidAt ?? null,
     payment_method: bill.paymentMethod ?? null,
@@ -1660,8 +1659,7 @@ export async function insertNotification(n: AppNotification): Promise<void> {
   await sb.from("notifications").upsert({
     id: n.id, category: n.category, severity: n.severity, title: n.title,
     body: n.body, href: n.href, is_read: n.isRead,
-    // n.createdAt is a locale-formatted display string ("02:30 PM") — DB needs ISO
-    target_departments: n.targetDepartments, created_at: new Date().toISOString(),
+    target_departments: n.targetDepartments, created_at: n.createdAt,
   });
 }
 
