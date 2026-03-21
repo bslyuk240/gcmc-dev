@@ -6,6 +6,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Modal, ModalFooter } from "@/components/ui/modal";
 import { Toast, type ToastData } from "@/components/ui/toast";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { useNhisStore } from "@/lib/hooks/use-nhis-store";
 import {
   syncNhisFromSupabase,
@@ -14,6 +15,8 @@ import {
   removeHmoTariff,
   type HmoTariff,
 } from "@/lib/data/nhis-store";
+import { getPharmacyDrugList } from "@/lib/data/pharmacy-store";
+import { getTestCatalog } from "@/lib/data/lab-store";
 
 const SERVICE_CATEGORIES: HmoTariff["serviceCategory"][] = [
   "consultation", "lab", "pharmacy", "nursing", "procedure", "admission", "other",
@@ -264,7 +267,15 @@ export default function NhisTariffsPage() {
               <select
                 className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent"
                 value={form.serviceCategory}
-                onChange={(e) => field("serviceCategory", e.target.value as HmoTariff["serviceCategory"])}
+                onChange={(e) => {
+                  // Clear service name when switching category so catalog/text doesn't mismatch
+                  setForm((prev) => ({
+                    ...prev,
+                    serviceCategory: e.target.value as HmoTariff["serviceCategory"],
+                    serviceName: "",
+                    hmoPrice: "",
+                  }));
+                }}
               >
                 {SERVICE_CATEGORIES.map((c) => (
                   <option key={c} value={c}>{c.charAt(0).toUpperCase() + c.slice(1)}</option>
@@ -274,12 +285,70 @@ export default function NhisTariffsPage() {
 
             <div>
               <label className="mb-1 block text-xs font-semibold text-slate-600">Service Name *</label>
-              <input
-                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent"
-                value={form.serviceName}
-                onChange={(e) => field("serviceName", e.target.value)}
-                placeholder="e.g. General Consultation"
-              />
+
+              {form.serviceCategory === "pharmacy" ? (
+                <>
+                  <SearchableSelect
+                    value={form.serviceName}
+                    onChange={(val) => {
+                      // Auto-fill HMO price from the drug's unit price
+                      const drug = getPharmacyDrugList().find((d) => d.name === val);
+                      field("serviceName", val);
+                      if (drug && !form.hmoPrice) {
+                        field("hmoPrice", String(drug.unitPrice));
+                      }
+                    }}
+                    placeholder="Search drug from inventory…"
+                    showGroups
+                    options={getPharmacyDrugList().map((d) => ({
+                      value: d.name,
+                      label: d.name,
+                      sublabel: `₦${d.unitPrice.toFixed(2)}/${d.unit}`,
+                      group: d.category,
+                    }))}
+                  />
+                  <p className="mt-1 text-xs text-slate-400">
+                    HMO price auto-fills from inventory — adjust to the negotiated scheme rate.
+                  </p>
+                </>
+              ) : form.serviceCategory === "lab" ? (
+                <>
+                  <SearchableSelect
+                    value={form.serviceName}
+                    onChange={(val) => {
+                      const test = getTestCatalog().find((t) => t.name === val);
+                      field("serviceName", val);
+                      if (test && !form.hmoPrice) {
+                        field("hmoPrice", String(test.price));
+                      }
+                    }}
+                    placeholder="Search lab test from catalog…"
+                    showGroups
+                    options={getTestCatalog().map((t) => ({
+                      value: t.name,
+                      label: t.name,
+                      sublabel: `${t.code} · ₦${t.price}`,
+                      group: t.category,
+                    }))}
+                  />
+                  <p className="mt-1 text-xs text-slate-400">
+                    HMO price auto-fills from catalog — adjust to the negotiated scheme rate.
+                  </p>
+                </>
+              ) : (
+                <input
+                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent"
+                  value={form.serviceName}
+                  onChange={(e) => field("serviceName", e.target.value)}
+                  placeholder={
+                    form.serviceCategory === "consultation" ? "e.g. General Consultation" :
+                    form.serviceCategory === "nursing" ? "e.g. Wound Dressing" :
+                    form.serviceCategory === "procedure" ? "e.g. IV Cannulation" :
+                    form.serviceCategory === "admission" ? "e.g. General Ward (per day)" :
+                    "Service name"
+                  }
+                />
+              )}
             </div>
 
             <div>
