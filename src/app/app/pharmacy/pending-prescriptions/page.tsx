@@ -12,8 +12,13 @@ import {
   syncPharmacyFromSupabase,
   type SharedPrescription,
 } from "@/lib/data/pharmacy-store";
+import {
+  adjustPharmacyInventoryStock,
+  fetchPharmacyInventory,
+  insertPharmacyStockMovement,
+} from "@/lib/supabase/db";
 
-type Tab = "All Pending" | "Urgent" | "Waiting for Pickup" | "Dispensed";
+type Tab = "All Pending" | "Urgent" | "Dispensed";
 
 const STATUS_TONE: Record<string, string> = {
   Pending: "bg-blue-100 text-blue-800",
@@ -36,6 +41,10 @@ function fmtRxTime(s: string) {
   });
 }
 
+function normalizeName(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
 export default function PendingPrescriptionsPage() {
   const { prescriptions } = usePharmacyStore();
   const session = useHMSSession();
@@ -44,44 +53,49 @@ export default function PendingPrescriptionsPage() {
   const [activeTab, setActiveTab] = useState<Tab>("All Pending");
   const [dispenseTarget, setDispenseTarget] = useState<SharedPrescription | null>(null);
   const [dispenseNotes, setDispenseNotes] = useState("");
-  const [collectedIds, setCollectedIds] = useState<Set<string>>(new Set());
   // Optimistic: track dispensed IDs locally so the row leaves instantly on click
   const [optimisticDispensed, setOptimisticDispensed] = useState<Set<string>>(new Set());
+  // Optimistic: track collected IDs locally so the row moves instantly on click
+  const [optimisticCollected, setOptimisticCollected] = useState<Set<string>>(new Set());
   const [toast, setToast] = useState<ToastData | null>(null);
   const [dispensing, setDispensing] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
-  const isDispensed = (id: string) => optimisticDispensed.has(id) || prescriptions.find(p => p.id === id)?.status === "Dispensed";
+  // Effective status: optimistic local state takes precedence over store
+  function effectiveStatus(p: { id: string; status: string }) {
+    if (optimisticCollected.has(p.id)) return "Collected";
+    if (optimisticDispensed.has(p.id)) return "Dispensed";
+    return p.status;
+  }
+
+  const isDispensedOrCollected = (p: { id: string; status: string }) => {
+    const s = effectiveStatus(p);
+    return s === "Dispensed" || s === "Collected";
+  };
 
   const urgent = prescriptions.filter(
-    (p) => p.urgency === "Urgent" && !isDispensed(p.id) && p.status !== "Cancelled"
-  );
-  const waitingPickup = prescriptions.filter(
-    (p) => isDispensed(p.id) && !collectedIds.has(p.id)
+    (p) => p.urgency === "Urgent" && !isDispensedOrCollected(p) && effectiveStatus(p) !== "Cancelled"
   );
   const allPending = prescriptions.filter(
-    (p) => !isDispensed(p.id) && p.status !== "Cancelled"
+    (p) => !isDispensedOrCollected(p) && effectiveStatus(p) !== "Cancelled"
   );
+  // "Dispensed Today" = all dispensed+collected items. Optimistic items from this
+  // session are always included. Persisted items are shown when status is Dispensed/Collected.
   const dispensedToday = prescriptions.filter((p) => {
-    if (!isDispensed(p.id)) return false;
-    if (!p.dispensedAt) return true;
-    // dispensedAt is "HH:MM · DD Mon YYYY" — check if date portion matches today
-    const today = new Date().toLocaleDateString("en-GB", {
-      day: "numeric", month: "short", year: "numeric",
-    });
-    return p.dispensedAt.includes(today);
+    // Anything handled in this session (optimistic) always shows
+    if (optimisticDispensed.has(p.id) || optimisticCollected.has(p.id)) return true;
+    const s = effectiveStatus(p);
+    return s === "Dispensed" || s === "Collected";
   });
 
   const tabs: { label: string; tab: Tab; count: number; color?: string }[] = [
     { label: "All Pending", tab: "All Pending", count: allPending.length },
     { label: "Urgent", tab: "Urgent", count: urgent.length, color: urgent.length > 0 ? "text-red-600" : undefined },
-    { label: "Waiting for Pickup", tab: "Waiting for Pickup", count: waitingPickup.length },
-    { label: "Dispensed Today", tab: "Dispensed", count: dispensedToday.length },
+    { label: "Dispensed & Pickup", tab: "Dispensed", count: dispensedToday.length },
   ];
 
   const displayed =
     activeTab === "Urgent" ? urgent
-    : activeTab === "Waiting for Pickup" ? waitingPickup
     : activeTab === "Dispensed" ? dispensedToday
     : allPending;
 
@@ -92,7 +106,7 @@ export default function PendingPrescriptionsPage() {
     }, 0);
   }
 
-  function handleDispense() {
+  async function handleDispense() {
     if (!dispenseTarget) return;
     setDispensing(true);
     const target = dispenseTarget; // capture before clearing
@@ -100,6 +114,8 @@ export default function PendingPrescriptionsPage() {
     const dateStr = new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
     const dispensedAt = `${now} · ${dateStr}`; // display format (db.ts writes ISO separately)
     const total = calcTotal(target);
+    const inventory = await fetchPharmacyInventory().catch(() => []);
+    const inventoryByName = new Map((inventory ?? []).map((item) => [normalizeName(item.product), item]));
 
     // Instant UI — row leaves list before any network call
     setOptimisticDispensed(prev => new Set([...prev, target.id]));
@@ -110,29 +126,58 @@ export default function PendingPrescriptionsPage() {
       totalCost: total,
     });
 
-    addPharmacyBill({
-      id: `PBILL-${Date.now()}`,
-      prescriptionId: target.id,
-      patientName: target.patientName,
-      patientId: target.patientId,
-      drugs: target.drugs.map((d) => `${d.name} × ${d.qty}`).join(", "),
-      totalCost: total,
-      dispensedAt,
-      billStatus: "Pending",
-      source: "prescription",
-    });
+    for (const drug of target.drugs) {
+      const qty = Math.max(1, parseInt(drug.qty) || 1);
+      const matchedItem = inventoryByName.get(normalizeName(drug.name))
+        ?? [...(inventory ?? [])].find((item) =>
+          normalizeName(item.product).includes(normalizeName(drug.name)) ||
+          normalizeName(drug.name).includes(normalizeName(item.product))
+        );
+      if (!matchedItem) continue;
+      await adjustPharmacyInventoryStock(matchedItem.id, -qty).catch(() => {});
+      await insertPharmacyStockMovement({
+        inventoryId: matchedItem.id,
+        movementType: "dispense",
+        quantity: qty,
+        sourceDestination: `Prescription ${target.id}`,
+        refNo: target.id,
+        createdBy: staffName,
+        createdAt: new Date().toISOString(),
+      }).catch(() => {});
+    }
 
-    setToast({
-      message: `${target.id} dispensed for ${target.patientName}. Bill ₦${total.toFixed(2)} sent to Accounts.`,
-      type: "success",
-    });
+    try {
+      await addPharmacyBill({
+        id: `PBILL-${Date.now()}`,
+        prescriptionId: target.id,
+        patientName: target.patientName,
+        patientId: target.patientId,
+        drugs: target.drugs.map((d) => `${d.name} × ${d.qty}`).join(", "),
+        totalCost: total,
+        dispensedAt,
+        billStatus: "Pending",
+        source: "prescription",
+      });
+      setToast({
+        message: `${target.id} dispensed for ${target.patientName}. Bill ₦${total.toFixed(2)} sent to Accounts.`,
+        type: "success",
+      });
+    } catch (err) {
+      setToast({
+        message: `Dispensed but bill failed to save: ${err instanceof Error ? err.message : "Unknown error"}. Please retry.`,
+        type: "error",
+      });
+    }
     setDispenseTarget(null);
     setDispenseNotes("");
     setDispensing(false);
   }
 
   function markCollected(id: string, patientName: string) {
-    setCollectedIds((prev) => new Set([...prev, id]));
+    // Optimistic: move row instantly from Waiting for Pickup → Dispensed Today
+    setOptimisticCollected((prev) => new Set([...prev, id]));
+    // Persist to store + Supabase so it survives refresh
+    updatePrescriptionStatus(id, "Collected");
     setToast({ message: `${patientName} collected their medication.`, type: "success" });
   }
 
@@ -144,10 +189,11 @@ export default function PendingPrescriptionsPage() {
   }
 
   function getRowStatus(rx: SharedPrescription): string {
-    if (collectedIds.has(rx.id)) return "Collected";
-    if (isDispensed(rx.id)) return "Ready";
+    const s = effectiveStatus(rx);
+    if (s === "Collected") return "Collected";
+    if (s === "Dispensed") return "Ready";
     if (rx.urgency === "Urgent") return "Urgent";
-    return rx.status;
+    return s;
   }
 
   return (
@@ -229,18 +275,18 @@ export default function PendingPrescriptionsPage() {
                       </span>
                     </td>
                     <td className="px-5 py-3.5">
-                      {(row.status === "Pending" || row.status === "Processing") && !isDispensed(row.id) && (
+                      {(effectiveStatus(row) === "Pending" || effectiveStatus(row) === "Processing") && (
                         <Button size="sm" onClick={() => { setDispenseTarget(row); setDispenseNotes(""); }}>
                           Dispense
                         </Button>
                       )}
-                      {isDispensed(row.id) && !collectedIds.has(row.id) && (
+                      {effectiveStatus(row) === "Dispensed" && (
                         <Button size="sm" variant="outline" onClick={() => markCollected(row.id, row.patientName)}>
                           Mark Collected
                         </Button>
                       )}
-                      {collectedIds.has(row.id) && (
-                        <span className="text-xs text-slate-400">Collected</span>
+                      {effectiveStatus(row) === "Collected" && (
+                        <span className="text-xs text-slate-400">Collected ✓</span>
                       )}
                     </td>
                   </tr>

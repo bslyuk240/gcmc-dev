@@ -1,11 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useHMSSession } from "@/modules/rbac/hooks";
 import { insertPatientRegistration } from "@/lib/supabase/db";
 import { Toast, type ToastData } from "@/components/ui/toast";
+import { fetchHmoSchemes } from "@/lib/supabase/db";
+import type { HmoScheme } from "@/lib/data/nhis-store";
+import { insertHmoEnrollment } from "@/lib/supabase/db";
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 function getInitials(first: string, last: string) {
@@ -17,15 +20,12 @@ function generatePatientId() {
   return `P-${n}`;
 }
 
-// ── constants ─────────────────────────────────────────────────────────────────
 const BLOOD_GROUPS = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-", "Unknown"];
 const GENDERS      = ["Male", "Female", "Other"];
-
 const MONTHS = [
   "January", "February", "March", "April", "May", "June",
   "July", "August", "September", "October", "November", "December",
 ];
-
 const currentYear = new Date().getFullYear();
 const YEARS = Array.from({ length: currentYear - 1899 }, (_, i) => currentYear - i);
 
@@ -42,7 +42,7 @@ function daysInMonth(month: string, year: string): number {
   return m ? new Date(y, m, 0).getDate() : 31;
 }
 
-// ── DOB Picker sub-component ───────────────────────────────────────────────────
+// ── DOB Picker ────────────────────────────────────────────────────────────────
 function DobPicker({
   day, month, year,
   onDay, onMonth, onYear,
@@ -60,52 +60,42 @@ function DobPicker({
 
   return (
     <div className="flex gap-2">
-      {/* Day */}
       <div className="relative flex-[1]">
-        <select
-          value={day}
-          onChange={(e) => onDay(e.target.value)}
-          className={selCls}
-          style={{ backgroundImage: "none" }}
-        >
+        <select value={day} onChange={(e) => onDay(e.target.value)} className={selCls} style={{ backgroundImage: "none" }}>
           <option value="">DD</option>
           {days.map((d) => <option key={d} value={d}>{d.padStart(2, "0")}</option>)}
         </select>
-        <svg className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M6 9l6 6 6-6" />
-        </svg>
+        <svg className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M6 9l6 6 6-6" /></svg>
       </div>
-
-      {/* Month */}
       <div className="relative flex-[2]">
-        <select
-          value={month}
-          onChange={(e) => { onMonth(e.target.value); if (day) onDay(""); }}
-          className={selCls}
-          style={{ backgroundImage: "none" }}
-        >
+        <select value={month} onChange={(e) => {
+          const newMonth = e.target.value;
+          onMonth(newMonth);
+          // clamp day if it exceeds days in new month
+          if (day) {
+            const max = daysInMonth(newMonth, year);
+            if (parseInt(day) > max) onDay(String(max));
+          }
+        }} className={selCls} style={{ backgroundImage: "none" }}>
           <option value="">Month</option>
           {MONTHS.map((m) => <option key={m} value={m}>{m}</option>)}
         </select>
-        <svg className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M6 9l6 6 6-6" />
-        </svg>
+        <svg className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M6 9l6 6 6-6" /></svg>
       </div>
-
-      {/* Year */}
       <div className="relative flex-[1.3]">
-        <select
-          value={year}
-          onChange={(e) => { onYear(e.target.value); if (day) onDay(""); }}
-          className={selCls}
-          style={{ backgroundImage: "none" }}
-        >
+        <select value={year} onChange={(e) => {
+          const newYear = e.target.value;
+          onYear(newYear);
+          // clamp day for February in leap/non-leap year
+          if (day && month) {
+            const max = daysInMonth(month, newYear);
+            if (parseInt(day) > max) onDay(String(max));
+          }
+        }} className={selCls} style={{ backgroundImage: "none" }}>
           <option value="">Year</option>
           {YEARS.map((y) => <option key={y} value={String(y)}>{y}</option>)}
         </select>
-        <svg className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M6 9l6 6 6-6" />
-        </svg>
+        <svg className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M6 9l6 6 6-6" /></svg>
       </div>
     </div>
   );
@@ -123,27 +113,44 @@ export default function RegisterNewPatientPage() {
   const router  = useRouter();
   const session = useHMSSession();
 
-  // ── form state ──
-  const [firstName,      setFirstName]      = useState("");
-  const [lastName,       setLastName]        = useState("");
-  const [dobDay,         setDobDay]          = useState("");
-  const [dobMonth,       setDobMonth]        = useState("");
-  const [dobYear,        setDobYear]         = useState("");
-  const [gender,         setGender]          = useState("");
-  const [phone,          setPhone]           = useState("");
-  const [email,          setEmail]           = useState("");
-  const [address,        setAddress]         = useState("");
-  const [nationality,    setNationality]     = useState("Ghanaian");
-  const [occupation,     setOccupation]      = useState("");
-  const [bloodGroup,     setBloodGroup]      = useState("");
-  const [nokName,        setNokName]         = useState("");
-  const [nokPhone,       setNokPhone]        = useState("");
-  const [nokRelation,    setNokRelation]     = useState("");
+  // ── patient fields ──
+  const [firstName,   setFirstName]   = useState("");
+  const [lastName,    setLastName]    = useState("");
+  const [dobDay,      setDobDay]      = useState("");
+  const [dobMonth,    setDobMonth]    = useState("");
+  const [dobYear,     setDobYear]     = useState("");
+  const [gender,      setGender]      = useState("");
+  const [phone,       setPhone]       = useState("");
+  const [email,       setEmail]       = useState("");
+  const [address,     setAddress]     = useState("");
+  const [nationality, setNationality] = useState("Nigerian");
+  const [occupation,  setOccupation]  = useState("");
+  const [bloodGroup,  setBloodGroup]  = useState("");
+  const [nokName,     setNokName]     = useState("");
+  const [nokPhone,    setNokPhone]    = useState("");
+  const [nokRelation, setNokRelation] = useState("");
+
+  // ── HMO fields ──
+  const [hasHmo,          setHasHmo]          = useState(false);
+  const [hmoSchemes,      setHmoSchemes]       = useState<HmoScheme[]>([]);
+  const [selectedSchemeId, setSelectedSchemeId] = useState("");
+  const [memberId,        setMemberId]         = useState("");
+  const [planName,        setPlanName]         = useState("");
+  const [copayPct,        setCopayPct]         = useState("10");
+  const [validFrom,       setValidFrom]        = useState("");
+  const [validUntil,      setValidUntil]       = useState("");
 
   // ── ui state ──
-  const [saving,         setSaving]          = useState(false);
-  const [toast,          setToast]           = useState<ToastData | null>(null);
-  const [errors,         setErrors]          = useState<Record<string, string>>({});
+  const [saving, setSaving]   = useState(false);
+  const [toast,  setToast]    = useState<ToastData | null>(null);
+  const [errors, setErrors]   = useState<Record<string, string>>({});
+
+  // ── load schemes ──
+  useEffect(() => {
+    fetchHmoSchemes()
+      .then((s) => setHmoSchemes(s.filter((x) => x.isActive)))
+      .catch(() => {/* non-critical */});
+  }, []);
 
   // ── validation ──
   function validate() {
@@ -152,10 +159,14 @@ export default function RegisterNewPatientPage() {
     if (!lastName.trim())   e.lastName  = "Last name is required";
     if (!phone.trim())      e.phone     = "Phone number is required";
     if (!gender)            e.gender    = "Please select a gender";
+    if (hasHmo) {
+      if (!selectedSchemeId) e.hmoScheme  = "Please select an HMO scheme";
+      if (!memberId.trim())  e.memberId   = "Member ID is required";
+    }
     return e;
   }
 
-  // ── save ──────────────────────────────────────────────────────────────────
+  // ── save ─────────────────────────────────────────────────────────────────
   async function handleSave(andCreateVisit = false) {
     const errs = validate();
     if (Object.keys(errs).length) { setErrors(errs); return; }
@@ -169,38 +180,60 @@ export default function RegisterNewPatientPage() {
       ? `${nokName.trim()}${nokRelation ? ` (${nokRelation})` : ""}`
       : "";
 
-    const result = await insertPatientRegistration({
-      patientName:    fullName,
-      patientId,
-      registeredAt:   new Date().toISOString(),
-      contact:        phone.trim(),
-      email:          email.trim(),
-      initials,
-      status:         "Waiting",
-      registeredBy:   session?.full_name ?? "Front Desk",
-      dateOfBirth:    buildDob(dobDay, dobMonth, dobYear) || undefined,
-      gender:         gender || undefined,
-      address:        address.trim() || undefined,
-      nextOfKinName:  nokFull || undefined,
-      nextOfKinPhone: nokPhone.trim() || undefined,
-      bloodGroup:     bloodGroup || undefined,
-      nationality:    nationality.trim() || "Ghanaian",
-      occupation:     occupation.trim() || undefined,
-    });
+    try {
+      const result = await insertPatientRegistration({
+        patientName:         fullName,
+        patientId,
+        registeredAt:        new Date().toISOString(),
+        contact:             phone.trim(),
+        email:               email.trim(),
+        initials,
+        status:              "Waiting",
+        registeredBy:        session?.full_name ?? "Front Desk",
+        dateOfBirth:         buildDob(dobDay, dobMonth, dobYear) || undefined,
+        gender:              gender || undefined,
+        address:             address.trim() || undefined,
+        nextOfKinName:       nokFull || undefined,
+        nextOfKinPhone:      nokPhone.trim() || undefined,
+        bloodGroup:          bloodGroup || undefined,
+        nationality:         nationality.trim() || "Nigerian",
+        occupation:          occupation.trim() || undefined,
+        hasHmo,
+        primaryHmoSchemeId:  hasHmo ? selectedSchemeId : undefined,
+      });
 
-    setSaving(false);
+      if (!result) throw new Error("Patient record was not created. Please try again.");
 
-    if (!result) {
-      setToast({ message: "Failed to register patient. Please try again.", type: "error" });
-      return;
-    }
+      // ── create HMO enrollment if applicable ──────────────────────────────
+      if (hasHmo && selectedSchemeId && memberId.trim()) {
+        const scheme = hmoSchemes.find((s) => s.id === selectedSchemeId);
+        await insertHmoEnrollment({
+          patientId:       result.id,
+          schemeId:        selectedSchemeId,
+          memberId:        memberId.trim(),
+          planName:        planName.trim() || undefined,
+          copayPercentage: parseFloat(copayPct) || 10,
+          isActive:        true,
+          validFrom:       validFrom || undefined,
+          validUntil:      validUntil || undefined,
+          authorizedBy:    session?.full_name ?? "Front Desk",
+        });
+      }
 
-    if (andCreateVisit) {
-      router.push(`/app/frontdesk/visits?newPatient=${result.id}`);
-    } else {
-      router.push(`/app/frontdesk/patients/${result.id}`);
+      if (andCreateVisit) {
+        router.push(`/app/frontdesk/visits?newPatient=${result.id}`);
+      } else {
+        router.push(`/app/frontdesk/patients/${result.id}`);
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "An unexpected error occurred";
+      setToast({ message: msg, type: "error" });
+    } finally {
+      setSaving(false);
     }
   }
+
+  const selectedScheme = hmoSchemes.find((s) => s.id === selectedSchemeId);
 
   // ── render ────────────────────────────────────────────────────────────────
   return (
@@ -225,47 +258,40 @@ export default function RegisterNewPatientPage() {
         {/* ── Main form ── */}
         <div className="space-y-5">
 
-          {/* Personal Information */}
+          {/* 1 · Personal Information */}
           <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
             <h2 className="mb-4 text-sm font-bold text-slate-900 flex items-center gap-2">
               <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[var(--accent)] text-[10px] font-bold text-white">1</span>
               Personal Information
             </h2>
             <div className="grid gap-4 sm:grid-cols-2">
-              {/* First name */}
               <div>
                 <label className={labelCls}>First Name <span className="text-red-500">*</span></label>
                 <input
                   value={firstName}
                   onChange={(e) => { setFirstName(e.target.value); setErrors((p) => ({ ...p, firstName: "" })); }}
-                  placeholder="e.g. Kwame"
+                  placeholder="e.g. Emeka"
                   className={`${inputCls} ${errors.firstName ? "border-red-400 ring-1 ring-red-400/30" : ""}`}
                 />
                 {errors.firstName && <p className="mt-1 text-xs text-red-600">{errors.firstName}</p>}
               </div>
 
-              {/* Last name */}
               <div>
                 <label className={labelCls}>Last Name <span className="text-red-500">*</span></label>
                 <input
                   value={lastName}
                   onChange={(e) => { setLastName(e.target.value); setErrors((p) => ({ ...p, lastName: "" })); }}
-                  placeholder="e.g. Mensah"
+                  placeholder="e.g. Okafor"
                   className={`${inputCls} ${errors.lastName ? "border-red-400 ring-1 ring-red-400/30" : ""}`}
                 />
                 {errors.lastName && <p className="mt-1 text-xs text-red-600">{errors.lastName}</p>}
               </div>
 
-              {/* Date of birth */}
               <div className="sm:col-span-2">
                 <label className={labelCls}>Date of Birth</label>
-                <DobPicker
-                  day={dobDay} month={dobMonth} year={dobYear}
-                  onDay={setDobDay} onMonth={setDobMonth} onYear={setDobYear}
-                />
+                <DobPicker day={dobDay} month={dobMonth} year={dobYear} onDay={setDobDay} onMonth={setDobMonth} onYear={setDobYear} />
               </div>
 
-              {/* Gender */}
               <div>
                 <label className={labelCls}>Gender <span className="text-red-500">*</span></label>
                 <select
@@ -279,7 +305,6 @@ export default function RegisterNewPatientPage() {
                 {errors.gender && <p className="mt-1 text-xs text-red-600">{errors.gender}</p>}
               </div>
 
-              {/* Blood group */}
               <div>
                 <label className={labelCls}>Blood Group</label>
                 <select value={bloodGroup} onChange={(e) => setBloodGroup(e.target.value)} className={inputCls}>
@@ -288,31 +313,19 @@ export default function RegisterNewPatientPage() {
                 </select>
               </div>
 
-              {/* Nationality */}
               <div>
                 <label className={labelCls}>Nationality</label>
-                <input
-                  value={nationality}
-                  onChange={(e) => setNationality(e.target.value)}
-                  placeholder="e.g. Ghanaian"
-                  className={inputCls}
-                />
+                <input value={nationality} onChange={(e) => setNationality(e.target.value)} placeholder="e.g. Nigerian" className={inputCls} />
               </div>
 
-              {/* Occupation */}
               <div className="sm:col-span-2">
                 <label className={labelCls}>Occupation</label>
-                <input
-                  value={occupation}
-                  onChange={(e) => setOccupation(e.target.value)}
-                  placeholder="e.g. Teacher, Trader, Civil servant"
-                  className={inputCls}
-                />
+                <input value={occupation} onChange={(e) => setOccupation(e.target.value)} placeholder="e.g. Teacher, Trader, Civil Servant" className={inputCls} />
               </div>
             </div>
           </section>
 
-          {/* Contact Details */}
+          {/* 2 · Contact Details */}
           <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
             <h2 className="mb-4 text-sm font-bold text-slate-900 flex items-center gap-2">
               <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[var(--accent)] text-[10px] font-bold text-white">2</span>
@@ -325,7 +338,7 @@ export default function RegisterNewPatientPage() {
                   type="tel"
                   value={phone}
                   onChange={(e) => { setPhone(e.target.value); setErrors((p) => ({ ...p, phone: "" })); }}
-                  placeholder="e.g. 0244 000 000"
+                  placeholder="e.g. 0801 234 5678"
                   className={`${inputCls} ${errors.phone ? "border-red-400 ring-1 ring-red-400/30" : ""}`}
                 />
                 {errors.phone && <p className="mt-1 text-xs text-red-600">{errors.phone}</p>}
@@ -333,29 +346,17 @@ export default function RegisterNewPatientPage() {
 
               <div>
                 <label className={labelCls}>Email Address</label>
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="patient@email.com"
-                  className={inputCls}
-                />
+                <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="patient@email.com" className={inputCls} />
               </div>
 
               <div className="sm:col-span-2">
                 <label className={labelCls}>Home Address</label>
-                <textarea
-                  rows={2}
-                  value={address}
-                  onChange={(e) => setAddress(e.target.value)}
-                  placeholder="House number, street, area / city"
-                  className={`${inputCls} resize-none`}
-                />
+                <textarea rows={2} value={address} onChange={(e) => setAddress(e.target.value)} placeholder="House number, street, area / city" className={`${inputCls} resize-none`} />
               </div>
             </div>
           </section>
 
-          {/* Next of Kin */}
+          {/* 3 · Next of Kin */}
           <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
             <h2 className="mb-4 text-sm font-bold text-slate-900 flex items-center gap-2">
               <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[var(--accent)] text-[10px] font-bold text-white">3</span>
@@ -364,33 +365,117 @@ export default function RegisterNewPatientPage() {
             <div className="grid gap-4 sm:grid-cols-3">
               <div className="sm:col-span-2">
                 <label className={labelCls}>Full Name</label>
-                <input
-                  value={nokName}
-                  onChange={(e) => setNokName(e.target.value)}
-                  placeholder="e.g. Mrs. Adaeze Mensah"
-                  className={inputCls}
-                />
+                <input value={nokName} onChange={(e) => setNokName(e.target.value)} placeholder="e.g. Mrs. Ngozi Okafor" className={inputCls} />
               </div>
               <div>
                 <label className={labelCls}>Relationship</label>
-                <input
-                  value={nokRelation}
-                  onChange={(e) => setNokRelation(e.target.value)}
-                  placeholder="e.g. Spouse, Parent"
-                  className={inputCls}
-                />
+                <input value={nokRelation} onChange={(e) => setNokRelation(e.target.value)} placeholder="e.g. Spouse, Parent" className={inputCls} />
               </div>
               <div>
                 <label className={labelCls}>Phone Number</label>
-                <input
-                  type="tel"
-                  value={nokPhone}
-                  onChange={(e) => setNokPhone(e.target.value)}
-                  placeholder="e.g. 0244 111 222"
-                  className={inputCls}
-                />
+                <input type="tel" value={nokPhone} onChange={(e) => setNokPhone(e.target.value)} placeholder="e.g. 0801 111 2222" className={inputCls} />
               </div>
             </div>
+          </section>
+
+          {/* 4 · Health Insurance / HMO */}
+          <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[var(--accent)] text-[10px] font-bold text-white">4</span>
+                Health Insurance / HMO
+              </h2>
+              {/* Toggle */}
+              <button
+                type="button"
+                onClick={() => { setHasHmo((v) => !v); setErrors((p) => ({ ...p, hmoScheme: "", memberId: "" })); }}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${hasHmo ? "bg-[var(--accent)]" : "bg-slate-200"}`}
+                aria-pressed={hasHmo}
+              >
+                <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${hasHmo ? "translate-x-6" : "translate-x-1"}`} />
+              </button>
+            </div>
+
+            {!hasHmo && (
+              <p className="mt-3 text-xs text-slate-400">Toggle on if this patient is covered by an HMO or health insurance scheme.</p>
+            )}
+
+            {hasHmo && (
+              <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                {/* Scheme */}
+                <div className="sm:col-span-2">
+                  <label className={labelCls}>HMO Scheme <span className="text-red-500">*</span></label>
+                  <div className="relative">
+                    <select
+                      value={selectedSchemeId}
+                      onChange={(e) => { setSelectedSchemeId(e.target.value); setErrors((p) => ({ ...p, hmoScheme: "" })); }}
+                      className={`${inputCls} ${errors.hmoScheme ? "border-red-400 ring-1 ring-red-400/30" : ""}`}
+                    >
+                      <option value="">— Select HMO scheme —</option>
+                      {hmoSchemes.map((s) => (
+                        <option key={s.id} value={s.id}>{s.name} ({s.code})</option>
+                      ))}
+                    </select>
+                  </div>
+                  {errors.hmoScheme && <p className="mt-1 text-xs text-red-600">{errors.hmoScheme}</p>}
+                  {selectedScheme && (
+                    <p className="mt-1 text-xs text-slate-500">
+                      Type: <span className="font-medium capitalize">{selectedScheme.type.replace("_", " ")}</span>
+                    </p>
+                  )}
+                </div>
+
+                {/* Member ID */}
+                <div>
+                  <label className={labelCls}>Member ID / Card Number <span className="text-red-500">*</span></label>
+                  <input
+                    value={memberId}
+                    onChange={(e) => { setMemberId(e.target.value); setErrors((p) => ({ ...p, memberId: "" })); }}
+                    placeholder="e.g. NHIS/001/2024"
+                    className={`${inputCls} ${errors.memberId ? "border-red-400 ring-1 ring-red-400/30" : ""}`}
+                  />
+                  {errors.memberId && <p className="mt-1 text-xs text-red-600">{errors.memberId}</p>}
+                </div>
+
+                {/* Plan name */}
+                <div>
+                  <label className={labelCls}>Plan / Package Name</label>
+                  <input value={planName} onChange={(e) => setPlanName(e.target.value)} placeholder="e.g. Standard, Executive" className={inputCls} />
+                </div>
+
+                {/* Copay % */}
+                <div>
+                  <label className={labelCls}>Patient Copay (%)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    value={copayPct}
+                    onChange={(e) => setCopayPct(e.target.value)}
+                    placeholder="e.g. 10"
+                    className={inputCls}
+                  />
+                  <p className="mt-1 text-xs text-slate-400">Percentage the patient pays. HMO covers the rest.</p>
+                </div>
+
+                {/* Valid from */}
+                <div>
+                  <label className={labelCls}>Valid From</label>
+                  <input type="date" value={validFrom} onChange={(e) => setValidFrom(e.target.value)} className={inputCls} />
+                </div>
+
+                {/* Valid until */}
+                <div>
+                  <label className={labelCls}>Valid Until / Expiry</label>
+                  <input type="date" value={validUntil} onChange={(e) => setValidUntil(e.target.value)} className={inputCls} />
+                </div>
+
+                {/* Info banner */}
+                <div className="sm:col-span-2 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-xs text-blue-800">
+                  <span className="font-semibold">HMO Note:</span> After registration, the NHIS department can manage this patient&apos;s enrollment, verify membership, and process claims.
+                </div>
+              </div>
+            )}
           </section>
 
           {/* Action buttons */}
@@ -441,9 +526,7 @@ export default function RegisterNewPatientPage() {
             <h3 className="mb-3 text-xs font-bold uppercase tracking-wider text-slate-500">Patient Preview</h3>
             <div className="flex items-center gap-3">
               <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[var(--accent)]/10 text-base font-bold text-[var(--accent)]">
-                {firstName || lastName
-                  ? getInitials(firstName || "?", lastName || "?")
-                  : "?"}
+                {firstName || lastName ? getInitials(firstName || "?", lastName || "?") : "?"}
               </div>
               <div>
                 <p className="font-semibold text-slate-900">
@@ -462,6 +545,15 @@ export default function RegisterNewPatientPage() {
                 {bloodGroup && <span className="ml-2 rounded bg-red-50 px-1.5 py-0.5 font-semibold text-red-700">{bloodGroup}</span>}
               </div>
             )}
+
+            {hasHmo && selectedScheme && (
+              <div className="mt-2 flex items-center gap-1.5">
+                <span className="rounded-full bg-blue-100 px-2.5 py-0.5 text-[10px] font-bold text-blue-700">
+                  HMO · {selectedScheme.code}
+                </span>
+                {memberId && <span className="text-[10px] text-slate-400">{memberId}</span>}
+              </div>
+            )}
           </div>
 
           {/* Registration flow */}
@@ -471,6 +563,7 @@ export default function RegisterNewPatientPage() {
               {[
                 "Fill in patient demographics",
                 "Required: Name, Phone & Gender",
+                "Toggle HMO if patient has insurance",
                 "Click Save Patient → view patient record",
                 "Or Save & Create Visit → start consultation",
               ].map((step, i) => (
@@ -484,7 +577,6 @@ export default function RegisterNewPatientPage() {
             </ol>
           </div>
 
-          {/* Required fields reminder */}
           <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">
             <span className="font-bold">Required:</span> First Name, Last Name, Phone Number, and Gender must be filled before saving.
           </div>

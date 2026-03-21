@@ -1,3 +1,5 @@
+import { ACCOUNTS_PAYMENT_UPDATED_EVENT } from "@/lib/constants/accounts-events";
+import { pushNotification } from "@/lib/data/notification-store";
 /**
  * Pharmacy Cross-Department Shared Store
  *
@@ -11,7 +13,7 @@
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-export type PrescriptionStatus = "Pending" | "Processing" | "Dispensed" | "Cancelled";
+export type PrescriptionStatus = "Pending" | "Processing" | "Dispensed" | "Collected" | "Cancelled";
 export type PrescriptionUrgency = "Routine" | "Urgent";
 
 export type PrescribedDrug = {
@@ -61,21 +63,35 @@ export type NurseMedRequest = {
 
 export type PharmacyRestockStatus = "Pending" | "Approved" | "Fulfilled" | "Rejected";
 
+export type StoreInventorySnapshot = {
+  id: string;
+  name: string;
+  category: string;
+  form?: string;
+  unit: string;
+  qty: number;
+  reorder: number;
+  unitCost: number;
+  supplier: string;
+  status: string;
+};
+
 export type PharmacyRestockRequest = {
   id: string;
   drug: string;
-  inventoryItemId: string;
+  inventoryItemId?: string;
   storeInventoryId?: string;
+  storeSnapshot?: StoreInventorySnapshot;
   currentStock: number;
   reorderLevel: number;
-  qtyRequested: number;
+  qtyRequested: number | null;
   unit: string;
   urgency: "Routine" | "Urgent" | "Critical";
   requestedBy: string;
   requestedAt: string;
   status: PharmacyRestockStatus;
   notes?: string;
-  approvedQty?: number;
+  approvedQty?: number | null;
   fulfilledAt?: string;
 };
 
@@ -89,6 +105,8 @@ export type PharmacyBill = {
   dispensedAt: string;
   billStatus: "Pending" | "Paid" | "Waived";
   source: "prescription" | "nurse-request" | "walk-in";
+  paidAt?: string;
+  paymentMethod?: "Cash" | "POS / Card" | "Mobile Money" | "Insurance";
 };
 
 // ─── Store State ──────────────────────────────────────────────────────────────
@@ -124,12 +142,18 @@ function loadState(): PharmacyStoreState {
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
     return raw ? (JSON.parse(raw) as PharmacyStoreState) : { ...EMPTY_STATE };
-  } catch { return { ...EMPTY_STATE }; }
+  } catch {
+    return { ...EMPTY_STATE };
+  }
 }
 
 function saveState(state: PharmacyStoreState) {
   if (typeof window === "undefined") return;
-  try { window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch { /* quota */ }
+  try {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  } catch {
+    /* quota */
+  }
 }
 
 let _state: PharmacyStoreState | null = null;
@@ -157,14 +181,16 @@ export function subscribePharmacyStore(fn: () => void) {
 
 // ─── Supabase sync ────────────────────────────────────────────────────────────
 
-let _lastSync = 0;
-
-function mergeById<T extends { id: string }>(remote: T[], local: T[]) {
-  const merged = new Map<string, T>();
-  for (const item of remote) merged.set(item.id, item);
-  for (const item of local) merged.set(item.id, { ...(merged.get(item.id) ?? {}), ...item });
-  return Array.from(merged.values());
+/** Local wins for existing items — remote only adds NEW records not yet in local.
+ *  Prevents in-flight Supabase syncs from overwriting optimistic local updates. */
+function mergeById<T extends { id: string }>(remote: T[], local: T[]): T[] {
+  if (!remote.length) return local;
+  const localIds = new Set(local.map((x) => x.id));
+  const newFromRemote = remote.filter((r) => !localIds.has(r.id));
+  return [...local, ...newFromRemote];
 }
+
+let _lastSync = 0;
 
 export async function syncPharmacyFromSupabase(force = false) {
   if (typeof window === "undefined") return;
@@ -276,17 +302,42 @@ export function getPharmacyBills(): PharmacyBill[] {
   return [...getState().bills];
 }
 
-export function addPharmacyBill(bill: PharmacyBill) {
+export async function addPharmacyBill(bill: PharmacyBill): Promise<void> {
+  // Optimistic: add to local store instantly
   mutate((s) => { s.bills = [bill, ...s.bills]; });
-  import("@/lib/supabase/db").then(({ insertPharmacyBill }) => insertPharmacyBill(bill))
-    .catch((err) => console.error("[pharmacy-store] addPharmacyBill failed:", err));
+  pushNotification({
+    category: "pharmacy",
+    severity: "info",
+    title: "Pharmacy bill ready",
+    body: `${bill.patientName} - ${bill.drugs} (${bill.totalCost.toLocaleString()}) was sent to Accounts.`,
+    href: "/app/accounts/pharmacy-billing",
+    targetDepartments: ["accounts"],
+  });
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event(ACCOUNTS_PAYMENT_UPDATED_EVENT));
+  }
+  // Await the Supabase write — throws on failure so callers can show real error toasts
+  const { insertPharmacyBill } = await import("@/lib/supabase/db");
+  await insertPharmacyBill(bill);
 }
 
-export function updateBillStatus(id: string, billStatus: PharmacyBill["billStatus"]) {
+export function updateBillStatus(
+  id: string,
+  billStatus: PharmacyBill["billStatus"],
+  extra?: Partial<PharmacyBill>,
+) {
+  const paidAt = billStatus === "Paid" ? extra?.paidAt ?? new Date().toISOString() : extra?.paidAt;
+  const nextExtra = {
+    ...extra,
+    ...(paidAt ? { paidAt } : {}),
+  };
   mutate((s) => {
-    s.bills = s.bills.map((b) => (b.id === id ? { ...b, billStatus } : b));
+    s.bills = s.bills.map((b) => (b.id === id ? { ...b, billStatus, ...nextExtra } : b));
   });
-  import("@/lib/supabase/db").then(({ upsertPharmacyBillStatus }) => upsertPharmacyBillStatus(id, billStatus))
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event(ACCOUNTS_PAYMENT_UPDATED_EVENT));
+  }
+  import("@/lib/supabase/db").then(({ upsertPharmacyBillStatus }) => upsertPharmacyBillStatus(id, billStatus, nextExtra))
     .catch((err) => console.error("[pharmacy-store] updateBillStatus failed:", err));
 }
 

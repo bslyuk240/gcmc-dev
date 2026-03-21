@@ -4,7 +4,6 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState, useEffect } from "react";
 import type { HMSSession } from "@/lib/auth/session";
-import { logoutStaffPortalAction } from "@/server/actions/auth/logout-staff-portal";
 
 // ─── nav items ────────────────────────────────────────────────────────────────
 const NAV = [
@@ -225,15 +224,17 @@ export function StaffPortalShell({
               <WorkIcon />
               <span>Work Portal</span>
             </Link>
-            <form action={logoutStaffPortalAction}>
-              <button
-                type="submit"
-                className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium text-red-500 hover:bg-red-50 hover:text-red-700 transition"
-              >
-                <LogoutIcon />
-                <span>Log Out</span>
-              </button>
-            </form>
+            <button
+              type="button"
+              className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium text-red-500 hover:bg-red-50 hover:text-red-700 transition"
+              onClick={async () => {
+                await fetch("/staff/logout", { method: "POST" });
+                window.location.href = "/staff/login";
+              }}
+            >
+              <LogoutIcon />
+              <span>Log Out</span>
+            </button>
           </div>
         </div>
       </aside>
@@ -305,11 +306,16 @@ export function StaffPortalShell({
               <Link href={`/app/${session.department}`} className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-slate-500 hover:bg-slate-100 transition">
                 <WorkIcon /><span>Work Portal</span>
               </Link>
-              <form action={logoutStaffPortalAction}>
-                <button type="submit" className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium text-red-500 hover:bg-red-50 transition">
-                  <LogoutIcon /><span>Log Out</span>
-                </button>
-              </form>
+              <button
+                type="button"
+                className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium text-red-500 hover:bg-red-50 transition"
+                onClick={async () => {
+                  await fetch("/staff/logout", { method: "POST" });
+                  window.location.href = "/staff/login";
+                }}
+              >
+                <LogoutIcon /><span>Log Out</span>
+              </button>
             </div>
           </aside>
         </div>
@@ -345,7 +351,7 @@ export function StaffPortalShell({
                   </span>
                 )}
               </Link>
-              <form action={logoutStaffPortalAction}>
+              <form action="/staff/logout" method="post">
                 <button
                   type="submit"
                   title="Log out"

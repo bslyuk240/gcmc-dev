@@ -35,6 +35,8 @@ export type RoleKey =
   | "store_keeper"
   | "it_staff"
   | "non_clinical_staff"
+  | "nhis_officer"
+  | "nhis_manager"
   | "viewer";
 
 /**

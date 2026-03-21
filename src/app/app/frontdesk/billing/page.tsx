@@ -7,6 +7,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Modal, ModalFooter } from "@/components/ui/modal";
 import { Toast, type ToastData } from "@/components/ui/toast";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { useAccountsStore } from "@/lib/hooks/use-accounts-store";
 import {
   addFrontDeskCharge,
@@ -248,16 +249,17 @@ export default function FrontDeskBillingPage() {
         <form onSubmit={handleAddCharge} className="space-y-4">
           <div>
             <label className="mb-1 block text-sm font-semibold text-slate-700">Patient *</label>
-            <select required value={newPatientId} onChange={(e) => setNewPatientId(e.target.value)} className={inputCls}>
-              <option value="">
-                {loadingPatients ? "Loading patients…" : "Select patient…"}
-              </option>
-              {patients.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.patientName} ({p.patientId || "No ID"})
-                </option>
-              ))}
-            </select>
+            <SearchableSelect
+              value={newPatientId}
+              onChange={setNewPatientId}
+              placeholder={loadingPatients ? "Loading patients…" : "Search by name or patient ID…"}
+              disabled={loadingPatients}
+              options={patients.map((p) => ({
+                value: p.id,
+                label: p.patientName,
+                sublabel: p.patientId || "No ID",
+              }))}
+            />
             {!loadingPatients && patients.length === 0 && (
               <p className="mt-1 text-xs text-amber-600">No patients registered yet.</p>
             )}

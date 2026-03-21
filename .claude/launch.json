@@ -4,8 +4,8 @@
     {
       "name": "Next.js Dev",
       "runtimeExecutable": "cmd",
-      "runtimeArgs": ["/c", "cd C:\\Users\\user\\hospital-mgt-sys && npx next dev -p 3001"],
-      "port": 3001
+      "runtimeArgs": ["/c", "npm run dev -- -p 4000"],
+      "port": 4000
     },
     {
       "name": "Next.js Production",

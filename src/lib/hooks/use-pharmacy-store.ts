@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useReducer, useState } from "react";
+import { createClient } from "@/lib/supabase/client";
 import {
   subscribePharmacyStore,
   syncPharmacyFromSupabase,
@@ -10,6 +11,7 @@ import {
   getPharmacyBills,
   getPharmacyMetrics,
 } from "@/lib/data/pharmacy-store";
+import { ACCOUNTS_PAYMENT_UPDATED_EVENT } from "@/lib/constants/accounts-events";
 
 export function usePharmacyStore() {
   const [, rerender] = useReducer((x: number) => x + 1, 0);
@@ -20,7 +22,25 @@ export function usePharmacyStore() {
     syncPharmacyFromSupabase();
     const unsub = subscribePharmacyStore(rerender);
     const poll = setInterval(() => syncPharmacyFromSupabase(true), 30_000);
-    return () => { window.clearTimeout(hydrationId); unsub(); clearInterval(poll); };
+    const refresh = () => { void syncPharmacyFromSupabase(true); };
+    window.addEventListener(ACCOUNTS_PAYMENT_UPDATED_EVENT, refresh);
+
+    // Supabase Realtime — instant sync when prescriptions or bills arrive from any session
+    const supabase = createClient();
+    const channel = supabase
+      ?.channel("pharmacy-realtime")
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "prescriptions" }, () => syncPharmacyFromSupabase(true))
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "pharmacy_bills" }, () => syncPharmacyFromSupabase(true))
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "nurse_med_requests" }, () => syncPharmacyFromSupabase(true))
+      .subscribe();
+
+    return () => {
+      window.clearTimeout(hydrationId);
+      window.removeEventListener(ACCOUNTS_PAYMENT_UPDATED_EVENT, refresh);
+      unsub();
+      clearInterval(poll);
+      if (channel) supabase?.removeChannel(channel);
+    };
   }, []);
 
   if (!hydrated) {

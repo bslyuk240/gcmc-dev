@@ -4,6 +4,13 @@ export type ChatChannelType = "staff_hr" | "department_it";
 export type ChatTargetDepartment = "hr" | "it";
 export type ChatSenderPortal = "staff" | "management";
 
+export type ChatAttachment = {
+  url: string;
+  path: string;
+  name?: string;
+  mimeType?: string;
+};
+
 export type ChatThread = {
   id: string;
   channelType: ChatChannelType;
@@ -28,10 +35,16 @@ export type ChatMessage = {
   senderRole?: string;
   senderPortal: ChatSenderPortal;
   body: string;
+  attachmentUrl?: string;
+  attachmentPath?: string;
+  attachmentName?: string;
+  attachmentMimeType?: string;
   createdAt: string;
   time: string;
   isOwn: boolean;
 };
+
+export type ChatSendAttachment = File | null;
 
 export const CHAT_DEPARTMENT_LABELS: Record<DBDepartmentKey | ChatTargetDepartment, string> = {
   frontdesk:    "Front Desk",
@@ -45,6 +58,7 @@ export const CHAT_DEPARTMENT_LABELS: Record<DBDepartmentKey | ChatTargetDepartme
   hr:           "HR",
   it:           "IT",
   non_clinical: "Non-Clinical",
+  nhis:         "NHIS / HMO",
 };
 
 export function formatRoleLabel(role: string) {

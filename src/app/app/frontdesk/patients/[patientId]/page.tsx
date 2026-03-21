@@ -7,9 +7,11 @@ import {
   fetchPatientById,
   fetchVisitsByPatientId,
   updatePatientRegistration,
+  fetchPatientEnrollment,
   type PatientRegistration,
   type VisitRow,
 } from "@/lib/supabase/db";
+import type { HmoEnrollment } from "@/lib/data/nhis-store";
 import { Modal, ModalFooter } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
 import { Toast, type ToastData } from "@/components/ui/toast";
@@ -41,6 +43,69 @@ function fmtTime(iso?: string | null) {
   const d = new Date(iso);
   if (isNaN(d.getTime())) return "";
   return d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+}
+
+const BLOOD_GROUPS = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-", "Unknown"];
+const GENDERS      = ["Male", "Female", "Other"];
+const MONTHS = [
+  "January","February","March","April","May","June",
+  "July","August","September","October","November","December",
+];
+const currentYear = new Date().getFullYear();
+const YEARS = Array.from({ length: currentYear - 1899 }, (_, i) => currentYear - i);
+
+function daysInMonth(month: string, year: string) {
+  const m = MONTHS.indexOf(month) + 1;
+  const y = parseInt(year) || 2000;
+  return m ? new Date(y, m, 0).getDate() : 31;
+}
+
+function buildDob(day: string, month: string, year: string) {
+  if (!day || !month || !year) return "";
+  const m = String(MONTHS.indexOf(month) + 1).padStart(2, "0");
+  return `${year}-${m}-${day.padStart(2, "0")}`;
+}
+
+function parseDob(iso?: string): { day: string; month: string; year: string } {
+  if (!iso) return { day: "", month: "", year: "" };
+  const d = new Date(iso);
+  if (isNaN(d.getTime()) || d.getFullYear() < 1900) return { day: "", month: "", year: "" };
+  return {
+    day:   String(d.getUTCDate()),
+    month: MONTHS[d.getUTCMonth()],
+    year:  String(d.getUTCFullYear()),
+  };
+}
+
+function DobPickerInline({
+  day, month, year, onDay, onMonth, onYear,
+}: { day: string; month: string; year: string; onDay:(v:string)=>void; onMonth:(v:string)=>void; onYear:(v:string)=>void }) {
+  const sel = "flex-1 rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm text-slate-900 outline-none appearance-none transition focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/20";
+  const Chevron = () => <svg className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M6 9l6 6 6-6"/></svg>;
+  const maxDays = daysInMonth(month, year);
+  const days = Array.from({ length: maxDays }, (_, i) => String(i + 1));
+  return (
+    <div className="flex gap-2">
+      <div className="relative flex-[1]">
+        <select value={day} onChange={(e) => onDay(e.target.value)} className={sel} style={{backgroundImage:"none"}}>
+          <option value="">DD</option>
+          {days.map((d) => <option key={d} value={d}>{d.padStart(2,"0")}</option>)}
+        </select><Chevron />
+      </div>
+      <div className="relative flex-[2]">
+        <select value={month} onChange={(e) => { onMonth(e.target.value); if (day && parseInt(day) > daysInMonth(e.target.value, year)) onDay(""); }} className={sel} style={{backgroundImage:"none"}}>
+          <option value="">Month</option>
+          {MONTHS.map((m) => <option key={m} value={m}>{m}</option>)}
+        </select><Chevron />
+      </div>
+      <div className="relative flex-[1.3]">
+        <select value={year} onChange={(e) => { onYear(e.target.value); if (day && month && parseInt(day) > daysInMonth(month, e.target.value)) onDay(""); }} className={sel} style={{backgroundImage:"none"}}>
+          <option value="">Year</option>
+          {YEARS.map((y) => <option key={y} value={String(y)}>{y}</option>)}
+        </select><Chevron />
+      </div>
+    </div>
+  );
 }
 
 const VISIT_STATUS_STYLES: Record<string, string> = {
@@ -77,23 +142,30 @@ export default function PatientDetailPage() {
   const { frontDeskCharges, labCharges, nursingCharges } = useAccountsStore();
   const { prescriptions } = usePharmacyStore();
 
-  const [patient,  setPatient]  = useState<PatientRegistration | null>(null);
-  const [visits,   setVisits]   = useState<VisitRow[]>([]);
-  const [loading,  setLoading]  = useState(true);
+  const [patient,     setPatient]     = useState<PatientRegistration | null>(null);
+  const [visits,      setVisits]      = useState<VisitRow[]>([]);
+  const [enrollment,  setEnrollment]  = useState<HmoEnrollment | null>(null);
+  const [loading,     setLoading]     = useState(true);
   const [tab,      setTab]      = useState<Tab>("Overview");
   const [toast,    setToast]    = useState<ToastData | null>(null);
 
   // Edit modal state
-  const [editOpen,    setEditOpen]    = useState(false);
-  const [editName,    setEditName]    = useState("");
-  const [editPhone,   setEditPhone]   = useState("");
-  const [editEmail,   setEditEmail]   = useState("");
-  const [editAddress, setEditAddress] = useState("");
-  const [editNokName, setEditNokName] = useState("");
-  const [editNokPhone,setEditNokPhone]= useState("");
-  const [editOccup,   setEditOccup]   = useState("");
-  const [editNation,  setEditNation]  = useState("");
-  const [saving,      setSaving]      = useState(false);
+  const [editOpen,       setEditOpen]       = useState(false);
+  const [editName,       setEditName]       = useState("");
+  const [editPhone,      setEditPhone]      = useState("");
+  const [editEmail,      setEditEmail]      = useState("");
+  const [editAddress,    setEditAddress]    = useState("");
+  const [editGender,     setEditGender]     = useState("");
+  const [editBloodGroup, setEditBloodGroup] = useState("");
+  const [editDobDay,     setEditDobDay]     = useState("");
+  const [editDobMonth,   setEditDobMonth]   = useState("");
+  const [editDobYear,    setEditDobYear]    = useState("");
+  const [editNokName,    setEditNokName]    = useState("");
+  const [editNokRelation,setEditNokRelation]= useState("");
+  const [editNokPhone,   setEditNokPhone]   = useState("");
+  const [editOccup,      setEditOccup]      = useState("");
+  const [editNation,     setEditNation]     = useState("");
+  const [saving,         setSaving]         = useState(false);
 
   // Load patient first, then visits using the display patientId
   useEffect(() => {
@@ -104,48 +176,78 @@ export default function PatientDetailPage() {
         const vis = await fetchVisitsByPatientId(pat.patientId);
         setVisits(vis);
       }
+      // load HMO enrollment if patient has one
+      const enroll = await fetchPatientEnrollment(id).catch(() => null);
+      setEnrollment(enroll);
       setLoading(false);
     }).catch(() => setLoading(false));
   }, [id]);
 
   function openEdit() {
     if (!patient) return;
+    const dob = parseDob(patient.dateOfBirth);
+    // Split existing NOK name from "(Relationship)" if embedded
+    const nokRaw = patient.nextOfKinName ?? "";
+    const nokMatch = nokRaw.match(/^(.*?)\s*\(([^)]+)\)\s*$/);
     setEditName(patient.patientName);
     setEditPhone(patient.contact ?? "");
     setEditEmail(patient.email ?? "");
     setEditAddress(patient.address ?? "");
-    setEditNokName(patient.nextOfKinName ?? "");
+    setEditGender(patient.gender ?? "");
+    setEditBloodGroup(patient.bloodGroup ?? "");
+    setEditDobDay(dob.day);
+    setEditDobMonth(dob.month);
+    setEditDobYear(dob.year);
+    setEditNokName(nokMatch ? nokMatch[1].trim() : nokRaw);
+    setEditNokRelation(nokMatch ? nokMatch[2].trim() : "");
     setEditNokPhone(patient.nextOfKinPhone ?? "");
     setEditOccup(patient.occupation ?? "");
-    setEditNation(patient.nationality ?? "Ghanaian");
+    setEditNation(patient.nationality ?? "Nigerian");
     setEditOpen(true);
   }
 
   async function handleSaveEdit() {
     if (!patient) return;
     setSaving(true);
-    const ok = await updatePatientRegistration(patient.id, {
-      patientName:    editName,
-      contact:        editPhone,
-      email:          editEmail,
-      address:        editAddress,
-      nextOfKinName:  editNokName,
-      nextOfKinPhone: editNokPhone,
-      occupation:     editOccup,
-      nationality:    editNation,
-    });
-    setSaving(false);
-    if (ok) {
+    const nokFull = editNokName.trim()
+      ? `${editNokName.trim()}${editNokRelation.trim() ? ` (${editNokRelation.trim()})` : ""}`
+      : "";
+    try {
+      const ok = await updatePatientRegistration(patient.id, {
+        patientName:    editName.trim(),
+        contact:        editPhone.trim(),
+        email:          editEmail.trim(),
+        address:        editAddress.trim(),
+        gender:         editGender || undefined,
+        bloodGroup:     editBloodGroup || undefined,
+        dateOfBirth:    buildDob(editDobDay, editDobMonth, editDobYear) || undefined,
+        nextOfKinName:  nokFull || undefined,
+        nextOfKinPhone: editNokPhone.trim() || undefined,
+        occupation:     editOccup.trim() || undefined,
+        nationality:    editNation.trim() || undefined,
+      });
+      if (!ok) throw new Error("Save failed — please try again.");
       setPatient((prev) => prev ? {
         ...prev,
-        patientName: editName, contact: editPhone, email: editEmail,
-        address: editAddress, nextOfKinName: editNokName, nextOfKinPhone: editNokPhone,
-        occupation: editOccup, nationality: editNation,
+        patientName:    editName.trim(),
+        contact:        editPhone.trim(),
+        email:          editEmail.trim(),
+        address:        editAddress.trim(),
+        gender:         editGender || prev.gender,
+        bloodGroup:     editBloodGroup || prev.bloodGroup,
+        dateOfBirth:    buildDob(editDobDay, editDobMonth, editDobYear) || prev.dateOfBirth,
+        nextOfKinName:  nokFull || prev.nextOfKinName,
+        nextOfKinPhone: editNokPhone.trim() || prev.nextOfKinPhone,
+        occupation:     editOccup.trim() || prev.occupation,
+        nationality:    editNation.trim() || prev.nationality,
       } : null);
-      setToast({ message: "Patient record updated.", type: "success" });
+      setToast({ message: "Patient record updated successfully.", type: "success" });
       setEditOpen(false);
-    } else {
-      setToast({ message: "Update failed. Please try again.", type: "error" });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "An unexpected error occurred";
+      setToast({ message: msg, type: "error" });
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -204,7 +306,41 @@ export default function PatientDetailPage() {
               <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold uppercase tracking-wider ${PATIENT_STATUS_STYLES[patient.status] ?? "bg-slate-100 text-slate-600"}`}>
                 {patient.status}
               </span>
+              {enrollment?.isActive && (
+                <span className="rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-bold text-blue-700">
+                  HMO · {enrollment.schemeName}
+                </span>
+              )}
             </div>
+
+            {enrollment?.isActive && (
+              <div className="flex flex-wrap gap-4 rounded-xl border border-blue-100 bg-blue-50 px-4 py-2.5 text-xs">
+                <div>
+                  <span className="font-bold uppercase tracking-wider text-blue-400">Scheme</span>
+                  <p className="mt-0.5 font-semibold text-blue-900">{enrollment.schemeName}</p>
+                </div>
+                <div>
+                  <span className="font-bold uppercase tracking-wider text-blue-400">Member ID</span>
+                  <p className="mt-0.5 font-semibold text-blue-900">{enrollment.memberId}</p>
+                </div>
+                {enrollment.planName && (
+                  <div>
+                    <span className="font-bold uppercase tracking-wider text-blue-400">Plan</span>
+                    <p className="mt-0.5 font-semibold text-blue-900">{enrollment.planName}</p>
+                  </div>
+                )}
+                <div>
+                  <span className="font-bold uppercase tracking-wider text-blue-400">Copay</span>
+                  <p className="mt-0.5 font-semibold text-blue-900">{enrollment.copayPercentage}%</p>
+                </div>
+                {enrollment.validUntil && (
+                  <div>
+                    <span className="font-bold uppercase tracking-wider text-blue-400">Expires</span>
+                    <p className="mt-0.5 font-semibold text-blue-900">{new Date(enrollment.validUntil).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}</p>
+                  </div>
+                )}
+              </div>
+            )}
 
             <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-xs sm:grid-cols-4">
               {[
@@ -569,43 +705,100 @@ export default function PatientDetailPage() {
       </div>
 
       {/* Edit Demographics Modal */}
-      <Modal open={editOpen} onClose={() => setEditOpen(false)} title="Edit Demographics" className="max-w-xl">
-        <div className="space-y-3 text-sm">
-          <div className="grid grid-cols-2 gap-3">
-            <div className="col-span-2">
-              <label className="block text-xs font-semibold text-slate-600 mb-1.5">Full Name</label>
-              <input value={editName} onChange={(e) => setEditName(e.target.value)} className={inputCls} />
-            </div>
-            <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-1.5">Phone</label>
-              <input value={editPhone} onChange={(e) => setEditPhone(e.target.value)} className={inputCls} />
-            </div>
-            <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-1.5">Email</label>
-              <input value={editEmail} onChange={(e) => setEditEmail(e.target.value)} className={inputCls} />
-            </div>
-            <div className="col-span-2">
-              <label className="block text-xs font-semibold text-slate-600 mb-1.5">Address</label>
-              <input value={editAddress} onChange={(e) => setEditAddress(e.target.value)} className={inputCls} />
-            </div>
-            <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-1.5">Nationality</label>
-              <input value={editNation} onChange={(e) => setEditNation(e.target.value)} className={inputCls} />
-            </div>
-            <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-1.5">Occupation</label>
-              <input value={editOccup} onChange={(e) => setEditOccup(e.target.value)} className={inputCls} />
-            </div>
-            <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-1.5">Next of Kin</label>
-              <input value={editNokName} onChange={(e) => setEditNokName(e.target.value)} placeholder="Name" className={inputCls} />
-            </div>
-            <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-1.5">NOK Phone</label>
-              <input value={editNokPhone} onChange={(e) => setEditNokPhone(e.target.value)} placeholder="Phone" className={inputCls} />
+      <Modal open={editOpen} onClose={() => setEditOpen(false)} title="Edit Patient Demographics" className="max-w-2xl">
+        <div className="space-y-5 text-sm max-h-[70vh] overflow-y-auto pr-1">
+
+          {/* Personal */}
+          <div>
+            <p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-slate-400">Personal Information</p>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="col-span-2">
+                <label className="block text-xs font-semibold text-slate-600 mb-1.5">Full Name</label>
+                <input value={editName} onChange={(e) => setEditName(e.target.value)} className={inputCls} placeholder="First Last" />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1.5">Gender</label>
+                <select value={editGender} onChange={(e) => setEditGender(e.target.value)} className={inputCls}>
+                  <option value="">— Select —</option>
+                  {GENDERS.map((g) => <option key={g}>{g}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1.5">Blood Group</label>
+                <select value={editBloodGroup} onChange={(e) => setEditBloodGroup(e.target.value)} className={inputCls}>
+                  <option value="">— Select —</option>
+                  {BLOOD_GROUPS.map((b) => <option key={b}>{b}</option>)}
+                </select>
+              </div>
+              <div className="col-span-2">
+                <label className="block text-xs font-semibold text-slate-600 mb-1.5">Date of Birth</label>
+                <DobPickerInline
+                  day={editDobDay} month={editDobMonth} year={editDobYear}
+                  onDay={setEditDobDay} onMonth={setEditDobMonth} onYear={setEditDobYear}
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1.5">Nationality</label>
+                <input value={editNation} onChange={(e) => setEditNation(e.target.value)} placeholder="e.g. Nigerian" className={inputCls} />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1.5">Occupation</label>
+                <input value={editOccup} onChange={(e) => setEditOccup(e.target.value)} placeholder="e.g. Teacher" className={inputCls} />
+              </div>
             </div>
           </div>
+
+          {/* Contact */}
+          <div>
+            <p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-slate-400">Contact Details</p>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1.5">Phone Number</label>
+                <input type="tel" value={editPhone} onChange={(e) => setEditPhone(e.target.value)} placeholder="e.g. 0801 234 5678" className={inputCls} />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1.5">Email Address</label>
+                <input type="email" value={editEmail} onChange={(e) => setEditEmail(e.target.value)} placeholder="patient@email.com" className={inputCls} />
+              </div>
+              <div className="col-span-2">
+                <label className="block text-xs font-semibold text-slate-600 mb-1.5">Home Address</label>
+                <textarea rows={2} value={editAddress} onChange={(e) => setEditAddress(e.target.value)} placeholder="House no, street, area / city" className={`${inputCls} resize-none`} />
+              </div>
+            </div>
+          </div>
+
+          {/* Next of Kin */}
+          <div>
+            <p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-slate-400">Next of Kin</p>
+            <div className="grid grid-cols-3 gap-3">
+              <div className="col-span-2">
+                <label className="block text-xs font-semibold text-slate-600 mb-1.5">Full Name</label>
+                <input value={editNokName} onChange={(e) => setEditNokName(e.target.value)} placeholder="e.g. Mrs. Ngozi Okafor" className={inputCls} />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1.5">Relationship</label>
+                <input value={editNokRelation} onChange={(e) => setEditNokRelation(e.target.value)} placeholder="e.g. Spouse" className={inputCls} />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1.5">Phone Number</label>
+                <input type="tel" value={editNokPhone} onChange={(e) => setEditNokPhone(e.target.value)} placeholder="e.g. 0801 111 2222" className={inputCls} />
+              </div>
+            </div>
+          </div>
+
+          {/* HMO info (read-only, link to NHIS for edits) */}
+          {enrollment && (
+            <div className="rounded-xl border border-blue-100 bg-blue-50 px-4 py-3">
+              <p className="mb-1 text-[10px] font-bold uppercase tracking-widest text-blue-400">HMO Enrollment</p>
+              <p className="text-xs text-blue-800">
+                <span className="font-semibold">{enrollment.schemeName}</span> · Member ID: {enrollment.memberId}
+                {enrollment.planName && ` · Plan: ${enrollment.planName}`} · Copay: {enrollment.copayPercentage}%
+              </p>
+              <p className="mt-1 text-[10px] text-blue-500">To edit HMO enrollment, use the NHIS department portal.</p>
+            </div>
+          )}
         </div>
+
         <ModalFooter>
           <Button variant="ghost" size="md" onClick={() => setEditOpen(false)}>Cancel</Button>
           <Button size="md" disabled={saving} onClick={handleSaveEdit}>

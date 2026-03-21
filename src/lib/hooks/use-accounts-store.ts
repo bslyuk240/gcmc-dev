@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useReducer, useState } from "react";
+import { createClient } from "@/lib/supabase/client";
 import {
   subscribeAccountsStore,
   syncAccountsFromSupabase,
@@ -22,8 +23,26 @@ export function useAccountsStore() {
     const hydrationId = window.setTimeout(() => setHydrated(true), 0);
     syncAccountsFromSupabase();
     const unsub = subscribeAccountsStore(rerender);
+    // Poll every 30s as a fallback
     const poll = setInterval(() => syncAccountsFromSupabase(true), 30_000);
-    return () => { window.clearTimeout(hydrationId); unsub(); clearInterval(poll); };
+
+    // Supabase Realtime — instant sync when new charges arrive from any session
+    const supabase = createClient();
+    const channel = supabase
+      ?.channel("accounts-billing-realtime")
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "front_desk_charges" }, () => syncAccountsFromSupabase(true))
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "consultation_fees" }, () => syncAccountsFromSupabase(true))
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "lab_charges" }, () => syncAccountsFromSupabase(true))
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "nursing_charges" }, () => syncAccountsFromSupabase(true))
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "pharmacy_bills" }, () => syncAccountsFromSupabase(true))
+      .subscribe();
+
+    return () => {
+      window.clearTimeout(hydrationId);
+      unsub();
+      clearInterval(poll);
+      if (channel) supabase?.removeChannel(channel);
+    };
   }, []);
 
   if (!hydrated) {

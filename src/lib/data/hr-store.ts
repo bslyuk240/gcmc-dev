@@ -22,7 +22,7 @@
 export type StaffDepartment =
   | "Doctors" | "Nurses" | "Pharmacy" | "Lab"
   | "Front Desk" | "Accounts" | "Store" | "IT"
-  | "HR" | "Administration" | "Non-Clinical Staff";
+  | "HR" | "Administration" | "Non-Clinical Staff" | "NHIS";
 
 /** Map HR display labels to DB department_key values */
 export const STAFF_DEPT_TO_DB: Record<StaffDepartment, string> = {
@@ -37,6 +37,7 @@ export const STAFF_DEPT_TO_DB: Record<StaffDepartment, string> = {
   "HR":                 "hr",
   "Administration":     "admin",
   "Non-Clinical Staff": "non_clinical",
+  "NHIS":               "nhis",
 };
 
 /** Map DB department_key values to HR display labels */
@@ -52,6 +53,7 @@ export const DB_TO_STAFF_DEPT: Record<string, StaffDepartment> = {
   hr:           "HR",
   admin:        "Administration",
   non_clinical: "Non-Clinical Staff",
+  nhis:         "NHIS",
 };
 
 // ─── RBAC Role Keys ───────────────────────────────────────────────────────────
@@ -64,7 +66,8 @@ export type RoleKeyValue =
   | "admin" | "hod" | "hr_manager" | "hr_staff"
   | "doctor" | "nurse" | "pharmacist" | "pharmacy_assistant"
   | "lab_scientist" | "accountant" | "front_desk_staff"
-  | "store_keeper" | "it_staff" | "non_clinical_staff" | "viewer";
+  | "store_keeper" | "it_staff" | "non_clinical_staff"
+  | "nhis_officer" | "nhis_manager" | "viewer";
 
 /** Human-readable labels for each RBAC role key */
 export const ROLE_KEY_LABELS: Record<RoleKeyValue, string> = {
@@ -82,6 +85,8 @@ export const ROLE_KEY_LABELS: Record<RoleKeyValue, string> = {
   store_keeper:         "Store Keeper",
   it_staff:             "IT Staff",
   non_clinical_staff:   "Non-Clinical Staff",
+  nhis_officer:         "NHIS Officer",
+  nhis_manager:         "NHIS Manager",
   viewer:               "Viewer (Read-only)",
 };
 
@@ -98,6 +103,7 @@ export const DEPT_ROLE_KEYS: Record<StaffDepartment, RoleKeyValue[]> = {
   "HR":             ["hr_manager", "hr_staff", "hod", "viewer"],
   "Administration":     ["admin",             "hod", "viewer"],
   "Non-Clinical Staff": ["non_clinical_staff", "hod", "viewer"],
+  "NHIS":               ["nhis_manager", "nhis_officer", "hod", "viewer"],
 };
 
 /** Units available per department (absent = no units) */
@@ -333,12 +339,26 @@ function loadState(): HRStoreState {
       const generatedPayslips = parsed.generatedPayslips ?? [];
       return {
         ...EMPTY_HR_STATE,
+        // Restore all arrays from localStorage so the page renders
+        // immediately on hard reload (Supabase sync will overwrite with
+        // fresh data once the async fetch completes).
+        staff:            parsed.staff            ?? [],
+        leaveRequests:    parsed.leaveRequests    ?? [],
+        onboarding:       parsed.onboarding       ?? [],
+        offboarding:      parsed.offboarding      ?? [],
+        departmentHeads:  parsed.departmentHeads  ?? [],
         generatedPayslips,
         payrollPreps: buildPayrollPrepsFromPayslips(generatedPayslips),
       };
     }
   } catch { /* ignore */ }
   return EMPTY_HR_STATE;
+}
+
+function mergeById<T extends { id: string }>(remote: T[], local: T[]) {
+  if (!remote.length) return local;
+  const remoteIds = new Set(remote.map((item) => item.id));
+  return [...remote, ...local.filter((item) => !remoteIds.has(item.id))];
 }
 
 function saveState(s: HRStoreState) {
@@ -376,8 +396,8 @@ export async function syncHRFromSupabase() {
     const current = getState();
     _state = {
       ...current,
-      staff,
-      leaveRequests,
+      staff: mergeById(staff, current.staff),
+      leaveRequests: mergeById(leaveRequests, current.leaveRequests),
       payrollPreps: buildPayrollPrepsFromPayslips(current.generatedPayslips),
     };
     saveState(_state);

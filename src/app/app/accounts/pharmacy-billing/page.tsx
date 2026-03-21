@@ -10,11 +10,19 @@ import { usePharmacyStore } from "@/lib/hooks/use-pharmacy-store";
 import { updateBillStatus, type PharmacyBill } from "@/lib/data/pharmacy-store";
 import { printReceipt } from "@/lib/utils/print-receipt";
 
+type PayMethod = "Cash" | "POS / Card" | "Mobile Money" | "Insurance";
+
 const STATUS_STYLES: Record<string, string> = {
   Pending: "bg-amber-50 text-amber-700",
   Paid: "bg-emerald-50 text-emerald-700",
   Waived: "bg-slate-100 text-slate-500",
 };
+
+function drugLabel(drugs: unknown): string {
+  if (typeof drugs === "string") return drugs;
+  if (Array.isArray(drugs)) return drugs.map((d: { name?: string; qty?: string }) => `${d.name ?? ""} × ${d.qty ?? ""}`).join(", ");
+  return "—";
+}
 
 const SOURCE_LABELS: Record<string, string> = {
   prescription: "Doctor Rx",
@@ -36,25 +44,41 @@ export default function AccountsPharmacyBillingPage() {
   const [payTarget, setPayTarget] = useState<PharmacyBill | null>(null);
   const [waiverTarget, setWaiverTarget] = useState<PharmacyBill | null>(null);
   const [toast, setToast] = useState<ToastData | null>(null);
+  const [method, setMethod] = useState<PayMethod>("Cash");
+  const [refNote, setRefNote] = useState("");
+  // Optimistic local state — instant UI update regardless of store subscription timing
+  const [optimisticPaidIds, setOptimisticPaidIds] = useState<Set<string>>(new Set());
+  const [optimisticWaivedIds, setOptimisticWaivedIds] = useState<Set<string>>(new Set());
 
-  const filtered = filter === "All" ? bills : bills.filter((b) => b.billStatus === filter);
+  function effectiveStatus(b: { id: string; billStatus: string }) {
+    if (optimisticPaidIds.has(b.id)) return "Paid";
+    if (optimisticWaivedIds.has(b.id)) return "Waived";
+    return b.billStatus;
+  }
 
-  const totalPending = bills.filter((b) => b.billStatus === "Pending").reduce((s, b) => s + b.totalCost, 0);
-  const totalPaid = bills.filter((b) => b.billStatus === "Paid").reduce((s, b) => s + b.totalCost, 0);
-  const pendingCount = bills.filter((b) => b.billStatus === "Pending").length;
+  const filtered = filter === "All" ? bills : bills.filter((b) => effectiveStatus(b) === filter);
+
+  const totalPending = bills.filter((b) => effectiveStatus(b) === "Pending").reduce((s, b) => s + b.totalCost, 0);
+  const totalPaid = bills.filter((b) => effectiveStatus(b) === "Paid").reduce((s, b) => s + b.totalCost, 0);
+  const pendingCount = bills.filter((b) => effectiveStatus(b) === "Pending").length;
 
   function handleConfirmPayment() {
     if (!payTarget) return;
-    updateBillStatus(payTarget.id, "Paid");
-    setToast({ message: `₦${payTarget.totalCost.toLocaleString()} received for ${payTarget.patientName}.`, type: "success" });
+    // Instant optimistic update
+    setOptimisticPaidIds((prev) => new Set([...prev, payTarget.id]));
+    setToast({ message: `₦${payTarget.totalCost.toLocaleString()} received from ${payTarget.patientName} via ${method}.`, type: "success" });
     setPayTarget(null);
+    setRefNote("");
+    updateBillStatus(payTarget.id, "Paid", { paidAt: new Date().toISOString(), paymentMethod: method });
   }
 
   function handleWaive() {
     if (!waiverTarget) return;
-    updateBillStatus(waiverTarget.id, "Waived");
+    // Instant optimistic update
+    setOptimisticWaivedIds((prev) => new Set([...prev, waiverTarget.id]));
     setToast({ message: `Pharmacy bill for ${waiverTarget.patientName} waived.`, type: "info" });
     setWaiverTarget(null);
+    updateBillStatus(waiverTarget.id, "Waived");
   }
 
   return (
@@ -113,7 +137,7 @@ export default function AccountsPharmacyBillingPage() {
                     <p className="font-medium text-slate-900">{b.patientName}</p>
                     <p className="text-xs text-slate-400">{b.patientId}</p>
                   </td>
-                  <td className="max-w-[200px] px-5 py-3 text-slate-700 truncate">{b.drugs}</td>
+                  <td className="max-w-[200px] px-5 py-3 text-slate-700 truncate">{drugLabel(b.drugs)}</td>
                   <td className="px-5 py-3">
                     <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${SOURCE_STYLES[b.source]}`}>
                       {SOURCE_LABELS[b.source]}
@@ -122,18 +146,18 @@ export default function AccountsPharmacyBillingPage() {
                   <td className="px-5 py-3 font-bold text-slate-900">₦{b.totalCost.toLocaleString()}</td>
                   <td className="px-5 py-3 text-xs text-slate-400">{b.dispensedAt}</td>
                   <td className="px-5 py-3">
-                    <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${STATUS_STYLES[b.billStatus]}`}>
-                      {b.billStatus}
+                    <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${STATUS_STYLES[effectiveStatus(b)]}`}>
+                      {effectiveStatus(b)}
                     </span>
                   </td>
                   <td className="px-5 py-3">
-                    {b.billStatus === "Pending" && (
+                    {effectiveStatus(b) === "Pending" && (
                       <div className="flex gap-2">
-                        <Button size="sm" onClick={() => setPayTarget(b)}>Receive Payment</Button>
+                        <Button size="sm" onClick={() => { setPayTarget(b); setMethod("Cash"); setRefNote(""); }}>Receive Payment</Button>
                         <Button size="sm" variant="ghost" onClick={() => setWaiverTarget(b)}>Waive</Button>
                       </div>
                     )}
-                    {b.billStatus === "Paid" && (
+                    {effectiveStatus(b) === "Paid" && (
                       <div className="flex items-center gap-2">
                         <span className="text-xs font-semibold text-emerald-700">✓ Paid</span>
                         <Button size="sm" variant="ghost" className="text-slate-500" onClick={() => printReceipt({
@@ -143,7 +167,7 @@ export default function AccountsPharmacyBillingPage() {
                           lines: [
                             { label: "Patient",      value: b.patientName },
                             { label: "Patient ID",   value: b.patientId },
-                            { label: "Items",        value: b.drugs },
+                            { label: "Items",        value: drugLabel(b.drugs) },
                             { label: "Source",       value: SOURCE_LABELS[b.source] },
                             { label: "Dispensed At", value: b.dispensedAt },
                             { label: "Status",       value: "PAID", bold: true },
@@ -153,7 +177,7 @@ export default function AccountsPharmacyBillingPage() {
                         })}>🖨 Receipt</Button>
                       </div>
                     )}
-                    {b.billStatus === "Waived" && <span className="text-xs text-slate-400">Waived</span>}
+                    {effectiveStatus(b) === "Waived" && <span className="text-xs text-slate-400">Waived</span>}
                   </td>
                 </tr>
               ))}
@@ -174,31 +198,53 @@ export default function AccountsPharmacyBillingPage() {
       </div>
 
       {/* Receive Payment Modal */}
-      <Modal open={!!payTarget} onClose={() => setPayTarget(null)} title="Receive Pharmacy Payment">
+      <Modal open={!!payTarget} onClose={() => { setPayTarget(null); setRefNote(""); }} title="Receive Pharmacy Payment">
         {payTarget && (
-          <div className="space-y-3 text-sm">
-            <div className="rounded-lg bg-slate-50 p-3 space-y-1.5">
-              <div className="flex justify-between">
-                <span className="text-slate-500">Patient</span>
-                <span className="font-semibold">{payTarget.patientName}</span>
+          <div className="space-y-4 text-sm">
+            <div className="rounded-xl bg-slate-50 p-4 space-y-2">
+              <div className="flex justify-between"><span className="text-slate-500">Patient</span><span className="font-semibold">{payTarget.patientName}</span></div>
+              <div className="flex justify-between"><span className="text-slate-500">Items</span><span className="max-w-[200px] text-right text-slate-700">{drugLabel(payTarget.drugs)}</span></div>
+              <div className="flex justify-between"><span className="text-slate-500">Source</span><span>{SOURCE_LABELS[payTarget.source]}</span></div>
+              <div className="flex justify-between border-t border-slate-200 pt-2">
+                <span className="font-semibold text-slate-700">Amount Due</span>
+                <span className="text-lg font-black text-slate-900">₦{payTarget.totalCost.toLocaleString()}</span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500">Items</span>
-                <span className="max-w-[200px] text-right text-slate-700">{payTarget.drugs}</span>
+            </div>
+            <div>
+              <label className="mb-2 block text-sm font-semibold text-slate-700">Payment Method</label>
+              <div className="grid grid-cols-2 gap-2">
+                {(["Cash", "POS / Card", "Mobile Money", "Insurance"] as PayMethod[]).map((value) => (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => setMethod(value)}
+                    className={`rounded-xl border-2 p-2.5 text-xs font-bold transition ${
+                      method === value
+                        ? "border-[var(--accent)] bg-[var(--accent)]/5 text-[var(--accent)]"
+                        : "border-slate-100 text-slate-500 hover:border-slate-200"
+                    }`}
+                  >
+                    {value}
+                  </button>
+                ))}
               </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500">Source</span>
-                <span>{SOURCE_LABELS[payTarget.source]}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="font-semibold text-slate-600">Amount</span>
-                <span className="text-xl font-bold text-slate-900">₦{payTarget.totalCost.toLocaleString()}</span>
-              </div>
+            </div>
+            <div>
+              <label className="mb-1.5 block text-sm font-semibold text-slate-700">
+                Reference / Note <span className="font-normal text-slate-400">(optional)</span>
+              </label>
+              <input
+                type="text"
+                value={refNote}
+                onChange={(e) => setRefNote(e.target.value)}
+                placeholder="Transaction reference or note..."
+                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none focus:border-[var(--accent)] focus:bg-white focus:ring-2 focus:ring-[var(--accent)]/20"
+              />
             </div>
           </div>
         )}
         <ModalFooter>
-          <Button variant="ghost" size="md" onClick={() => setPayTarget(null)}>Cancel</Button>
+          <Button variant="ghost" size="md" onClick={() => { setPayTarget(null); setRefNote(""); }}>Cancel</Button>
           <Button size="md" onClick={handleConfirmPayment}>Confirm Payment Received</Button>
         </ModalFooter>
       </Modal>

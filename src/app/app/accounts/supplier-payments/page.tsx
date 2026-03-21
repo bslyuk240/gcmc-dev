@@ -9,6 +9,12 @@ import { Toast, type ToastData } from "@/components/ui/toast";
 import { useAccountsStore } from "@/lib/hooks/use-accounts-store";
 import { updateSupplierPaymentStatus, type SupplierPayment } from "@/lib/data/accounts-store";
 
+function toStr(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (Array.isArray(value)) return value.map((v: { name?: string; qty?: string; quantity?: string }) => `${v.name ?? ""}${v.qty || v.quantity ? ` × ${v.qty ?? v.quantity}` : ""}`).join(", ");
+  return value != null ? String(value) : "—";
+}
+
 const STATUS_STYLES: Record<string, string> = {
   Pending: "bg-amber-50 text-amber-700",
   Approved: "bg-sky-50 text-sky-700",
@@ -22,20 +28,32 @@ export default function AccountsSupplierPaymentsPage() {
   const [actionTarget, setActionTarget] = useState<{ payment: SupplierPayment; action: "approve" | "pay" | "reject" } | null>(null);
   const [rejectReason, setRejectReason] = useState("");
   const [toast, setToast] = useState<ToastData | null>(null);
+  // Optimistic local state — key: id, value: new status
+  const [optimisticStatuses, setOptimisticStatuses] = useState<Map<string, string>>(new Map());
+
+  function effectiveStatus(p: SupplierPayment) {
+    return optimisticStatuses.get(p.id) ?? p.status;
+  }
 
   function handleAction() {
     if (!actionTarget) return;
     const { payment, action } = actionTarget;
     if (action === "approve") {
-      updateSupplierPaymentStatus(payment.id, "Approved");
+      // Instant optimistic update
+      setOptimisticStatuses((prev) => new Map([...prev, [payment.id, "Approved"]]));
       setToast({ message: `Payment for ${payment.supplier} approved.`, type: "success" });
+      updateSupplierPaymentStatus(payment.id, "Approved");
     } else if (action === "pay") {
       const today = new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
-      updateSupplierPaymentStatus(payment.id, "Paid", { paidAt: today });
+      // Instant optimistic update
+      setOptimisticStatuses((prev) => new Map([...prev, [payment.id, "Paid"]]));
       setToast({ message: `₦${payment.amount.toLocaleString()} paid to ${payment.supplier}.`, type: "success" });
+      updateSupplierPaymentStatus(payment.id, "Paid", { paidAt: today });
     } else {
-      updateSupplierPaymentStatus(payment.id, "Rejected");
+      // Instant optimistic update
+      setOptimisticStatuses((prev) => new Map([...prev, [payment.id, "Rejected"]]));
       setToast({ message: `Payment to ${payment.supplier} rejected.`, type: "info" });
+      updateSupplierPaymentStatus(payment.id, "Rejected");
     }
     setActionTarget(null);
     setRejectReason("");
@@ -81,34 +99,34 @@ export default function AccountsSupplierPaymentsPage() {
             </thead>
             <tbody className="divide-y divide-slate-100">
               {supplierPayments.map((p) => (
-                <tr key={p.id} className={`hover:bg-slate-50 ${p.status === "Pending" ? "bg-amber-50/20" : ""}`}>
+                <tr key={p.id} className={`hover:bg-slate-50 ${effectiveStatus(p) === "Pending" ? "bg-amber-50/20" : ""}`}>
                   <td className="px-5 py-3 font-mono text-xs font-bold text-slate-700">{p.poId}</td>
                   <td className="px-5 py-3 font-semibold text-slate-900">{p.supplier}</td>
-                  <td className="px-5 py-3 text-slate-600">{p.items}</td>
-                  <td className="px-5 py-3 text-xs text-slate-500 max-w-[180px] truncate">{p.description}</td>
+                  <td className="px-5 py-3 text-slate-600">{toStr(p.items)}</td>
+                  <td className="px-5 py-3 text-xs text-slate-500 max-w-[180px] truncate">{toStr(p.description)}</td>
                   <td className="px-5 py-3 font-bold text-slate-900">₦{p.amount.toLocaleString()}</td>
                   <td className="px-5 py-3 text-slate-600">{p.dueDate}</td>
                   <td className="px-5 py-3 text-xs text-slate-500">{p.submittedAt}</td>
                   <td className="px-5 py-3">
-                    <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${STATUS_STYLES[p.status]}`}>{p.status}</span>
+                    <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${STATUS_STYLES[effectiveStatus(p)]}`}>{effectiveStatus(p)}</span>
                   </td>
                   <td className="px-5 py-3">
                     <div className="flex gap-2">
-                      {p.status === "Pending" && (
+                      {effectiveStatus(p) === "Pending" && (
                         <>
                           <Button size="sm" onClick={() => setActionTarget({ payment: p, action: "approve" })}>Approve</Button>
                           <Button size="sm" variant="ghost" onClick={() => { setActionTarget({ payment: p, action: "reject" }); setRejectReason(""); }}>Reject</Button>
                         </>
                       )}
-                      {p.status === "Approved" && (
+                      {effectiveStatus(p) === "Approved" && (
                         <Button size="sm" onClick={() => setActionTarget({ payment: p, action: "pay" })}>
                           Pay Supplier
                         </Button>
                       )}
-                      {p.status === "Paid" && (
+                      {effectiveStatus(p) === "Paid" && (
                         <span className="text-xs font-semibold text-emerald-700">✓ Paid {p.paidAt}</span>
                       )}
-                      {p.status === "Rejected" && (
+                      {effectiveStatus(p) === "Rejected" && (
                         <span className="text-xs text-slate-400">Rejected</span>
                       )}
                     </div>
@@ -142,7 +160,7 @@ export default function AccountsSupplierPaymentsPage() {
             <div className="rounded-lg bg-slate-50 p-3 space-y-1.5">
               <div className="flex justify-between"><span className="text-slate-500">Supplier</span><span className="font-semibold">{actionTarget.payment.supplier}</span></div>
               <div className="flex justify-between"><span className="text-slate-500">PO Reference</span><span>{actionTarget.payment.poId}</span></div>
-              <div className="flex justify-between"><span className="text-slate-500">Description</span><span className="text-right text-xs">{actionTarget.payment.description}</span></div>
+              <div className="flex justify-between"><span className="text-slate-500">Description</span><span className="text-right text-xs">{toStr(actionTarget.payment.description)}</span></div>
               <div className="flex justify-between"><span className="font-semibold text-slate-600">Amount</span><span className="font-bold text-xl text-slate-900">₦{actionTarget.payment.amount.toLocaleString()}</span></div>
             </div>
             {actionTarget.action === "pay" && (

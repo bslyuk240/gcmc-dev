@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -493,17 +494,18 @@ export default function DoctorsConsultationsPage() {
                   <div className="grid grid-cols-2 gap-2">
                     <div className="col-span-2">
                       <label className="mb-1 block text-xs text-slate-500">Medication *</label>
-                      <select value={drug.name} onChange={(event) => autoFillDosage(index, event.target.value)} required className={INPUT_CLASS}>
-                        <option value="">- Select from inventory -</option>
-                        {Object.entries(drugList.reduce<Record<string, typeof drugList>>((acc, entry) => {
-                          (acc[entry.category] = acc[entry.category] || []).push(entry);
-                          return acc;
-                        }, {})).map(([category, items]) => (
-                          <optgroup key={category} label={category}>
-                            {items.map((option) => <option key={option.id} value={option.name}>{option.name} - N{option.unitPrice.toFixed(2)}/{option.unit}</option>)}
-                          </optgroup>
-                        ))}
-                      </select>
+                      <SearchableSelect
+                        value={drug.name}
+                        onChange={(val) => autoFillDosage(index, val)}
+                        placeholder="- Select from inventory -"
+                        showGroups
+                        options={drugList.map((entry) => ({
+                          value: entry.name,
+                          label: entry.name,
+                          sublabel: `N${entry.unitPrice.toFixed(2)}/${entry.unit}`,
+                          group: entry.category,
+                        }))}
+                      />
                     </div>
                     <div>
                       <label className="mb-1 block text-xs text-slate-500">Dosage *</label>
@@ -600,10 +602,18 @@ export default function DoctorsConsultationsPage() {
                   <div className="grid grid-cols-2 gap-2">
                     <div className="col-span-2">
                       <label className="mb-1 block text-xs text-slate-500">Test *</label>
-                      <select value={line.testCode} onChange={(event) => updateLabLine(index, "testCode", event.target.value)} className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-200">
-                        <option value="">- Choose a test -</option>
-                        {testCatalog.map((entry) => <option key={entry.code} value={entry.code}>{entry.name} - N{entry.price}</option>)}
-                      </select>
+                      <SearchableSelect
+                        value={line.testCode}
+                        onChange={(val) => updateLabLine(index, "testCode", val)}
+                        placeholder="- Choose a test -"
+                        showGroups
+                        options={testCatalog.map((entry) => ({
+                          value: entry.code,
+                          label: entry.name,
+                          sublabel: `${entry.code} · N${entry.price}`,
+                          group: entry.category,
+                        }))}
+                      />
                     </div>
                     <div>
                       <label className="mb-1 block text-xs text-slate-500">Priority</label>

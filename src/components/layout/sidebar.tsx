@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useTransition } from "react";
 import { appConfig } from "@/lib/config/app";
 import {
   findNavigationItem,
@@ -11,8 +10,8 @@ import {
 } from "@/lib/constants/navigation";
 import { Icon } from "@/components/ui/icon";
 import { cn } from "@/lib/utils/cn";
-import { logoutStaffAction } from "@/server/actions/auth/logout";
 import { useHMSSession } from "@/modules/rbac/hooks";
+import { useAccountsBillingBadges } from "@/lib/hooks/use-accounts-billing-badges";
 
 /** Labels that are only visible to HODs, HR, and Admin */
 const HOD_ONLY_LABELS = new Set(["Rota Management", "Leave Requests", "Staff Performance"]);
@@ -25,11 +24,11 @@ function SidebarInner({
   pathname: string;
   onNavigate?: () => void;
 }) {
-  const [isPending, startTransition] = useTransition();
   const session = useHMSSession();
   const current = findNavigationItem(pathname);
   const department = getDepartmentFromPath(pathname);
   const rawSections = getSidebarSections(department);
+  const billingBadges = useAccountsBillingBadges(department);
 
   // Hide HOD-only items from staff who are not HOD / HR / Admin
   const isHodAllowed = HOD_ALLOWED_ROLES.has(session?.role ?? "");
@@ -90,6 +89,8 @@ function SidebarInner({
                         : "cursor-default font-medium text-slate-400",
                   );
 
+                  const badgeCount = item.href ? billingBadges[item.href] : undefined;
+
                   const content = (
                     <>
                       <Icon
@@ -108,6 +109,10 @@ function SidebarInner({
                       {!item.href ? (
                         <span className="ml-auto rounded bg-slate-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-500">
                           Planned
+                        </span>
+                      ) : badgeCount ? (
+                        <span className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-amber-500 px-1.5 text-[10px] font-bold text-white">
+                          {badgeCount > 99 ? "99+" : badgeCount}
                         </span>
                       ) : null}
                     </>
@@ -148,14 +153,16 @@ function SidebarInner({
         </div>
         <button
           type="button"
-          disabled={isPending}
-          onClick={() => startTransition(() => logoutStaffAction())}
-          className="mt-2.5 flex w-full items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white py-2 text-xs font-semibold text-slate-700 transition hover:border-red-200 hover:bg-red-50 hover:text-red-700 disabled:opacity-60"
+          className="mt-2.5 flex w-full items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white py-2 text-xs font-semibold text-slate-700 transition hover:border-red-200 hover:bg-red-50 hover:text-red-700"
+          onClick={async () => {
+            await fetch("/logout", { method: "POST" });
+            window.location.href = "/login";
+          }}
         >
           <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
           </svg>
-          {isPending ? "Logging out..." : "Logout"}
+          Logout
         </button>
       </div>
     </>

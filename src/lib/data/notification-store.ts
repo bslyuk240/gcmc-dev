@@ -217,7 +217,7 @@ export function addToastedId(id: string) {
   });
 }
 
-/** Push a new live notification — also fires toast listeners */
+/** Push a new live notification — also fires toast listeners and persists to Supabase */
 export function pushNotification(
   notif: Omit<AppNotification, "id" | "createdAt" | "isRead">,
 ): AppNotification {
@@ -233,6 +233,10 @@ export function pushNotification(
   };
   mutate((s) => { s.notifications = [full, ...s.notifications]; });
   toastListeners.forEach((fn) => fn(full));
+  // Persist to Supabase (fire-and-forget — UI already updated)
+  import("@/lib/supabase/db").then(({ insertNotification }) => {
+    insertNotification(full).catch((e) => console.error("[notification-store] persist failed:", e));
+  });
   return full;
 }
 

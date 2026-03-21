@@ -19,6 +19,7 @@ import type {
   SharedPrescription,
   NurseMedRequest,
   PharmacyRestockRequest,
+  StoreInventorySnapshot,
   PharmacyBill,
   PharmacyDrugItem,
 } from "@/lib/data/pharmacy-store";
@@ -37,6 +38,7 @@ import type {
   ConsultationFee,
   SupplierPayment,
   PayrollBatch,
+  PayrollEntry,
   KioskSale,
   LabCharge,
   NursingCharge,
@@ -48,6 +50,7 @@ import type {
   OnboardingRecord,
   OffboardingRecord,
   PayrollPrep,
+  GeneratedPayslip,
 } from "@/lib/data/hr-store";
 import { normalizeDoctorSpecialty } from "@/lib/utils/doctor-routing";
 import {
@@ -62,12 +65,28 @@ import type {
   StoreItem,
   StorePO,
 } from "@/lib/data/admin-store";
+import { pushNotification } from "@/lib/data/notification-store";
 import type { AppNotification } from "@/lib/data/notification-store";
+import type {
+  HmoScheme,
+  HmoTariff,
+  HmoEnrollment,
+  HmoClaim,
+} from "@/lib/data/nhis-store";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function getSupabase() {
   return createClient();
+}
+
+function describeSupabaseError(
+  error: { message?: string; details?: string; hint?: string; code?: string } | null | undefined,
+  context: string,
+) {
+  if (!error) return context;
+  const parts = [error.message, error.details, error.hint, error.code ? `code ${error.code}` : ""].filter(Boolean);
+  return parts.length ? `${context}: ${parts.join(" | ")}` : context;
 }
 
 function isMissingColumnError(error: { message?: string } | null | undefined, column: string) {
@@ -78,6 +97,23 @@ function withoutSpecialty<T extends { specialty?: unknown }>(payload: T): Omit<T
   const fallbackPayload = { ...payload };
   delete fallbackPayload.specialty;
   return fallbackPayload;
+}
+
+function parseJsonArray<T>(value: unknown): T[] {
+  if (Array.isArray(value)) return value as T[];
+  if (typeof value !== "string") return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? (parsed as T[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function toIsoTimestamp(value: unknown, fallback = new Date().toISOString()) {
+  if (typeof value !== "string" || !value.trim()) return fallback;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? fallback : parsed.toISOString();
 }
 
 // ─── Doctors ─────────────────────────────────────────────────────────────────
@@ -275,21 +311,36 @@ function mapNurseMedRequest(r: Record<string, unknown>): NurseMedRequest {
 }
 
 function mapRestockRequest(r: Record<string, unknown>): PharmacyRestockRequest {
+  const snapshot = r.store_snapshot as Record<string, unknown> | null | undefined;
   return {
     id: r.id as string,
     drug: r.drug as string,
-    inventoryItemId: (r.inventory_item_id as string) ?? "",
+    inventoryItemId: (r.inventory_item_id as string) ?? undefined,
     storeInventoryId: (r.store_inventory_id as string) ?? undefined,
+    storeSnapshot: snapshot
+      ? {
+          id: (snapshot.id as string) ?? "",
+          name: (snapshot.name as string) ?? "",
+          category: (snapshot.category as string) ?? "",
+          form: snapshot.form as string | undefined,
+          unit: (snapshot.unit as string) ?? "Units",
+          qty: Number(snapshot.qty ?? 0),
+          reorder: Number(snapshot.reorder ?? 0),
+          unitCost: Number(snapshot.unitCost ?? 0),
+          supplier: (snapshot.supplier as string) ?? "",
+          status: (snapshot.status as string) ?? "",
+        }
+      : undefined,
     currentStock: (r.current_stock as number) ?? 0,
     reorderLevel: (r.reorder_level as number) ?? 0,
-    qtyRequested: (r.qty_requested as number) ?? 0,
+    qtyRequested: r.qty_requested === null || r.qty_requested === undefined ? null : Number(r.qty_requested),
     unit: (r.unit as string) ?? "",
     urgency: r.urgency as PharmacyRestockRequest["urgency"],
     requestedBy: (r.requested_by as string) ?? "",
     requestedAt: (r.requested_at as string) ?? "",
     status: r.status as PharmacyRestockRequest["status"],
     notes: r.notes as string | undefined,
-    approvedQty: r.approved_qty as number | undefined,
+    approvedQty: r.approved_qty === null || r.approved_qty === undefined ? null : Number(r.approved_qty),
     fulfilledAt: r.fulfilled_at as string | undefined,
   };
 }
@@ -304,7 +355,9 @@ function mapPharmacyBill(r: Record<string, unknown>): PharmacyBill {
     totalCost: (r.total_cost as number) ?? 0,
     dispensedAt: (r.dispensed_at as string) ?? "",
     billStatus: r.bill_status as PharmacyBill["billStatus"],
-    source: (r.source as PharmacyBill["source"]) ?? "Prescription",
+    source: (r.source as PharmacyBill["source"]) ?? "prescription",
+    paidAt: (r.paid_at as string) ?? undefined,
+    paymentMethod: (r.payment_method as PharmacyBill["paymentMethod"]) ?? undefined,
   };
 }
 
@@ -692,6 +745,8 @@ function mapConsultationFee(r: Record<string, unknown>): ConsultationFee {
     fee: (r.fee as number) ?? 0,
     consultedAt: (r.consulted_at as string) ?? "",
     status: r.status as ConsultationFee["status"],
+    paidAt: r.paid_at as string | undefined,
+    paymentMethod: r.payment_method as ConsultationFee["paymentMethod"] | undefined,
   };
 }
 
@@ -712,6 +767,8 @@ function mapSupplierPayment(r: Record<string, unknown>): SupplierPayment {
 }
 
 function mapPayrollBatch(r: Record<string, unknown>): PayrollBatch {
+  const entries = parseJsonArray<PayrollEntry>(r.entries);
+  const payslipIds = parseJsonArray<string>(r.payslip_ids);
   return {
     id: r.id as string,
     period: r.period as string,
@@ -722,7 +779,36 @@ function mapPayrollBatch(r: Record<string, unknown>): PayrollBatch {
     status: r.status as PayrollBatch["status"],
     approvedAt: r.approved_at as string | undefined,
     paidAt: r.paid_at as string | undefined,
-    entries: [],
+    payslipIds,
+    entries,
+  };
+}
+
+function mapGeneratedPayslip(r: Record<string, unknown>): GeneratedPayslip {
+  return {
+    id: r.id as string,
+    period: r.period as string,
+    monthKey: (r.month_key as string) ?? "",
+    department: r.department as GeneratedPayslip["department"],
+    staffId: (r.staff_id as string) ?? "",
+    staffName: (r.staff_name as string) ?? "",
+    role: (r.role as string) ?? "",
+    unit: (r.unit as string) ?? undefined,
+    bankName: (r.bank_name as string) ?? undefined,
+    bankAccount: (r.bank_account as string) ?? undefined,
+    taxId: (r.tax_id as string) ?? undefined,
+    baseSalary: Number(r.base_salary ?? 0),
+    earnings: parseJsonArray<GeneratedPayslip["earnings"][number]>(r.earnings),
+    deductions: parseJsonArray<GeneratedPayslip["deductions"][number]>(r.deductions),
+    grossPay: Number(r.gross_pay ?? 0),
+    totalDeductions: Number(r.total_deductions ?? 0),
+    netPay: Number(r.net_pay ?? 0),
+    paymentStatus: (r.payment_status as GeneratedPayslip["paymentStatus"]) ?? "Processing",
+    workflowStatus: (r.workflow_status as GeneratedPayslip["workflowStatus"]) ?? "Generated",
+    createdAt: (r.created_at as string) ?? "",
+    createdBy: (r.created_by as string) ?? "",
+    batchId: (r.batch_id as string) ?? undefined,
+    paidAt: (r.paid_at as string) ?? undefined,
   };
 }
 
@@ -794,6 +880,12 @@ export async function fetchPayrollBatches(): Promise<PayrollBatch[]> {
   return (data ?? []).map(mapPayrollBatch);
 }
 
+export async function fetchGeneratedPayslips(): Promise<GeneratedPayslip[]> {
+  const sb = getSupabase(); if (!sb) return [];
+  const { data } = await sb.from("generated_payslips").select("*").order("created_at", { ascending: false });
+  return (data ?? []).map(mapGeneratedPayslip);
+}
+
 export async function fetchKioskSales(): Promise<KioskSale[]> {
   const sb = getSupabase(); if (!sb) return [];
   const { data } = await sb.from("kiosk_sales").select("*").order("date", { ascending: false });
@@ -821,9 +913,18 @@ export async function insertFrontDeskCharge(c: FrontDeskCharge): Promise<void> {
   });
 }
 
-export async function upsertFrontDeskChargeStatus(id: string, status: string): Promise<void> {
+export async function upsertFrontDeskChargeStatus(
+  id: string,
+  status: string,
+  extra?: { paidAt?: string; paymentMethod?: string },
+): Promise<void> {
   const sb = getSupabase(); if (!sb) return;
-  const { error } = await sb.from("front_desk_charges").update({ status }).eq("id", id);
+  const patch: Record<string, unknown> = { status };
+  if (status === "Paid") {
+    patch.paid_at = extra?.paidAt ?? new Date().toISOString();
+    if (extra?.paymentMethod) patch.payment_method = extra.paymentMethod;
+  }
+  const { error } = await sb.from("front_desk_charges").update(patch).eq("id", id);
   if (error) console.error("[db] upsertFrontDeskChargeStatus:", error.message);
 }
 
@@ -834,13 +935,24 @@ export async function insertConsultationFee(f: ConsultationFee): Promise<void> {
     doctor_name: f.doctorName, consultation_type: f.consultationType,
     fee: f.fee, consulted_at: f.consultedAt || new Date().toISOString(),
     status: f.status ?? "Pending",
+    paid_at: f.paidAt ? new Date(f.paidAt).toISOString() : null,
+    payment_method: f.paymentMethod ?? null,
   });
   if (error) throw new Error(error.message);
 }
 
-export async function upsertConsultationFeeStatus(id: string, status: ConsultationFee["status"]): Promise<void> {
+export async function upsertConsultationFeeStatus(
+  id: string,
+  status: ConsultationFee["status"],
+  extra?: { paidAt?: string; paymentMethod?: ConsultationFee["paymentMethod"] },
+): Promise<void> {
   const sb = getSupabase(); if (!sb) return;
-  const { error } = await sb.from("consultation_fees").update({ status }).eq("id", id);
+  const patch: Record<string, unknown> = { status };
+  if (status === "Paid") {
+    patch.paid_at = extra?.paidAt ?? new Date().toISOString();
+    if (extra?.paymentMethod) patch.payment_method = extra.paymentMethod;
+  }
+  const { error } = await sb.from("consultation_fees").update(patch).eq("id", id);
   if (error) throw new Error(error.message);
 }
 
@@ -856,10 +968,19 @@ export async function insertLabCharge(c: LabCharge): Promise<void> {
   if (error) throw new Error(error.message);
 }
 
-export async function upsertLabChargeStatus(id: string, status: LabCharge["status"]): Promise<void> {
+export async function upsertLabChargeStatus(
+  id: string,
+  status: LabCharge["status"],
+  extra?: { paidAt?: string; paymentMethod?: string },
+): Promise<void> {
   const sb = getSupabase(); if (!sb) return;
-  const { error } = await sb.from("lab_charges").update({ status }).eq("id", id);
-  if (error) throw new Error(error.message);
+  const patch: Record<string, unknown> = { status };
+  if (status === "Paid") {
+    patch.paid_at = extra?.paidAt ?? new Date().toISOString();
+    if (extra?.paymentMethod) patch.payment_method = extra.paymentMethod;
+  }
+  const { error } = await sb.from("lab_charges").update(patch).eq("id", id);
+  if (error) console.error("[db] upsertLabChargeStatus:", error.message);
 }
 
 export async function insertNursingCharge(c: NursingCharge): Promise<void> {
@@ -874,10 +995,19 @@ export async function insertNursingCharge(c: NursingCharge): Promise<void> {
   if (error) throw new Error(error.message);
 }
 
-export async function upsertNursingChargeStatus(id: string, status: NursingCharge["status"]): Promise<void> {
+export async function upsertNursingChargeStatus(
+  id: string,
+  status: NursingCharge["status"],
+  extra?: { paidAt?: string; paymentMethod?: string },
+): Promise<void> {
   const sb = getSupabase(); if (!sb) return;
-  const { error } = await sb.from("nursing_charges").update({ status }).eq("id", id);
-  if (error) throw new Error(error.message);
+  const patch: Record<string, unknown> = { status };
+  if (status === "Paid") {
+    patch.paid_at = extra?.paidAt ?? new Date().toISOString();
+    if (extra?.paymentMethod) patch.payment_method = extra.paymentMethod;
+  }
+  const { error } = await sb.from("nursing_charges").update(patch).eq("id", id);
+  if (error) console.error("[db] upsertNursingChargeStatus:", error.message);
 }
 
 export async function insertPharmacyBill(bill: PharmacyBill): Promise<void> {
@@ -886,15 +1016,29 @@ export async function insertPharmacyBill(bill: PharmacyBill): Promise<void> {
     id: bill.id, prescription_id: bill.prescriptionId,
     patient_name: bill.patientName, patient_id: bill.patientId,
     drugs: bill.drugs, total_cost: bill.totalCost,
-    dispensed_at: new Date().toISOString(),
+    dispensed_at: bill.dispensedAt ? new Date(bill.dispensedAt).toISOString() : new Date().toISOString(),
     bill_status: bill.billStatus ?? "Pending", source: bill.source ?? "prescription",
+    paid_at: bill.paidAt ?? null,
+    payment_method: bill.paymentMethod ?? null,
   });
-  if (error) console.error("[db] insertPharmacyBill:", error.message);
+  if (error) throw new Error(error.message);
 }
 
-export async function upsertPharmacyBillStatus(id: string, billStatus: PharmacyBill["billStatus"]): Promise<void> {
+type PharmacyPaymentMethod = "Cash" | "POS / Card" | "Mobile Money" | "Insurance";
+
+export async function upsertPharmacyBillStatus(
+  id: string,
+  billStatus: PharmacyBill["billStatus"],
+  extra?: Partial<PharmacyBill>,
+): Promise<void> {
   const sb = getSupabase(); if (!sb) return;
-  const { error } = await sb.from("pharmacy_bills").update({ bill_status: billStatus }).eq("id", id);
+  const paidAt = billStatus === "Paid" ? extra?.paidAt ?? new Date().toISOString() : extra?.paidAt ?? null;
+  const paymentMethod = (extra?.paymentMethod as PharmacyPaymentMethod | undefined) ?? null;
+  const { error } = await sb.from("pharmacy_bills").update({
+    bill_status: billStatus,
+    paid_at: paidAt,
+    payment_method: paymentMethod,
+  }).eq("id", id);
   if (error) console.error("[db] upsertPharmacyBillStatus:", error.message);
 }
 
@@ -927,10 +1071,11 @@ export async function upsertNurseMedRequestStatus(
 export async function insertRestockRequest(r: PharmacyRestockRequest): Promise<void> {
   const sb = getSupabase(); if (!sb) return;
   const { error } = await sb.from("pharmacy_restock_requests").upsert({
-    id: r.id, drug: r.drug, inventory_item_id: r.inventoryItemId,
+    id: r.id, drug: r.drug, inventory_item_id: r.inventoryItemId ?? null,
     store_inventory_id: r.storeInventoryId ?? null,
+    store_snapshot: r.storeSnapshot ?? null,
     current_stock: r.currentStock, reorder_level: r.reorderLevel,
-    qty_requested: r.qtyRequested, unit: r.unit, urgency: r.urgency,
+    qty_requested: r.qtyRequested ?? null, unit: r.unit, urgency: r.urgency,
     requested_by: r.requestedBy,
     requested_at: r.requestedAt ? new Date(r.requestedAt).toISOString() : new Date().toISOString(),
     status: r.status ?? "Pending", notes: r.notes ?? null,
@@ -983,8 +1128,40 @@ export async function insertPayrollBatch(b: PayrollBatch): Promise<void> {
     status: b.status ?? "Draft",
     approved_at: b.approvedAt ? new Date(b.approvedAt).toISOString() : null,
     paid_at: b.paidAt ? new Date(b.paidAt).toISOString() : null,
+    payslip_ids: b.payslipIds ?? [],
+    entries: b.entries ?? [],
   });
   if (error) console.error("[db] insertPayrollBatch:", error.message);
+}
+
+export async function upsertGeneratedPayslip(payslip: GeneratedPayslip): Promise<void> {
+  const sb = getSupabase(); if (!sb) return;
+  const { error } = await sb.from("generated_payslips").upsert({
+    id: payslip.id,
+    period: payslip.period,
+    month_key: payslip.monthKey,
+    department: payslip.department,
+    staff_id: payslip.staffId,
+    staff_name: payslip.staffName,
+    role: payslip.role,
+    unit: payslip.unit ?? null,
+    bank_name: payslip.bankName ?? null,
+    bank_account: payslip.bankAccount ?? null,
+    tax_id: payslip.taxId ?? null,
+    base_salary: payslip.baseSalary,
+    earnings: payslip.earnings ?? [],
+    deductions: payslip.deductions ?? [],
+    gross_pay: payslip.grossPay,
+    total_deductions: payslip.totalDeductions,
+    net_pay: payslip.netPay,
+    payment_status: payslip.paymentStatus,
+    workflow_status: payslip.workflowStatus,
+    created_at: toIsoTimestamp(payslip.createdAt),
+    created_by: payslip.createdBy,
+    batch_id: payslip.batchId ?? null,
+    paid_at: payslip.paidAt ? toIsoTimestamp(payslip.paidAt) : null,
+  });
+  if (error) console.error("[db] upsertGeneratedPayslip:", error.message);
 }
 
 export async function upsertPayrollBatchStatus(
@@ -1013,13 +1190,13 @@ export async function insertKioskSale(s: KioskSale): Promise<void> {
     reported_at: s.reportedAt ? new Date(s.reportedAt).toISOString() : new Date().toISOString(),
     status: s.status ?? "Pending", notes: s.notes ?? null,
   });
-  if (error) console.error("[db] insertKioskSale:", error.message);
+  if (error) throw new Error(error.message);
 }
 
 export async function upsertKioskSaleStatus(id: string, status: KioskSale["status"]): Promise<void> {
   const sb = getSupabase(); if (!sb) return;
   const { error } = await sb.from("kiosk_sales").update({ status }).eq("id", id);
-  if (error) console.error("[db] upsertKioskSaleStatus:", error.message);
+  if (error) throw new Error(error.message);
 }
 
 // ─── Staff by Department ──────────────────────────────────────────────────────
@@ -1592,6 +1769,7 @@ export type PharmacyInventoryItem = {
   product: string;
   category: string;
   form: string;
+  storeInventoryId?: string;
   stock: number;
   reorderLevel: number;
   unitPrice: number;
@@ -1606,6 +1784,7 @@ function mapPharmacyInventoryItem(r: Record<string, unknown>): PharmacyInventory
     product: r.product as string,
     category: (r.category as string) ?? "",
     form: (r.form as string) ?? "Tablet",
+    storeInventoryId: (r.store_inventory_id as string) ?? undefined,
     stock: (r.stock as number) ?? 0,
     reorderLevel: (r.reorder_level as number) ?? 0,
     unitPrice: (r.unit_price as number) ?? 0,
@@ -1627,53 +1806,323 @@ export async function upsertPharmacyInventoryItem(item: PharmacyInventoryItem): 
   if (!sb) return;
   await sb.from("pharmacy_inventory").upsert({
     id: item.id, product: item.product, category: item.category, form: item.form,
+    store_inventory_id: item.storeInventoryId ?? null,
     stock: item.stock, reorder_level: item.reorderLevel, unit_price: item.unitPrice,
     expiry: item.expiry, supplier: item.supplier, status: item.status,
   });
 }
 
-// ─── Invoices ─────────────────────────────────────────────────────────────────
+export type PharmacyStockMovement = {
+  id: string;
+  inventoryId: string;
+  movementType: "in" | "out" | "transfer" | "adjustment" | "dispense" | "return";
+  quantity: number;
+  referenceId?: string | null;
+  sourceDestination?: string | null;
+  refNo?: string | null;
+  createdAt: string;
+  createdBy?: string | null;
+};
+
+function mapPharmacyStockMovement(r: Record<string, unknown>): PharmacyStockMovement {
+  return {
+    id: r.id as string,
+    inventoryId: (r.inventory_id as string) ?? "",
+    movementType: r.movement_type as PharmacyStockMovement["movementType"],
+    quantity: Number(r.quantity ?? 0),
+    referenceId: (r.reference_id as string) ?? null,
+    sourceDestination: (r.source_destination as string) ?? null,
+    refNo: (r.ref_no as string) ?? null,
+    createdAt: (r.created_at as string) ?? "",
+    createdBy: (r.created_by as string) ?? null,
+  };
+}
+
+export async function fetchPharmacyStockMovements(): Promise<PharmacyStockMovement[]> {
+  const sb = getSupabase();
+  if (!sb) return [];
+  const { data, error } = await sb.from("stock_movements").select("*").order("created_at", { ascending: false }).limit(250);
+  if (error) {
+    if (!error.message.toLowerCase().includes("stock_movements") || !error.message.toLowerCase().includes("schema cache")) {
+      console.error("[db] fetchPharmacyStockMovements:", error.message);
+    }
+    return [];
+  }
+  return (data ?? []).map((row) => mapPharmacyStockMovement(row as Record<string, unknown>));
+}
+
+export async function insertPharmacyStockMovement(movement: {
+  inventoryId: string;
+  movementType: PharmacyStockMovement["movementType"];
+  quantity: number;
+  referenceId?: string | null;
+  sourceDestination?: string | null;
+  refNo?: string | null;
+  createdBy?: string | null;
+  createdAt?: string;
+}): Promise<void> {
+  const sb = getSupabase();
+  if (!sb) return;
+  const { error } = await sb.from("stock_movements").insert({
+    inventory_id: movement.inventoryId,
+    movement_type: movement.movementType,
+    quantity: Math.max(0, Math.abs(movement.quantity)),
+    reference_id: movement.referenceId ?? null,
+    source_destination: movement.sourceDestination ?? null,
+    ref_no: movement.refNo ?? null,
+    created_at: movement.createdAt ?? new Date().toISOString(),
+    created_by: movement.createdBy ?? null,
+  });
+  if (error && (!error.message.toLowerCase().includes("stock_movements") || !error.message.toLowerCase().includes("schema cache"))) {
+    console.error("[db] insertPharmacyStockMovement:", error.message);
+  }
+}
+
+// ─── Invoices & Payments ─────────────────────────────────────────────────────
+
+export type InvoiceStatus = "draft" | "issued" | "part_paid" | "paid" | "overdue" | "cancelled";
 
 export type InvoiceRecord = {
   id: string;
+  invoiceNumber: string;
+  patientId?: string | null;
+  patientRecordId?: string;
+  patientDisplayId?: string;
+  patientContact?: string;
   patient: string;
-  amount: number;
+  amountDue: number;
+  amountPaid: number;
   dueDate: string;
-  status: "paid" | "pending" | "overdue" | "draft";
+  status: InvoiceStatus;
   items: string;
+  notes?: string;
 };
 
+export type PaymentRecord = {
+  id: string;
+  invoiceId: string;
+  amount: number;
+  paymentMethod: "cash" | "card" | "transfer" | "mobile" | "other";
+  paidAt: string;
+  notes?: string;
+};
+
+type InvoiceNotesPayload = {
+  patient?: string;
+  items?: string;
+  patientRecordId?: string;
+  patientDisplayId?: string;
+  patientContact?: string;
+};
+
+function normalizeInvoiceStatus(status: unknown): InvoiceStatus {
+  const value = String(status ?? "").toLowerCase();
+  if (value === "draft") return "draft";
+  if (value === "issued" || value === "pending") return "issued";
+  if (value === "part_paid" || value === "part paid" || value === "partial") return "part_paid";
+  if (value === "paid") return "paid";
+  if (value === "overdue") return "overdue";
+  if (value === "cancelled" || value === "canceled") return "cancelled";
+  return "draft";
+}
+
+function parseInvoiceNotes(notes?: string | null): InvoiceNotesPayload {
+  if (!notes) return {};
+  try {
+    const parsed = JSON.parse(notes) as InvoiceNotesPayload;
+    return typeof parsed === "object" && parsed !== null ? parsed : {};
+  } catch {
+    return { items: notes };
+  }
+}
+
+function buildInvoiceNotes(patient: string, items: string): string | null {
+  if (!patient && !items) return null;
+  return JSON.stringify({ patient, items });
+}
+
 function mapInvoice(r: Record<string, unknown>): InvoiceRecord {
+  const noteData = parseInvoiceNotes((r.notes as string) ?? null);
   return {
-    id: r.id as string,
-    patient: r.patient as string,
-    amount: (r.amount as number) ?? 0,
+    id: (r.id as string) ?? crypto.randomUUID(),
+    invoiceNumber: (r.invoice_number as string) ?? (r.id as string) ?? "",
+    patientId: (r.patient_id as string) ?? null,
+    patientRecordId: noteData.patientRecordId,
+    patientDisplayId: noteData.patientDisplayId,
+    patientContact: noteData.patientContact,
+    patient: noteData.patient ?? (r.patient as string) ?? (r.patient_id as string) ?? "Unknown patient",
+    amountDue: (r.amount_due as number) ?? (r.amount as number) ?? 0,
+    amountPaid: (r.amount_paid as number) ?? 0,
     dueDate: (r.due_date as string) ?? "",
-    status: (r.status as InvoiceRecord["status"]) ?? "draft",
-    items: (r.items as string) ?? "",
+    status: normalizeInvoiceStatus(r.status),
+    items: noteData.items ?? (r.items as string) ?? "",
+    notes: (r.notes as string) ?? undefined,
+  };
+}
+
+function mapPayment(r: Record<string, unknown>): PaymentRecord {
+  return {
+    id: (r.id as string) ?? crypto.randomUUID(),
+    invoiceId: (r.invoice_id as string) ?? "",
+    amount: (r.amount as number) ?? 0,
+    paymentMethod: ((r.payment_method as string) ?? "other").toLowerCase() as PaymentRecord["paymentMethod"],
+    paidAt: (r.paid_at as string) ?? (r.created_at as string) ?? "",
+    notes: (r.notes as string) ?? undefined,
   };
 }
 
 export async function fetchInvoices(): Promise<InvoiceRecord[]> {
   const sb = getSupabase();
   if (!sb) return [];
-  const { data } = await sb.from("invoices").select("*").order("created_at", { ascending: false });
+  const { data, error } = await sb
+    .from("invoices")
+    .select("*")
+    .order("created_at", { ascending: false });
+  if (error) throw new Error(error.message);
   return (data ?? []).map(mapInvoice);
 }
 
-export async function insertInvoice(inv: InvoiceRecord): Promise<void> {
+export async function insertInvoice(
+  inv: Omit<InvoiceRecord, "id"> & { id?: string; notes?: string },
+): Promise<InvoiceRecord> {
   const sb = getSupabase();
-  if (!sb) return;
-  await sb.from("invoices").upsert({
-    id: inv.id, patient: inv.patient, amount: inv.amount,
-    due_date: inv.dueDate, status: inv.status, items: inv.items,
+  if (!sb) return { ...inv, id: inv.id ?? crypto.randomUUID() } as InvoiceRecord;
+
+  const id = inv.id ?? crypto.randomUUID();
+  const { data: authData } = await sb.auth.getUser();
+  const userId = authData?.user?.id ?? null;
+  const payload = {
+    id,
+    invoice_number: inv.invoiceNumber || id,
+    patient_id: inv.patientId ?? null,
+    amount_due: inv.amountDue,
+    amount_paid: inv.amountPaid ?? 0,
+    status: inv.status,
+    due_date: inv.dueDate || null,
+    notes: inv.notes ?? buildInvoiceNotes(inv.patient, inv.items),
+    created_by: userId,
+    updated_by: userId,
+  };
+
+  const { data, error } = await sb.from("invoices").insert(payload).select("*").single();
+  if (error) throw new Error(describeSupabaseError(error, "Failed to create invoice"));
+  const created = mapInvoice(data as Record<string, unknown>);
+  pushNotification({
+    category: "accounts",
+    severity: "info",
+    title: "New invoice created",
+    body: `${created.patient} - Invoice ${created.invoiceNumber} (${created.amountDue.toLocaleString()}) is ready for payment.`,
+    href: "/app/accounts/receive-payment",
+    targetDepartments: ["accounts"],
   });
+  return created;
 }
 
-export async function updateInvoiceStatus(id: string, status: InvoiceRecord["status"]): Promise<void> {
+export async function updateInvoiceStatus(
+  id: string,
+  status: InvoiceStatus,
+  extra?: Partial<Pick<InvoiceRecord, "amountPaid" | "dueDate" | "notes" | "patientId" | "patient" | "items" | "invoiceNumber">>,
+): Promise<void> {
   const sb = getSupabase();
   if (!sb) return;
-  await sb.from("invoices").update({ status }).eq("id", id);
+
+  const patch: Record<string, unknown> = { status };
+  if (extra?.amountPaid !== undefined) patch.amount_paid = extra.amountPaid;
+  if (extra?.dueDate !== undefined) patch.due_date = extra.dueDate || null;
+  if (extra?.patientId !== undefined) patch.patient_id = extra.patientId ?? null;
+  if (extra?.invoiceNumber !== undefined) patch.invoice_number = extra.invoiceNumber;
+  if (extra?.notes !== undefined) patch.notes = extra.notes;
+  if (extra?.patient !== undefined || extra?.items !== undefined) {
+    patch.notes = buildInvoiceNotes(extra?.patient ?? "", extra?.items ?? "");
+  }
+  const { data: authData } = await sb.auth.getUser();
+  const userId = authData?.user?.id ?? null;
+  patch.updated_by = userId;
+
+  const { error } = await sb.from("invoices").update(patch).eq("id", id);
+  if (error) throw new Error(describeSupabaseError(error, "Failed to update invoice"));
+}
+
+export async function fetchPayments(): Promise<PaymentRecord[]> {
+  const sb = getSupabase();
+  if (!sb) return [];
+  const { data, error } = await sb
+    .from("payments")
+    .select("*")
+    .order("paid_at", { ascending: false });
+  if (error) throw new Error(error.message);
+  return (data ?? []).map(mapPayment);
+}
+
+export async function insertPayment(
+  payment: Omit<PaymentRecord, "id" | "paidAt"> & { id?: string; paidAt?: string },
+): Promise<PaymentRecord> {
+  const sb = getSupabase();
+  const record: PaymentRecord = {
+    id: payment.id ?? crypto.randomUUID(),
+    invoiceId: payment.invoiceId,
+    amount: payment.amount,
+    paymentMethod: payment.paymentMethod,
+    paidAt: payment.paidAt ?? new Date().toISOString(),
+    notes: payment.notes,
+  };
+
+  if (!sb) return record;
+
+  const { error } = await sb.from("payments").upsert({
+    id: record.id,
+    invoice_id: record.invoiceId,
+    amount: record.amount,
+    payment_method: record.paymentMethod,
+    paid_at: record.paidAt,
+    notes: record.notes ?? null,
+  });
+  if (error) throw new Error(error.message);
+  return record;
+}
+
+export async function recordInvoicePayment(
+  invoice: InvoiceRecord,
+  amount: number,
+  paymentMethod: PaymentRecord["paymentMethod"],
+  notes?: string,
+): Promise<{ invoice: InvoiceRecord; payment: PaymentRecord }> {
+  if (amount <= 0) {
+    throw new Error("Invoice balance is already settled.");
+  }
+
+  const nextAmountPaid = Math.min(invoice.amountDue, Number((invoice.amountPaid + amount).toFixed(2)));
+  const nextStatus: InvoiceStatus = nextAmountPaid >= invoice.amountDue
+    ? "paid"
+    : nextAmountPaid > 0
+      ? "part_paid"
+      : invoice.status;
+
+  const payment = await insertPayment({
+    invoiceId: invoice.id,
+    amount,
+    paymentMethod,
+    notes,
+  });
+
+  await updateInvoiceStatus(invoice.id, nextStatus, {
+    amountPaid: nextAmountPaid,
+    patient: invoice.patient,
+    items: invoice.items,
+    patientId: invoice.patientId ?? null,
+    invoiceNumber: invoice.invoiceNumber,
+    notes: invoice.notes,
+    dueDate: invoice.dueDate,
+  });
+
+  return {
+    invoice: {
+      ...invoice,
+      amountPaid: nextAmountPaid,
+      status: nextStatus,
+    },
+    payment,
+  };
 }
 
 // ─── Staff Shifts ─────────────────────────────────────────────────────────────
@@ -1733,6 +2182,8 @@ export type PatientRegistration = {
   bloodGroup?: string;
   nationality?: string;
   occupation?: string;
+  hasHmo?: boolean;
+  primaryHmoSchemeId?: string;
 };
 
 function mapPatientRegistration(r: Record<string, unknown>): PatientRegistration {
@@ -1754,6 +2205,8 @@ function mapPatientRegistration(r: Record<string, unknown>): PatientRegistration
     bloodGroup: (r.blood_group as string) ?? undefined,
     nationality: (r.nationality as string) ?? "Ghanaian",
     occupation: (r.occupation as string) ?? undefined,
+    hasHmo: (r.has_hmo as boolean) ?? false,
+    primaryHmoSchemeId: (r.primary_hmo_scheme_id as string) ?? undefined,
   };
 }
 
@@ -1765,8 +2218,21 @@ export async function fetchPatientRegistrations(): Promise<PatientRegistration[]
   return (data ?? []).map(mapPatientRegistration);
 }
 
+export async function fetchHmoPatientRegistrations(): Promise<PatientRegistration[]> {
+  const sb = getSupabase();
+  if (!sb) return [];
+  const { data, error } = await sb
+    .from("patient_registrations")
+    .select("*")
+    .eq("has_hmo", true)
+    .order("created_at", { ascending: false })
+    .limit(100);
+  if (error) throw new Error(error.message);
+  return (data ?? []).map(mapPatientRegistration);
+}
+
 export async function insertPatientRegistration(
-  reg: Omit<PatientRegistration, "id"> & { id?: string }
+  reg: Omit<PatientRegistration, "id"> & { id?: string; hasHmo?: boolean; primaryHmoSchemeId?: string }
 ): Promise<{ id: string } | null> {
   const sb = getSupabase();
   if (!sb) return null;
@@ -1789,8 +2255,10 @@ export async function insertPatientRegistration(
     blood_group: reg.bloodGroup ?? null,
     nationality: reg.nationality ?? "Ghanaian",
     occupation: reg.occupation ?? null,
+    has_hmo: reg.hasHmo ?? false,
+    primary_hmo_scheme_id: reg.primaryHmoSchemeId ?? null,
   }).select("id").single();
-  if (error) { console.error("insertPatientRegistration:", error.message); return null; }
+  if (error) throw new Error(error.message);
   return data as { id: string };
 }
 
@@ -2484,4 +2952,418 @@ export async function adjustPharmacyInventoryStock(id: string, delta: number): P
   else status = "ok";
   const { error } = await sb.from("pharmacy_inventory").update({ stock: newStock, status }).eq("id", id);
   if (error) console.error("[db] adjustPharmacyInventoryStock:", error.message);
+}
+
+export async function adjustPharmacyInventoryStockByStoreInventoryId(storeInventoryId: string, delta: number): Promise<void> {
+  const sb = getSupabase(); if (!sb) return;
+  const { data, error } = await sb
+    .from("pharmacy_inventory")
+    .select("id, stock, reorder_level")
+    .eq("store_inventory_id", storeInventoryId)
+    .maybeSingle();
+  if (error || !data) return;
+  const newStock = Math.max(0, Number(data.stock) + delta);
+  const reorderLevel = Number(data.reorder_level);
+  let status: string;
+  if (newStock === 0) status = "out";
+  else if (newStock <= reorderLevel * 0.3) status = "critical";
+  else if (newStock <= reorderLevel) status = "low";
+  else status = "ok";
+  const update = await sb.from("pharmacy_inventory").update({ stock: newStock, status }).eq("id", data.id);
+  if (update.error) console.error("[db] adjustPharmacyInventoryStockByStoreInventoryId:", update.error.message);
+}
+
+export async function upsertPharmacyInventoryFromStoreSnapshot(snapshot: StoreInventorySnapshot, qty: number): Promise<void> {
+  const sb = getSupabase(); if (!sb) return;
+  const { data, error } = await sb
+    .from("pharmacy_inventory")
+    .select("id, stock, reorder_level, product, category, form, unit_price, supplier")
+    .eq("store_inventory_id", snapshot.id)
+    .maybeSingle();
+  if (error) {
+    console.error("[db] upsertPharmacyInventoryFromStoreSnapshot:", error.message);
+    return;
+  }
+
+  const stock = Math.max(0, qty);
+  const reorderLevel = Number(snapshot.reorder) || 0;
+  const status = stock === 0 ? "out" : stock <= reorderLevel * 0.3 ? "critical" : stock <= reorderLevel ? "low" : "ok";
+
+  if (data) {
+    const newStock = Math.max(0, Number(data.stock) + qty);
+    const nextStatus = newStock === 0 ? "out" : newStock <= reorderLevel * 0.3 ? "critical" : newStock <= reorderLevel ? "low" : "ok";
+    const update = await sb.from("pharmacy_inventory").update({
+      product: snapshot.name,
+      category: snapshot.category,
+      form: snapshot.form ?? "Tablet",
+      store_inventory_id: snapshot.id,
+      stock: newStock,
+      reorder_level: reorderLevel,
+      unit_price: snapshot.unitCost,
+      supplier: snapshot.supplier,
+      status: nextStatus,
+    }).eq("id", data.id);
+    if (update.error) console.error("[db] upsertPharmacyInventoryFromStoreSnapshot update:", update.error.message);
+    await insertPharmacyStockMovement({
+      inventoryId: data.id,
+      movementType: "in",
+      quantity: qty,
+      sourceDestination: snapshot.supplier || "Store transfer",
+      refNo: `STORE-${snapshot.id}`,
+    });
+    return;
+  }
+
+  const insert = await sb.from("pharmacy_inventory").upsert({
+    id: `PHM-${snapshot.id}`,
+    store_inventory_id: snapshot.id,
+    product: snapshot.name,
+    category: snapshot.category,
+    form: snapshot.form ?? "Tablet",
+    stock,
+    reorder_level: reorderLevel,
+    unit_price: snapshot.unitCost,
+    expiry: "",
+    supplier: snapshot.supplier,
+    status,
+  });
+  if (insert.error) console.error("[db] upsertPharmacyInventoryFromStoreSnapshot insert:", insert.error.message);
+  await insertPharmacyStockMovement({
+    inventoryId: `PHM-${snapshot.id}`,
+    movementType: "in",
+    quantity: qty,
+    sourceDestination: snapshot.supplier || "Store transfer",
+    refNo: `STORE-${snapshot.id}`,
+  });
+}
+
+// ─── HMO / NHIS ──────────────────────────────────────────────────────────────
+
+function mapHmoScheme(r: Record<string, unknown>): HmoScheme {
+  return {
+    id: r.id as string,
+    name: r.name as string,
+    code: r.code as string,
+    type: (r.type as HmoScheme["type"]) ?? "fee_for_service",
+    contactPerson: r.contact_person as string | undefined,
+    contactPhone: r.contact_phone as string | undefined,
+    contactEmail: r.contact_email as string | undefined,
+    address: r.address as string | undefined,
+    isActive: (r.is_active as boolean) ?? true,
+    notes: r.notes as string | undefined,
+    createdAt: (r.created_at as string) ?? new Date().toISOString(),
+  };
+}
+
+function mapHmoTariff(r: Record<string, unknown>): HmoTariff {
+  return {
+    id: r.id as string,
+    schemeId: r.scheme_id as string,
+    serviceCategory: r.service_category as HmoTariff["serviceCategory"],
+    serviceName: r.service_name as string,
+    hmoPrice: Number(r.hmo_price ?? 0),
+    copayType: (r.copay_type as HmoTariff["copayType"]) ?? "percentage",
+    copayValue: Number(r.copay_value ?? 10),
+    isActive: (r.is_active as boolean) ?? true,
+    notes: r.notes as string | undefined,
+  };
+}
+
+function mapHmoEnrollment(r: Record<string, unknown>): HmoEnrollment {
+  return {
+    id: r.id as string,
+    patientId: r.patient_id as string,
+    patientName: (r.patient_name as string) ?? "",
+    schemeId: r.scheme_id as string,
+    schemeName: (r.scheme_name as string) ?? "",
+    memberId: r.member_id as string,
+    planName: r.plan_name as string | undefined,
+    copayPercentage: Number(r.copay_percentage ?? 10),
+    isActive: (r.is_active as boolean) ?? true,
+    validFrom: r.valid_from as string | undefined,
+    validUntil: r.valid_until as string | undefined,
+    authorizedBy: r.authorized_by as string | undefined,
+    notes: r.notes as string | undefined,
+    createdAt: (r.created_at as string) ?? new Date().toISOString(),
+  };
+}
+
+function mapHmoClaim(r: Record<string, unknown>): HmoClaim {
+  return {
+    id: r.id as string,
+    claimNumber: r.claim_number as string,
+    schemeId: r.scheme_id as string,
+    schemeName: (r.scheme_name as string) ?? "",
+    patientId: r.patient_id as string,
+    patientName: (r.patient_name as string) ?? "",
+    enrollmentId: r.enrollment_id as string | undefined,
+    services: (r.services as HmoClaim["services"]) ?? [],
+    totalCost: Number(r.total_cost ?? 0),
+    copayAmount: Number(r.copay_amount ?? 0),
+    hmoAmount: Number(r.hmo_amount ?? 0),
+    status: (r.status as HmoClaim["status"]) ?? "draft",
+    submittedAt: r.submitted_at as string | undefined,
+    approvedAt: r.approved_at as string | undefined,
+    rejectedAt: r.rejected_at as string | undefined,
+    rejectionReason: r.rejection_reason as string | undefined,
+    paidAt: r.paid_at as string | undefined,
+    amountPaid: r.amount_paid != null ? Number(r.amount_paid) : undefined,
+    notes: r.notes as string | undefined,
+    createdAt: (r.created_at as string) ?? new Date().toISOString(),
+  };
+}
+
+// HMO Schemes
+
+export async function fetchHmoSchemes(): Promise<HmoScheme[]> {
+  const sb = getSupabase(); if (!sb) return [];
+  const { data, error } = await sb
+    .from("hmo_schemes")
+    .select("*")
+    .order("name");
+  if (error) throw new Error(describeSupabaseError(error, "fetchHmoSchemes"));
+  return (data ?? []).map((r) => mapHmoScheme(r as Record<string, unknown>));
+}
+
+export async function insertHmoScheme(scheme: Omit<HmoScheme, "id" | "createdAt">): Promise<HmoScheme> {
+  const sb = getSupabase(); if (!sb) throw new Error("Supabase not available");
+  const { data, error } = await sb
+    .from("hmo_schemes")
+    .insert({
+      name: scheme.name,
+      code: scheme.code,
+      type: scheme.type,
+      contact_person: scheme.contactPerson ?? null,
+      contact_phone: scheme.contactPhone ?? null,
+      contact_email: scheme.contactEmail ?? null,
+      address: scheme.address ?? null,
+      is_active: scheme.isActive,
+      notes: scheme.notes ?? null,
+    })
+    .select()
+    .single();
+  if (error) throw new Error(describeSupabaseError(error, "insertHmoScheme"));
+  return mapHmoScheme(data as Record<string, unknown>);
+}
+
+export async function updateHmoSchemeDb(id: string, patch: Partial<HmoScheme>): Promise<void> {
+  const sb = getSupabase(); if (!sb) return;
+  const update: Record<string, unknown> = {};
+  if (patch.name !== undefined) update.name = patch.name;
+  if (patch.code !== undefined) update.code = patch.code;
+  if (patch.type !== undefined) update.type = patch.type;
+  if (patch.contactPerson !== undefined) update.contact_person = patch.contactPerson;
+  if (patch.contactPhone !== undefined) update.contact_phone = patch.contactPhone;
+  if (patch.contactEmail !== undefined) update.contact_email = patch.contactEmail;
+  if (patch.address !== undefined) update.address = patch.address;
+  if (patch.isActive !== undefined) update.is_active = patch.isActive;
+  if (patch.notes !== undefined) update.notes = patch.notes;
+  update.updated_at = new Date().toISOString();
+  const { error } = await sb.from("hmo_schemes").update(update).eq("id", id);
+  if (error) throw new Error(describeSupabaseError(error, "updateHmoSchemeDb"));
+}
+
+// HMO Tariffs
+
+export async function fetchHmoTariffs(schemeId?: string): Promise<HmoTariff[]> {
+  const sb = getSupabase(); if (!sb) return [];
+  let query = sb.from("hmo_tariffs").select("*").order("service_category").order("service_name");
+  if (schemeId) query = query.eq("scheme_id", schemeId);
+  const { data, error } = await query;
+  if (error) throw new Error(describeSupabaseError(error, "fetchHmoTariffs"));
+  return (data ?? []).map((r) => mapHmoTariff(r as Record<string, unknown>));
+}
+
+export async function insertHmoTariff(tariff: Omit<HmoTariff, "id">): Promise<HmoTariff> {
+  const sb = getSupabase(); if (!sb) throw new Error("Supabase not available");
+  const { data, error } = await sb
+    .from("hmo_tariffs")
+    .insert({
+      scheme_id: tariff.schemeId,
+      service_category: tariff.serviceCategory,
+      service_name: tariff.serviceName,
+      hmo_price: tariff.hmoPrice,
+      copay_type: tariff.copayType,
+      copay_value: tariff.copayValue,
+      is_active: tariff.isActive,
+      notes: tariff.notes ?? null,
+    })
+    .select()
+    .single();
+  if (error) throw new Error(describeSupabaseError(error, "insertHmoTariff"));
+  return mapHmoTariff(data as Record<string, unknown>);
+}
+
+export async function updateHmoTariffDb(id: string, patch: Partial<HmoTariff>): Promise<void> {
+  const sb = getSupabase(); if (!sb) return;
+  const update: Record<string, unknown> = {};
+  if (patch.serviceCategory !== undefined) update.service_category = patch.serviceCategory;
+  if (patch.serviceName !== undefined) update.service_name = patch.serviceName;
+  if (patch.hmoPrice !== undefined) update.hmo_price = patch.hmoPrice;
+  if (patch.copayType !== undefined) update.copay_type = patch.copayType;
+  if (patch.copayValue !== undefined) update.copay_value = patch.copayValue;
+  if (patch.isActive !== undefined) update.is_active = patch.isActive;
+  if (patch.notes !== undefined) update.notes = patch.notes;
+  const { error } = await sb.from("hmo_tariffs").update(update).eq("id", id);
+  if (error) throw new Error(describeSupabaseError(error, "updateHmoTariffDb"));
+}
+
+export async function deleteHmoTariff(id: string): Promise<void> {
+  const sb = getSupabase(); if (!sb) return;
+  const { error } = await sb.from("hmo_tariffs").delete().eq("id", id);
+  if (error) throw new Error(describeSupabaseError(error, "deleteHmoTariff"));
+}
+
+// HMO Enrollments
+
+export async function fetchHmoEnrollments(): Promise<HmoEnrollment[]> {
+  const sb = getSupabase(); if (!sb) return [];
+  // FK patient_hmo_enrollments_patient_id_fkey now references patient_registrations
+  // which uses patient_name (not name). Scheme FK references hmo_schemes(name).
+  const { data, error } = await sb
+    .from("patient_hmo_enrollments")
+    .select(`
+      *,
+      patient_registrations!patient_hmo_enrollments_patient_id_fkey(patient_name, patient_id),
+      hmo_schemes!patient_hmo_enrollments_scheme_id_fkey(name)
+    `)
+    .order("created_at", { ascending: false });
+  if (error) throw new Error(describeSupabaseError(error, "fetchHmoEnrollments"));
+  return (data ?? []).map((r) => {
+    const row = r as Record<string, unknown>;
+    const patReg = row.patient_registrations as { patient_name?: string; patient_id?: string } | null;
+    const patientName = patReg?.patient_name ?? "";
+    const patientDisplayId = patReg?.patient_id ?? "";
+    const schemeName = (row.hmo_schemes as { name?: string } | null)?.name ?? "";
+    return { ...mapHmoEnrollment(row), patientName, patientDisplayId, schemeName };
+  });
+}
+
+export async function insertHmoEnrollment(
+  e: Omit<HmoEnrollment, "id" | "createdAt" | "schemeName" | "patientName">,
+): Promise<HmoEnrollment> {
+  const sb = getSupabase(); if (!sb) throw new Error("Supabase not available");
+  const { data, error } = await sb
+    .from("patient_hmo_enrollments")
+    .insert({
+      patient_id: e.patientId,
+      scheme_id: e.schemeId,
+      member_id: e.memberId,
+      plan_name: e.planName ?? null,
+      copay_percentage: e.copayPercentage,
+      is_active: e.isActive,
+      valid_from: e.validFrom ?? null,
+      valid_until: e.validUntil ?? null,
+      authorized_by: e.authorizedBy ?? null,
+      notes: e.notes ?? null,
+    })
+    .select()
+    .single();
+  if (error) throw new Error(describeSupabaseError(error, "insertHmoEnrollment"));
+  return mapHmoEnrollment(data as Record<string, unknown>);
+}
+
+export async function updateHmoEnrollmentDb(id: string, patch: Partial<HmoEnrollment>): Promise<void> {
+  const sb = getSupabase(); if (!sb) return;
+  const update: Record<string, unknown> = {};
+  if (patch.memberId !== undefined) update.member_id = patch.memberId;
+  if (patch.planName !== undefined) update.plan_name = patch.planName;
+  if (patch.copayPercentage !== undefined) update.copay_percentage = patch.copayPercentage;
+  if (patch.isActive !== undefined) update.is_active = patch.isActive;
+  if (patch.validFrom !== undefined) update.valid_from = patch.validFrom;
+  if (patch.validUntil !== undefined) update.valid_until = patch.validUntil;
+  if (patch.authorizedBy !== undefined) update.authorized_by = patch.authorizedBy;
+  if (patch.notes !== undefined) update.notes = patch.notes;
+  const { error } = await sb.from("patient_hmo_enrollments").update(update).eq("id", id);
+  if (error) throw new Error(describeSupabaseError(error, "updateHmoEnrollmentDb"));
+}
+
+export async function fetchPatientEnrollment(patientId: string): Promise<HmoEnrollment | null> {
+  const sb = getSupabase(); if (!sb) return null;
+  // Fetch enrollment + scheme name. Patient name fetched separately to avoid join table ambiguity.
+  const { data, error } = await sb
+    .from("patient_hmo_enrollments")
+    .select(`*, hmo_schemes!patient_hmo_enrollments_scheme_id_fkey(name)`)
+    .eq("patient_id", patientId)
+    .eq("is_active", true)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw new Error(describeSupabaseError(error, "fetchPatientEnrollment"));
+  if (!data) return null;
+  const row = data as Record<string, unknown>;
+  const schemeName = (row.hmo_schemes as { name?: string } | null)?.name ?? "";
+  // Fetch patient name from patient_registrations
+  const { data: patReg } = await sb
+    .from("patient_registrations")
+    .select("patient_name")
+    .eq("id", patientId)
+    .maybeSingle();
+  const patientName = (patReg as { patient_name?: string } | null)?.patient_name ?? "";
+  return { ...mapHmoEnrollment(row), patientName, schemeName };
+}
+
+// HMO Claims
+
+export async function fetchHmoClaims(schemeId?: string): Promise<HmoClaim[]> {
+  const sb = getSupabase(); if (!sb) return [];
+  // FK hmo_claims_patient_id_fkey references patient_registrations (patient_name),
+  // not the old `patients` table.
+  let query = sb
+    .from("hmo_claims")
+    .select(`
+      *,
+      hmo_schemes!hmo_claims_scheme_id_fkey(name),
+      patient_registrations!hmo_claims_patient_id_fkey(patient_name)
+    `)
+    .order("created_at", { ascending: false });
+  if (schemeId) query = query.eq("scheme_id", schemeId);
+  const { data, error } = await query;
+  if (error) throw new Error(describeSupabaseError(error, "fetchHmoClaims"));
+  return (data ?? []).map((r) => {
+    const row = r as Record<string, unknown>;
+    const schemeName = (row.hmo_schemes as { name?: string } | null)?.name ?? "";
+    const patientName =
+      (row.patient_registrations as { patient_name?: string } | null)?.patient_name ?? "";
+    return { ...mapHmoClaim(row), schemeName, patientName };
+  });
+}
+
+export async function insertHmoClaim(
+  claim: Omit<HmoClaim, "id" | "claimNumber" | "createdAt" | "schemeName" | "patientName">,
+): Promise<HmoClaim> {
+  const sb = getSupabase(); if (!sb) throw new Error("Supabase not available");
+  const { data, error } = await sb
+    .from("hmo_claims")
+    .insert({
+      scheme_id: claim.schemeId,
+      patient_id: claim.patientId,
+      enrollment_id: claim.enrollmentId ?? null,
+      services: claim.services,
+      source_charges: null,
+      total_cost: claim.totalCost,
+      copay_amount: claim.copayAmount,
+      hmo_amount: claim.hmoAmount,
+      status: claim.status ?? "draft",
+      notes: claim.notes ?? null,
+    })
+    .select()
+    .single();
+  if (error) throw new Error(describeSupabaseError(error, "insertHmoClaim"));
+  return mapHmoClaim(data as Record<string, unknown>);
+}
+
+export async function updateHmoClaimDb(id: string, patch: Partial<HmoClaim>): Promise<void> {
+  const sb = getSupabase(); if (!sb) return;
+  const update: Record<string, unknown> = {};
+  if (patch.status !== undefined) update.status = patch.status;
+  if (patch.submittedAt !== undefined) update.submitted_at = patch.submittedAt;
+  if (patch.approvedAt !== undefined) update.approved_at = patch.approvedAt;
+  if (patch.rejectedAt !== undefined) update.rejected_at = patch.rejectedAt;
+  if (patch.rejectionReason !== undefined) update.rejection_reason = patch.rejectionReason;
+  if (patch.paidAt !== undefined) update.paid_at = patch.paidAt;
+  if (patch.amountPaid !== undefined) update.amount_paid = patch.amountPaid;
+  if (patch.notes !== undefined) update.notes = patch.notes;
+  const { error } = await sb.from("hmo_claims").update(update).eq("id", id);
+  if (error) throw new Error(describeSupabaseError(error, "updateHmoClaimDb"));
 }
