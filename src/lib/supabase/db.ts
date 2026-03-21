@@ -3218,19 +3218,22 @@ export async function deleteHmoTariff(id: string): Promise<void> {
 
 export async function fetchHmoEnrollments(): Promise<HmoEnrollment[]> {
   const sb = getSupabase(); if (!sb) return [];
+  // FK patient_hmo_enrollments_patient_id_fkey now references patient_registrations
+  // which uses patient_name (not name). Scheme FK references hmo_schemes(name).
   const { data, error } = await sb
     .from("patient_hmo_enrollments")
     .select(`
       *,
-      patients!patient_hmo_enrollments_patient_id_fkey(name),
+      patient_registrations!patient_hmo_enrollments_patient_id_fkey(patient_name),
       hmo_schemes!patient_hmo_enrollments_scheme_id_fkey(name)
     `)
     .order("created_at", { ascending: false });
   if (error) throw new Error(describeSupabaseError(error, "fetchHmoEnrollments"));
   return (data ?? []).map((r) => {
     const row = r as Record<string, unknown>;
-    const patientName = (row.patients as { name?: string } | null)?.name ?? (row.patient_name as string) ?? "";
-    const schemeName = (row.hmo_schemes as { name?: string } | null)?.name ?? (row.scheme_name as string) ?? "";
+    const patientName =
+      (row.patient_registrations as { patient_name?: string } | null)?.patient_name ?? "";
+    const schemeName = (row.hmo_schemes as { name?: string } | null)?.name ?? "";
     return { ...mapHmoEnrollment(row), patientName, schemeName };
   });
 }
