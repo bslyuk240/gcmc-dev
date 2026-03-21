@@ -156,7 +156,7 @@ export default function AccountsDailyReportsPage() {
     const titleRange = startDate === endDate ? formatDateOnly(startDate) : `${formatDateOnly(startDate)} - ${formatDateOnly(endDate)}`;
     const generatedAt = formatDateTime(new Date().toISOString());
     const sourceCards = reportSources.map((row) => `<section class="src"><div><b>${escapeHtml(row.label)}</b><div class="muted">${row.count} receipts confirmed</div></div><div class="amt">${escapeHtml(money(row.total))}</div></section>`).join("");
-    const snapshotRows = [
+    const snapshotRows: Array<[string, number]> = [
       ["Front Desk pending", sumBy(frontDesk.filter((x) => x.status !== "Paid"), (x) => x.amount)],
       ["Consultation pending", sumBy(consultation.filter((x) => x.status !== "Paid"), (x) => x.fee)],
       ["Lab pending", sumBy(lab.filter((x) => x.status !== "Paid"), (x) => x.amount)],
