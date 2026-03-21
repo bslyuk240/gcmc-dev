@@ -84,7 +84,10 @@ export type HmoClaim = {
 
 export type HmoRegistration = {
   id: string;
+  /** UUID — the `id` column of patient_registrations; used as FK in patient_hmo_enrollments */
   patientId: string;
+  /** Display patient ID e.g. "P-73472" */
+  patientDisplayId: string;
   patientName: string;
   primaryHmoSchemeId?: string;
   registeredAt: string;
@@ -194,7 +197,10 @@ export async function syncNhisFromSupabase(force = false) {
       hmoRegistrations: mergeById(
         registrations.map((reg) => ({
           id: reg.id,
-          patientId: reg.patientId,
+          // patientId must be the UUID (patient_registrations.id) so it
+          // matches patient_hmo_enrollments.patient_id which FKs to that column
+          patientId: reg.id,
+          patientDisplayId: reg.patientId, // e.g. "P-73472"
           patientName: reg.patientName,
           primaryHmoSchemeId: reg.primaryHmoSchemeId,
           registeredAt: reg.registeredAt,

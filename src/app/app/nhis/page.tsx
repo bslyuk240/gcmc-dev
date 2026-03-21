@@ -143,7 +143,7 @@ export default function NhisDashboardPage() {
                   return (
                     <tr key={registration.id} className="hover:bg-slate-50">
                       <td className="px-5 py-3 font-medium text-slate-900">{registration.patientName}</td>
-                      <td className="px-5 py-3 font-mono text-xs text-slate-500">{registration.patientId}</td>
+                      <td className="px-5 py-3 font-mono text-xs text-slate-500">{registration.patientDisplayId}</td>
                       <td className="px-5 py-3 text-slate-600">{schemeName}</td>
                       <td className="px-5 py-3 text-xs text-slate-500">{formatDate(registration.registeredAt)}</td>
                       <td className="px-5 py-3">
