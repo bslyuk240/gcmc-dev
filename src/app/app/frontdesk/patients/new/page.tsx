@@ -68,14 +68,30 @@ function DobPicker({
         <svg className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M6 9l6 6 6-6" /></svg>
       </div>
       <div className="relative flex-[2]">
-        <select value={month} onChange={(e) => { onMonth(e.target.value); if (day) onDay(""); }} className={selCls} style={{ backgroundImage: "none" }}>
+        <select value={month} onChange={(e) => {
+          const newMonth = e.target.value;
+          onMonth(newMonth);
+          // clamp day if it exceeds days in new month
+          if (day) {
+            const max = daysInMonth(newMonth, year);
+            if (parseInt(day) > max) onDay(String(max));
+          }
+        }} className={selCls} style={{ backgroundImage: "none" }}>
           <option value="">Month</option>
           {MONTHS.map((m) => <option key={m} value={m}>{m}</option>)}
         </select>
         <svg className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M6 9l6 6 6-6" /></svg>
       </div>
       <div className="relative flex-[1.3]">
-        <select value={year} onChange={(e) => { onYear(e.target.value); if (day) onDay(""); }} className={selCls} style={{ backgroundImage: "none" }}>
+        <select value={year} onChange={(e) => {
+          const newYear = e.target.value;
+          onYear(newYear);
+          // clamp day for February in leap/non-leap year
+          if (day && month) {
+            const max = daysInMonth(month, newYear);
+            if (parseInt(day) > max) onDay(String(max));
+          }
+        }} className={selCls} style={{ backgroundImage: "none" }}>
           <option value="">Year</option>
           {YEARS.map((y) => <option key={y} value={String(y)}>{y}</option>)}
         </select>

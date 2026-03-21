@@ -3259,13 +3259,10 @@ export async function updateHmoEnrollmentDb(id: string, patch: Partial<HmoEnroll
 
 export async function fetchPatientEnrollment(patientId: string): Promise<HmoEnrollment | null> {
   const sb = getSupabase(); if (!sb) return null;
+  // Fetch enrollment + scheme name. Patient name fetched separately to avoid join table ambiguity.
   const { data, error } = await sb
     .from("patient_hmo_enrollments")
-    .select(`
-      *,
-      patients!patient_hmo_enrollments_patient_id_fkey(name),
-      hmo_schemes!patient_hmo_enrollments_scheme_id_fkey(name)
-    `)
+    .select(`*, hmo_schemes!patient_hmo_enrollments_scheme_id_fkey(name)`)
     .eq("patient_id", patientId)
     .eq("is_active", true)
     .order("created_at", { ascending: false })
@@ -3274,8 +3271,14 @@ export async function fetchPatientEnrollment(patientId: string): Promise<HmoEnro
   if (error) throw new Error(describeSupabaseError(error, "fetchPatientEnrollment"));
   if (!data) return null;
   const row = data as Record<string, unknown>;
-  const patientName = (row.patients as { name?: string } | null)?.name ?? "";
   const schemeName = (row.hmo_schemes as { name?: string } | null)?.name ?? "";
+  // Fetch patient name from patient_registrations
+  const { data: patReg } = await sb
+    .from("patient_registrations")
+    .select("patient_name")
+    .eq("id", patientId)
+    .maybeSingle();
+  const patientName = (patReg as { patient_name?: string } | null)?.patient_name ?? "";
   return { ...mapHmoEnrollment(row), patientName, schemeName };
 }
 
