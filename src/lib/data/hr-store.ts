@@ -347,6 +347,12 @@ function loadState(): HRStoreState {
   return EMPTY_HR_STATE;
 }
 
+function mergeById<T extends { id: string }>(remote: T[], local: T[]) {
+  if (!remote.length) return local;
+  const remoteIds = new Set(remote.map((item) => item.id));
+  return [...remote, ...local.filter((item) => !remoteIds.has(item.id))];
+}
+
 function saveState(s: HRStoreState) {
   if (typeof window === "undefined") return;
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(s)); } catch { /* ignore */ }
@@ -382,8 +388,8 @@ export async function syncHRFromSupabase() {
     const current = getState();
     _state = {
       ...current,
-      staff,
-      leaveRequests,
+      staff: mergeById(staff, current.staff),
+      leaveRequests: mergeById(leaveRequests, current.leaveRequests),
       payrollPreps: buildPayrollPrepsFromPayslips(current.generatedPayslips),
     };
     saveState(_state);
