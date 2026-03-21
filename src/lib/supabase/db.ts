@@ -3306,12 +3306,14 @@ export async function fetchPatientEnrollment(patientId: string): Promise<HmoEnro
 
 export async function fetchHmoClaims(schemeId?: string): Promise<HmoClaim[]> {
   const sb = getSupabase(); if (!sb) return [];
+  // FK hmo_claims_patient_id_fkey references patient_registrations (patient_name),
+  // not the old `patients` table.
   let query = sb
     .from("hmo_claims")
     .select(`
       *,
       hmo_schemes!hmo_claims_scheme_id_fkey(name),
-      patients!hmo_claims_patient_id_fkey(name)
+      patient_registrations!hmo_claims_patient_id_fkey(patient_name)
     `)
     .order("created_at", { ascending: false });
   if (schemeId) query = query.eq("scheme_id", schemeId);
@@ -3319,8 +3321,9 @@ export async function fetchHmoClaims(schemeId?: string): Promise<HmoClaim[]> {
   if (error) throw new Error(describeSupabaseError(error, "fetchHmoClaims"));
   return (data ?? []).map((r) => {
     const row = r as Record<string, unknown>;
-    const schemeName = (row.hmo_schemes as { name?: string } | null)?.name ?? (row.scheme_name as string) ?? "";
-    const patientName = (row.patients as { name?: string } | null)?.name ?? (row.patient_name as string) ?? "";
+    const schemeName = (row.hmo_schemes as { name?: string } | null)?.name ?? "";
+    const patientName =
+      (row.patient_registrations as { patient_name?: string } | null)?.patient_name ?? "";
     return { ...mapHmoClaim(row), schemeName, patientName };
   });
 }
