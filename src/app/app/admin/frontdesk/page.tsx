@@ -1,9 +1,7 @@
 "use client";
 
-import Link from "next/link";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card } from "@/components/ui/card";
-import { INTERNAL_PREFIX } from "@/lib/constants/navigation";
 
 const VISITS = [
   { id: "V-5825", patient: "Abena Kyei", type: "Antenatal", doctor: "Dr. Amaka Osei", time: "10:20", status: "With Doctor" },
@@ -48,10 +46,6 @@ export default function AdminFrontdeskMonitorPage() {
           title="Front Desk Monitor"
           description="Patient registration flow, visit creation, check-in queue, and service throughput."
         />
-        <Link href={`${INTERNAL_PREFIX}/frontdesk`}
-          className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition">
-          Open Front Desk →
-        </Link>
       </div>
 
       {/* KPIs */}
@@ -153,10 +147,6 @@ export default function AdminFrontdeskMonitorPage() {
               <li className="flex items-start gap-2"><span className="mt-0.5 h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500" />Peak activity at {peakHour.hour} with {peakHour.count} registrations.</li>
             </ul>
           </Card>
-          <Link href={`${INTERNAL_PREFIX}/frontdesk/patients`}
-            className="block rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 text-center transition">
-            View Patient Registry →
-          </Link>
         </div>
       </div>
     </div>

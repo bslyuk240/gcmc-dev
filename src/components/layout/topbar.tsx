@@ -166,19 +166,21 @@ export function Topbar() {
                   <Icon name="patients" className="h-4 w-4 text-slate-500" />
                   Staff Portal
                 </Link>
-                <form action="/logout" method="post">
-                  <button
-                    type="submit"
-                    onClick={handleLogout}
-                    className="mt-1 flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-sm font-medium text-red-600 transition hover:bg-red-50"
-                  >
-                    <svg className="h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H9" />
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M13 20H7a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h6" />
-                    </svg>
-                    Logout
-                  </button>
-                </form>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    handleLogout();
+                    await fetch("/logout", { method: "POST" });
+                    window.location.href = "/login";
+                  }}
+                  className="mt-1 flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-sm font-medium text-red-600 transition hover:bg-red-50"
+                >
+                  <svg className="h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H9" />
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M13 20H7a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h6" />
+                  </svg>
+                  Logout
+                </button>
               </div>
             </div>
           ) : null}

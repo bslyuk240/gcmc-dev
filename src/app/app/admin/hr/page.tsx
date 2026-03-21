@@ -1,13 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Modal, ModalFooter } from "@/components/ui/modal";
 import { Toast, type ToastData } from "@/components/ui/toast";
-import { INTERNAL_PREFIX } from "@/lib/constants/navigation";
 import { useAdminStore } from "@/lib/hooks/use-admin-store";
 import { updateLeaveStatus } from "@/lib/data/admin-store";
 
@@ -57,10 +55,6 @@ export default function AdminHRMonitorPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <PageHeader title="HR Monitor" description="Staffing oversight — staff count by department, leave management, onboarding, and workforce compliance." />
-        <Link href={`${INTERNAL_PREFIX}/hr`}
-          className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition">
-          Open HR →
-        </Link>
       </div>
 
       <div className="flex gap-3">
@@ -159,14 +153,6 @@ export default function AdminHRMonitorPage() {
               ))}
             </div>
           </Card>
-          <Link href={`${INTERNAL_PREFIX}/hr/staff-directory`}
-            className="block rounded-xl border border-violet-200 bg-violet-50 px-4 py-3 text-sm font-semibold text-violet-800 hover:bg-violet-100 text-center transition">
-            Staff Directory →
-          </Link>
-          <Link href={`${INTERNAL_PREFIX}/hr/payroll`}
-            className="block rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 text-center transition">
-            Payroll →
-          </Link>
         </div>
       </div>
 

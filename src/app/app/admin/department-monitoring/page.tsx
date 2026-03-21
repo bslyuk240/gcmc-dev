@@ -1,9 +1,7 @@
 "use client";
 
-import Link from "next/link";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card } from "@/components/ui/card";
-import { INTERNAL_PREFIX } from "@/lib/constants/navigation";
 import { usePharmacyStore } from "@/lib/hooks/use-pharmacy-store";
 import { useAccountsStore } from "@/lib/hooks/use-accounts-store";
 import { useLabStore } from "@/lib/hooks/use-lab-store";
@@ -28,43 +26,43 @@ const STATUS_TEXT: Record<StatusLevel, string> = {
 };
 
 export default function DepartmentMonitoringPage() {
-  const { metrics: rxM, prescriptions, restockRequests } = usePharmacyStore();
+  const { metrics: rxM, restockRequests } = usePharmacyStore();
   const { metrics: accM } = useAccountsStore();
   const { metrics: labM } = useLabStore();
-  const { metrics: nurseM, allPatients } = useNursesStore();
+  const { metrics: nurseM } = useNursesStore();
   const { metrics: adminM, itTickets } = useAdminStore();
 
   const openTickets = itTickets.filter((t) => t.status === "Open" || t.status === "In Progress").length;
   const criticalTickets = itTickets.filter((t) => (t.status === "Open" || t.status === "In Progress") && (t.priority === "Critical" || t.priority === "Urgent")).length;
 
   const departments: {
-    key: string; label: string; href: string;
+    key: string; label: string;
     status: StatusLevel; statusLabel: string;
     metrics: { label: string; value: string | number; alert?: boolean }[];
     icon: string; iconColor: string;
   }[] = [
     {
-      key: "frontdesk", label: "Front Desk", href: `${INTERNAL_PREFIX}/admin/frontdesk`,
+      key: "frontdesk", label: "Front Desk",
       status: "OK", statusLabel: "Operational",
       metrics: [
-        { label: "Active Visits", value: 3 },
-        { label: "Completed Today", value: 6 },
+        { label: "Outpatients", value: nurseM.outpatientCount },
+        { label: "Total Active", value: nurseM.totalActive },
       ],
       icon: "M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4",
       iconColor: "text-sky-600",
     },
     {
-      key: "doctors", label: "Doctors", href: `${INTERNAL_PREFIX}/admin/doctors`,
+      key: "doctors", label: "Doctors",
       status: "OK", statusLabel: "Active",
       metrics: [
-        { label: "In Consultation", value: 2 },
-        { label: "Rx Written Today", value: 3 },
+        { label: "Pending Rx", value: rxM.pendingPrescriptions },
+        { label: "Dispensed Today", value: rxM.dispensedToday },
       ],
       icon: "M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z",
       iconColor: "text-violet-600",
     },
     {
-      key: "nurses", label: "Nurses Bay", href: `${INTERNAL_PREFIX}/admin/nurses`,
+      key: "nurses", label: "Nurses Bay",
       status: nurseM.criticalCount > 0 ? "Critical" : nurseM.wardCount > 0 ? "Warning" : "OK",
       statusLabel: nurseM.criticalCount > 0 ? `${nurseM.criticalCount} Critical` : "Operational",
       metrics: [
@@ -76,7 +74,7 @@ export default function DepartmentMonitoringPage() {
       iconColor: "text-pink-600",
     },
     {
-      key: "pharmacy", label: "Pharmacy", href: `${INTERNAL_PREFIX}/admin/pharmacy`,
+      key: "pharmacy", label: "Pharmacy",
       status: restockRequests.filter((r) => r.status === "Pending" && r.urgency === "Critical").length > 0 ? "Critical" : rxM.pendingPrescriptions > 5 ? "Warning" : "OK",
       statusLabel: rxM.pendingPrescriptions > 0 ? `${rxM.pendingPrescriptions} Pending Rx` : "Operational",
       metrics: [
@@ -87,7 +85,7 @@ export default function DepartmentMonitoringPage() {
       iconColor: "text-emerald-600",
     },
     {
-      key: "lab", label: "Laboratory", href: `${INTERNAL_PREFIX}/admin/lab`,
+      key: "lab", label: "Laboratory",
       status: labM.urgentTests > 0 ? "Warning" : labM.pendingTests > 10 ? "Warning" : "OK",
       statusLabel: labM.urgentTests > 0 ? `${labM.urgentTests} Urgent` : "Operational",
       metrics: [
@@ -99,7 +97,7 @@ export default function DepartmentMonitoringPage() {
       iconColor: "text-sky-600",
     },
     {
-      key: "accounts", label: "Accounts", href: `${INTERNAL_PREFIX}/admin/accounts`,
+      key: "accounts", label: "Accounts",
       status: accM.supplierPendingCount > 5 ? "Warning" : "OK",
       statusLabel: `₦${accM.revenueToday.toLocaleString()} today`,
       metrics: [
@@ -111,7 +109,7 @@ export default function DepartmentMonitoringPage() {
       iconColor: "text-emerald-700",
     },
     {
-      key: "store", label: "Store", href: `${INTERNAL_PREFIX}/admin/store`,
+      key: "store", label: "Store",
       status: adminM.criticalStock > 0 ? "Critical" : adminM.stockAlerts > 0 ? "Warning" : "OK",
       statusLabel: adminM.criticalStock > 0 ? `${adminM.criticalStock} Critical` : adminM.stockAlerts > 0 ? `${adminM.stockAlerts} Alerts` : "Stocked",
       metrics: [
@@ -122,7 +120,7 @@ export default function DepartmentMonitoringPage() {
       iconColor: "text-amber-600",
     },
     {
-      key: "hr", label: "HR", href: `${INTERNAL_PREFIX}/admin/hr`,
+      key: "hr", label: "HR",
       status: adminM.pendingLeave > 0 ? "Info" : "OK",
       statusLabel: `${adminM.totalStaff} Staff Active`,
       metrics: [
@@ -134,7 +132,7 @@ export default function DepartmentMonitoringPage() {
       iconColor: "text-violet-600",
     },
     {
-      key: "it", label: "IT", href: `${INTERNAL_PREFIX}/admin/it`,
+      key: "it", label: "IT",
       status: criticalTickets > 0 ? "Critical" : openTickets > 3 ? "Warning" : "OK",
       statusLabel: openTickets > 0 ? `${openTickets} Open Tickets` : "All Clear",
       metrics: [
@@ -153,32 +151,32 @@ export default function DepartmentMonitoringPage() {
     <div className="space-y-6">
       <PageHeader
         title="Department Overview"
-        description="Live operational status of all 9 departments — click any card for detailed monitoring."
+        description="Live operational status of all 9 departments."
       />
 
       {(critical.length > 0 || warning.length > 0) && (
         <div className="flex flex-wrap gap-3">
           {critical.map((d) => (
-            <Link key={d.key} href={d.href}
-              className="flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-xs font-bold text-red-800 hover:bg-red-100 transition">
+            <div key={d.key}
+              className="flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-xs font-bold text-red-800 transition">
               <span className="h-2 w-2 rounded-full bg-red-500 animate-pulse" />
               {d.label}: {d.statusLabel}
-            </Link>
+            </div>
           ))}
           {warning.map((d) => (
-            <Link key={d.key} href={d.href}
-              className="flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-xs font-bold text-amber-800 hover:bg-amber-100 transition">
+            <div key={d.key}
+              className="flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-xs font-bold text-amber-800 transition">
               <span className="h-2 w-2 rounded-full bg-amber-500 animate-pulse" />
               {d.label}: {d.statusLabel}
-            </Link>
+            </div>
           ))}
         </div>
       )}
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {departments.map((dept) => (
-          <Link key={dept.key} href={dept.href}>
-            <Card className={`p-5 border-2 cursor-pointer hover:shadow-md transition-all ${STATUS_RING[dept.status]}`}>
+          <div key={dept.key}>
+            <Card className={`p-5 border-2 transition-all ${STATUS_RING[dept.status]}`}>
               <div className="flex items-start justify-between mb-3">
                 <div className="flex items-center gap-2">
                   <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-white border border-slate-200">
@@ -207,7 +205,7 @@ export default function DepartmentMonitoringPage() {
                 ))}
               </div>
             </Card>
-          </Link>
+          </div>
         ))}
       </div>
 
@@ -220,7 +218,7 @@ export default function DepartmentMonitoringPage() {
           <table className="min-w-full text-sm">
             <thead>
               <tr className="bg-slate-50 border-b border-slate-100">
-                {["Department", "Status", "Key Metric 1", "Key Metric 2", "Open Action"].map((h) => (
+                {["Department", "Status", "Key Metric 1", "Key Metric 2"].map((h) => (
                   <th key={h} className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">{h}</th>
                 ))}
               </tr>
@@ -237,9 +235,6 @@ export default function DepartmentMonitoringPage() {
                   </td>
                   <td className="px-4 py-3 text-xs text-slate-600">{d.metrics[0]?.label}: <strong>{d.metrics[0]?.value}</strong></td>
                   <td className="px-4 py-3 text-xs text-slate-600">{d.metrics[1] ? `${d.metrics[1].label}: ` : ""}<strong>{d.metrics[1]?.value}</strong></td>
-                  <td className="px-4 py-3">
-                    <Link href={d.href} className="text-xs font-semibold text-accent hover:underline">View details →</Link>
-                  </td>
                 </tr>
               ))}
             </tbody>

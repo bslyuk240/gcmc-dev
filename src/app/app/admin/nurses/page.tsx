@@ -1,9 +1,7 @@
 "use client";
 
-import Link from "next/link";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card } from "@/components/ui/card";
-import { INTERNAL_PREFIX } from "@/lib/constants/navigation";
 import { useNursesStore } from "@/lib/hooks/use-nurses-store";
 
 const UNIT_COLORS: Record<string, { bg: string; text: string }> = {
@@ -29,10 +27,6 @@ export default function AdminNursesMonitorPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <PageHeader title="Nurses Bay Monitor" description="Nursing unit oversight — Ward, Emergency, ICU and Outpatient activity, care quality, and procedure billing." />
-        <Link href={`${INTERNAL_PREFIX}/nurses`}
-          className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition">
-          Open Nurses Bay →
-        </Link>
       </div>
 
       {critical.length > 0 && (
@@ -134,12 +128,6 @@ export default function AdminNursesMonitorPage() {
               <div className="flex justify-between"><span className="text-slate-500">Value pending</span><span className="font-bold text-slate-800">₦{metrics.procedureBillValue}</span></div>
             </div>
           </Card>
-          <Link href={`${INTERNAL_PREFIX}/nurses/icu`} className="block rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-800 hover:bg-red-100 text-center transition">
-            ICU Dashboard →
-          </Link>
-          <Link href={`${INTERNAL_PREFIX}/nurses/handover-notes`} className="block rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 text-center transition">
-            Handover Notes →
-          </Link>
         </div>
       </div>
     </div>

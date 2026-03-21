@@ -1,10 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card } from "@/components/ui/card";
-import { INTERNAL_PREFIX } from "@/lib/constants/navigation";
 import { ACCOUNTS_PAYMENT_UPDATED_EVENT } from "@/lib/constants/accounts-events";
 import { useAccountsStore } from "@/lib/hooks/use-accounts-store";
 import { fetchInvoices, fetchPayments, type InvoiceRecord, type PaymentRecord } from "@/lib/supabase/db";
@@ -64,10 +62,6 @@ export default function AdminAccountsMonitorPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <PageHeader title="Accounts Monitor" description="Financial oversight — revenue, receivables, payroll, supplier payments, and department billing." />
-        <Link href={`${INTERNAL_PREFIX}/accounts`}
-          className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition">
-          Open Accounts →
-        </Link>
       </div>
 
       <div className="flex gap-3">
@@ -163,14 +157,6 @@ export default function AdminAccountsMonitorPage() {
               ))}
             </div>
           </Card>
-          <Link href={`${INTERNAL_PREFIX}/accounts/payroll`}
-            className="block rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm font-semibold text-sky-800 hover:bg-sky-100 text-center transition">
-            Approve Payroll →
-          </Link>
-          <Link href={`${INTERNAL_PREFIX}/accounts/supplier-payments`}
-            className="block rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 text-center transition">
-            Supplier Payments →
-          </Link>
         </div>
       </div>
     </div>
