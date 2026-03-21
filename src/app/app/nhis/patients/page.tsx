@@ -56,6 +56,7 @@ export default function NhisPatientsPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  const [schemeFilter, setSchemeFilter] = useState("all");
 
   useEffect(() => {
     syncNhisFromSupabase();
@@ -164,10 +165,12 @@ export default function NhisPatientsPage() {
   }
 
   const filtered = enrollments.filter((e) => {
+    if (schemeFilter !== "all" && e.schemeId !== schemeFilter) return false;
     if (!search.trim()) return true;
     const q = search.toLowerCase();
     return (
       e.patientName.toLowerCase().includes(q) ||
+      (e.patientDisplayId ?? "").toLowerCase().includes(q) ||
       e.memberId.toLowerCase().includes(q) ||
       e.schemeName.toLowerCase().includes(q)
     );
@@ -184,11 +187,23 @@ export default function NhisPatientsPage() {
 
       <Card className="overflow-hidden p-0">
         <div className="flex flex-col gap-3 border-b border-slate-100 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
-          <h3 className="font-bold text-slate-900">Patient Enrollments ({enrollments.length})</h3>
-          <div className="flex gap-3">
+          <h3 className="font-bold text-slate-900">
+            Patient Enrollments ({filtered.length}{filtered.length !== enrollments.length ? ` of ${enrollments.length}` : ""})
+          </h3>
+          <div className="flex flex-wrap gap-2">
+            <select
+              className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-accent"
+              value={schemeFilter}
+              onChange={(e) => setSchemeFilter(e.target.value)}
+            >
+              <option value="all">All Schemes</option>
+              {schemes.filter((s) => s.isActive).map((s) => (
+                <option key={s.id} value={s.id}>{s.name}</option>
+              ))}
+            </select>
             <input
               className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-accent"
-              placeholder="Search name, member ID…"
+              placeholder="Search name, ID, member…"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
@@ -218,8 +233,8 @@ export default function NhisPatientsPage() {
                 ) : (
                   filtered.map((e) => (
                     <tr key={e.id} className="hover:bg-slate-50">
-                      <td className="px-5 py-3 font-medium text-slate-900">{e.patientName || e.patientId}</td>
-                      <td className="px-5 py-3 font-mono text-xs text-slate-500">{e.patientId}</td>
+                      <td className="px-5 py-3 font-medium text-slate-900">{e.patientName || e.patientDisplayId || e.patientId}</td>
+                      <td className="px-5 py-3 font-mono text-xs text-slate-500">{e.patientDisplayId || "—"}</td>
                       <td className="px-5 py-3 font-mono text-xs font-semibold text-slate-700">{e.memberId}</td>
                       <td className="px-5 py-3 text-slate-600">{e.schemeName}</td>
                       <td className="px-5 py-3 text-slate-600">{e.planName || "—"}</td>

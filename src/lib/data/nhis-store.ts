@@ -35,7 +35,10 @@ export type HmoTariff = {
 
 export type HmoEnrollment = {
   id: string;
+  /** UUID — FK into patient_registrations.id */
   patientId: string;
+  /** Display hospital number e.g. "P-73472" */
+  patientDisplayId?: string;
   patientName: string;
   schemeId: string;
   schemeName: string;

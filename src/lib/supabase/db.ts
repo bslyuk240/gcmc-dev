@@ -3224,17 +3224,18 @@ export async function fetchHmoEnrollments(): Promise<HmoEnrollment[]> {
     .from("patient_hmo_enrollments")
     .select(`
       *,
-      patient_registrations!patient_hmo_enrollments_patient_id_fkey(patient_name),
+      patient_registrations!patient_hmo_enrollments_patient_id_fkey(patient_name, patient_id),
       hmo_schemes!patient_hmo_enrollments_scheme_id_fkey(name)
     `)
     .order("created_at", { ascending: false });
   if (error) throw new Error(describeSupabaseError(error, "fetchHmoEnrollments"));
   return (data ?? []).map((r) => {
     const row = r as Record<string, unknown>;
-    const patientName =
-      (row.patient_registrations as { patient_name?: string } | null)?.patient_name ?? "";
+    const patReg = row.patient_registrations as { patient_name?: string; patient_id?: string } | null;
+    const patientName = patReg?.patient_name ?? "";
+    const patientDisplayId = patReg?.patient_id ?? "";
     const schemeName = (row.hmo_schemes as { name?: string } | null)?.name ?? "";
-    return { ...mapHmoEnrollment(row), patientName, schemeName };
+    return { ...mapHmoEnrollment(row), patientName, patientDisplayId, schemeName };
   });
 }
 
