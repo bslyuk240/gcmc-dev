@@ -701,6 +701,7 @@ export const departmentHomePaths: Record<DepartmentKey, string> = {
 };
 
 export const sharedProtectedPrefixes = [
+  `${INTERNAL_PREFIX}/it/chat`,
   `${INTERNAL_PREFIX}/notifications`,
   `${INTERNAL_PREFIX}/profile`,
 ] as const;

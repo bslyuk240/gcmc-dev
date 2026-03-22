@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useHMSSession } from "@/modules/rbac/hooks";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { formatStaffDisplayId } from "@/lib/staff-id";
 
 const DEPT_LABELS: Record<string, string> = {
@@ -51,9 +52,14 @@ const TABS: { id: Tab; label: string }[] = [
 
 export default function StaffProfilePage() {
   const session = useHMSSession();
+  const router = useRouter();
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const [tab, setTab]         = useState<Tab>("info");
   const [editing, setEditing] = useState(false);
+  const [avatarUrl, setAvatarUrl] = useState(() => session?.avatar_url?.trim() ?? null);
+  const [avatarBusy, setAvatarBusy] = useState(false);
+  const [avatarMsg, setAvatarMsg] = useState<string | null>(null);
 
   // Editable personal fields
   const [phone, setPhone]     = useState("+234 801 234 5678");
@@ -81,6 +87,44 @@ export default function StaffProfilePage() {
     setTimeout(() => setPwMsg(null), 3000);
   }
 
+  async function handleAvatarUpload(file: File) {
+    if (!file.type.startsWith("image/")) {
+      setAvatarMsg("Please choose an image file.");
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setAvatarMsg("Image must be 5 MB or smaller.");
+      return;
+    }
+
+    setAvatarBusy(true);
+    setAvatarMsg(null);
+
+    try {
+      const formData = new FormData();
+      formData.append("avatar", file);
+
+      const response = await fetch("/staff/profile/avatar", {
+        method: "POST",
+        body: formData,
+      });
+
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(payload?.error ?? "Upload failed.");
+      }
+
+      const nextAvatarUrl = typeof payload?.avatarUrl === "string" ? payload.avatarUrl : null;
+      setAvatarUrl(nextAvatarUrl);
+      setAvatarMsg("Profile photo updated.");
+      router.refresh();
+    } catch (error) {
+      setAvatarMsg(error instanceof Error ? error.message : "Upload failed.");
+    } finally {
+      setAvatarBusy(false);
+    }
+  }
+
   const inputCls = "w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100";
   const readCls  = "w-full rounded-xl border border-slate-100 bg-slate-50 px-3 py-2.5 text-sm text-slate-800 cursor-default";
 
@@ -105,20 +149,75 @@ export default function StaffProfilePage() {
     <div className="space-y-5">
 
       {/* ── Avatar + header ─────────────────────────────────────────────── */}
-      <div className="flex items-center gap-4 rounded-2xl border border-slate-200 bg-white px-5 py-4">
-        <div className="flex h-16 w-16 items-center justify-center rounded-full bg-indigo-600 text-2xl font-black text-white shrink-0">
-          {initials}
-        </div>
-        <div className="flex-1 min-w-0">
-          <h1 className="text-xl font-black text-slate-900 truncate">{session.full_name}</h1>
-          <p className="text-sm text-slate-500">
-            {DEPT_LABELS[session.department] ?? session.department} · {session.role.replace(/_/g, " ")}
-          </p>
-          <p className="text-xs text-slate-400 mt-0.5">{employeeId} · {EMPLOYMENT_DATA.contractType}</p>
+      <div
+        className={`relative overflow-hidden rounded-2xl border px-5 py-4 ${
+          avatarUrl ? "border-indigo-200 bg-indigo-950/5" : "border-indigo-100 bg-white"
+        }`}
+      >
+        {avatarUrl ? (
+          <>
+            <div
+              className="absolute inset-0 scale-110 bg-cover bg-center blur-2xl opacity-90"
+              style={{ backgroundImage: `url(${avatarUrl})` }}
+            />
+            <div className="absolute inset-0 bg-slate-950/40" />
+          </>
+        ) : null}
+
+        <div className="relative flex items-center gap-4">
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            className={`flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-full text-2xl font-black ${
+              avatarUrl ? "border border-white/30 bg-white/20 text-white" : "bg-indigo-600 text-white"
+            }`}
+            aria-label="Upload profile photo"
+            disabled={avatarBusy}
+          >
+            {avatarUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={avatarUrl} alt="" className="h-full w-full object-cover" />
+            ) : (
+              initials
+            )}
+          </button>
+          <div className="flex-1 min-w-0">
+            <h1 className={`truncate text-xl font-black ${avatarUrl ? "text-white" : "text-slate-900"}`}>{session.full_name}</h1>
+            <p className={`text-sm ${avatarUrl ? "text-white/85" : "text-slate-500"}`}>
+              {DEPT_LABELS[session.department] ?? session.department} · {session.role.replace(/_/g, " ")}
+            </p>
+            <p className={`text-xs mt-0.5 ${avatarUrl ? "text-white/70" : "text-slate-400"}`}>{employeeId} · {EMPLOYMENT_DATA.contractType}</p>
+          </div>
         </div>
       </div>
 
       {/* ── Tab bar ─────────────────────────────────────────────────────── */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={(event) => {
+          const file = event.target.files?.[0];
+          if (!file) return;
+          void handleAvatarUpload(file);
+          event.currentTarget.value = "";
+        }}
+      />
+
+      {avatarMsg && (
+        <p className={`text-xs font-medium ${avatarMsg.includes("updated") ? "text-emerald-600" : "text-rose-600"}`}>
+          {avatarMsg}
+        </p>
+      )}
+      <button
+        type="button"
+        onClick={() => fileInputRef.current?.click()}
+        className="inline-flex rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs font-bold text-indigo-700 transition hover:bg-indigo-100"
+        disabled={avatarBusy}
+      >
+        {avatarBusy ? "Uploading..." : "Upload profile photo"}
+      </button>
       <div className="flex gap-1 overflow-x-auto rounded-xl border border-slate-200 bg-white p-1">
         {TABS.map((t) => (
           <button
@@ -330,3 +429,6 @@ export default function StaffProfilePage() {
     </div>
   );
 }
+
+
+

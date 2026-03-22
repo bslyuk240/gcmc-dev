@@ -1,11 +1,12 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState, useEffect } from "react";
+import { cn } from "@/lib/utils/cn";
 import type { HMSSession } from "@/lib/auth/session";
 
-// ─── nav items ────────────────────────────────────────────────────────────────
+// â”€â”€â”€ nav items â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const NAV = [
   { href: "/staff/dashboard",    label: "Dashboard",    icon: HomeIcon },
   { href: "/staff/my-rota",      label: "My Rota",      icon: CalIcon },
@@ -17,13 +18,13 @@ const NAV = [
   { href: "/staff/profile",      label: "Profile",      icon: UserIcon },
 ];
 
-// Mobile bottom nav shows only 5 key items
+// Mobile bottom nav is staff-specific and includes the sidebar toggle.
 const MOBILE_NAV = [
-  { href: "/staff/dashboard",    label: "Home",     icon: HomeIcon },
-  { href: "/staff/my-rota",      label: "Rota",     icon: CalIcon },
-  { href: "/staff/leave",        label: "Leave",    icon: PlaneIcon },
-  { href: "/staff/payslips",     label: "Payslips", icon: MoneyIcon },
-  { href: "/staff/profile",      label: "Profile",  icon: UserIcon },
+  { kind: "menu" as const, label: "Menu",     icon: MenuIcon },
+  { kind: "link" as const, href: "/staff/dashboard", label: "Home",    icon: HomeIcon },
+  { kind: "link" as const, href: "/staff/attendance", label: "Clock In", icon: ClockIcon },
+  { kind: "link" as const, href: "/staff/my-rota",    label: "Rota",    icon: CalIcon },
+  { kind: "link" as const, href: "/staff/chat",       label: "Chat to HR", icon: ChatIcon },
 ];
 
 const DEPT_LABELS: Record<string, string> = {
@@ -32,7 +33,7 @@ const DEPT_LABELS: Record<string, string> = {
   store: "Store", admin: "Admin", hr: "HR", it: "IT",
 };
 
-// ─── SVG Icons ────────────────────────────────────────────────────────────────
+// â”€â”€â”€ SVG Icons â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function HomeIcon({ active }: { active: boolean }) {
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={active ? 2.5 : 2} strokeLinecap="round" strokeLinejoin="round">
@@ -93,6 +94,15 @@ function UserIcon({ active }: { active: boolean }) {
     </svg>
   );
 }
+function MenuIcon({ active }: { active: boolean }) {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={active ? 2.5 : 2} strokeLinecap="round" strokeLinejoin="round">
+      <line x1="3" y1="6" x2="21" y2="6" />
+      <line x1="3" y1="12" x2="21" y2="12" />
+      <line x1="3" y1="18" x2="21" y2="18" />
+    </svg>
+  );
+}
 function LogoutIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -111,7 +121,89 @@ function WorkIcon() {
   );
 }
 
-// ─── Shell ────────────────────────────────────────────────────────────────────
+function StaffIdentityCard({
+  href,
+  initials,
+  name,
+  deptLabel,
+  avatarUrl,
+  compact = false,
+}: {
+  href: string;
+  initials: string;
+  name: string;
+  deptLabel: string;
+  avatarUrl?: string | null;
+  compact?: boolean;
+}) {
+  const hasAvatar = Boolean(avatarUrl?.trim());
+
+  return (
+    <Link
+      href={href}
+      className={cn(
+        "relative block overflow-hidden border shadow-sm transition hover:shadow-md",
+        hasAvatar ? "border-indigo-200" : "border-indigo-100 bg-indigo-50",
+        compact ? "mx-4 mt-4 rounded-xl p-3" : "mx-3 mt-4 rounded-xl p-3",
+      )}
+    >
+      {hasAvatar ? (
+        <div className="absolute inset-0">
+          <div
+            className="absolute inset-0 scale-110 bg-cover bg-center blur-2xl opacity-90"
+            style={{ backgroundImage: `url(${avatarUrl})` }}
+          />
+          <div className="absolute inset-0 bg-indigo-950/45" />
+        </div>
+      ) : (
+        <div className="absolute inset-0 bg-indigo-50" />
+      )}
+
+      <div className="relative flex items-center gap-3">
+        <div
+          className={cn(
+            "flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full border text-sm font-black",
+            hasAvatar
+              ? "border-white/30 bg-white/20 text-white shadow-sm"
+              : "border-indigo-100 bg-indigo-600 text-white",
+          )}
+        >
+          {hasAvatar ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={avatarUrl ?? ""}
+              alt=""
+              className="h-full w-full object-cover"
+            />
+          ) : (
+            initials
+          )}
+        </div>
+
+        <div className="min-w-0 flex-1">
+          <p className={cn("truncate text-sm font-bold", hasAvatar ? "text-white" : "text-slate-900")}>{name}</p>
+          <p className={cn("text-[11px] font-medium", hasAvatar ? "text-white/85" : "text-indigo-600")}>{deptLabel}</p>
+        </div>
+
+        <svg
+          width="14"
+          height="14"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke={hasAvatar ? "white" : "currentColor"}
+          strokeWidth="2.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          className={hasAvatar ? "shrink-0 text-white/90" : "shrink-0 text-slate-300"}
+        >
+          <path d="M9 18l6-6-6-6" />
+        </svg>
+      </div>
+    </Link>
+  );
+}
+
+// â”€â”€â”€ Shell â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export function StaffPortalShell({
   session,
   children,
@@ -150,11 +242,12 @@ export function StaffPortalShell({
     .split(" ").map((w) => w[0]).slice(0, 2).join("").toUpperCase();
 
   const deptLabel = DEPT_LABELS[session.department] ?? session.department;
+  const avatarUrl = session.avatar_url?.trim() ?? null;
 
   return (
     <div className="flex min-h-screen bg-slate-50">
 
-      {/* ══ DESKTOP SIDEBAR (hidden on mobile) ════════════════════════════════ */}
+      {/* â•â• DESKTOP SIDEBAR (hidden on mobile) â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */}
       <aside className="hidden lg:fixed lg:inset-y-0 lg:z-30 lg:flex lg:w-64 lg:min-h-0 lg:flex-col lg:overflow-hidden">
         <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden border-r border-slate-200 bg-white shadow-sm">
 
@@ -172,17 +265,13 @@ export function StaffPortalShell({
           </div>
 
           {/* Staff info card */}
-          <div className="mx-3 mt-4 rounded-xl bg-indigo-50 border border-indigo-100 p-3">
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-indigo-600 text-sm font-black text-white">
-                {initials}
-              </div>
-              <div className="min-w-0">
-                <p className="truncate text-sm font-bold text-slate-900">{session.full_name}</p>
-                <p className="text-[11px] text-indigo-600 font-medium">{deptLabel}</p>
-              </div>
-            </div>
-          </div>
+          <StaffIdentityCard
+            href="/staff/profile"
+            initials={initials}
+            name={session.full_name}
+            deptLabel={deptLabel}
+            avatarUrl={avatarUrl}
+          />
 
           {/* Navigation */}
           <nav className="mt-4 flex-1 overflow-y-auto overscroll-contain px-3 space-y-0.5">
@@ -227,10 +316,10 @@ export function StaffPortalShell({
             <button
               type="button"
               className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium text-red-500 hover:bg-red-50 hover:text-red-700 transition"
-              onClick={async () => {
-                await fetch("/staff/logout", { method: "POST" });
-                window.location.href = "/staff/login";
-              }}
+	              onClick={async () => {
+	                await fetch("/staff/logout", { method: "POST" });
+	                window.location.replace("/staff/login");
+	              }}
             >
               <LogoutIcon />
               <span>Log Out</span>
@@ -239,7 +328,7 @@ export function StaffPortalShell({
         </div>
       </aside>
 
-      {/* ══ MOBILE SIDEBAR OVERLAY ════════════════════════════════════════════ */}
+      {/* â•â• MOBILE SIDEBAR OVERLAY â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */}
       {mobileSidebarOpen && (
         <div className="fixed inset-0 z-40 lg:hidden">
           {/* Backdrop */}
@@ -264,15 +353,14 @@ export function StaffPortalShell({
 
             <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
               {/* Staff card */}
-              <div className="mx-4 mt-4 rounded-xl bg-indigo-50 border border-indigo-100 p-3">
-                <div className="flex items-center gap-3">
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-indigo-600 text-sm font-black text-white">{initials}</div>
-                  <div>
-                    <p className="text-sm font-bold text-slate-900">{session.full_name}</p>
-                    <p className="text-[11px] text-indigo-600 font-medium">{deptLabel}</p>
-                  </div>
-                </div>
-              </div>
+              <StaffIdentityCard
+                href="/staff/profile"
+                initials={initials}
+                name={session.full_name}
+                deptLabel={deptLabel}
+                avatarUrl={avatarUrl}
+                compact
+              />
 
               {/* Nav */}
               <nav className="mt-4 flex-1 overflow-y-auto overscroll-contain px-3 space-y-0.5">
@@ -309,10 +397,10 @@ export function StaffPortalShell({
               <button
                 type="button"
                 className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium text-red-500 hover:bg-red-50 transition"
-                onClick={async () => {
-                  await fetch("/staff/logout", { method: "POST" });
-                  window.location.href = "/staff/login";
-                }}
+	                onClick={async () => {
+	                  await fetch("/staff/logout", { method: "POST" });
+	                  window.location.replace("/staff/login");
+	                }}
               >
                 <LogoutIcon /><span>Log Out</span>
               </button>
@@ -321,50 +409,11 @@ export function StaffPortalShell({
         </div>
       )}
 
-      {/* ══ MAIN CONTENT AREA ═════════════════════════════════════════════════ */}
+      {/* â•â• MAIN CONTENT AREA â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */}
       <div className="flex flex-1 flex-col lg:pl-64">
 
-        {/* ── Mobile top header (hidden on desktop) ──────────────────────────── */}
-        <header className="sticky top-0 z-20 border-b border-slate-200 bg-white shadow-sm lg:hidden">
-          <div className="flex items-center justify-between px-4 py-3">
-            {/* Hamburger */}
-            <button
-              onClick={() => setMobileSidebarOpen(true)}
-              className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100"
-              aria-label="Open menu"
-            >
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="18" x2="21" y2="18" />
-              </svg>
-            </button>
-
-            {/* Brand */}
-            <span className="text-sm font-black text-slate-900">Staff Portal</span>
-
-            {/* Bell + logout */}
-            <div className="flex items-center gap-1">
-              <Link href="/staff/notifications" className="relative rounded-lg p-1.5 text-slate-500 hover:bg-slate-100">
-                <BellIcon active={pathname === "/staff/notifications"} />
-                {notifCount > 0 && (
-                  <span className="absolute -right-0.5 -top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[9px] font-bold text-white">
-                    {notifCount > 9 ? "9+" : notifCount}
-                  </span>
-                )}
-              </Link>
-              <form action="/staff/logout" method="post">
-                <button
-                  type="submit"
-                  title="Log out"
-                  className="rounded-lg p-1.5 text-red-400 hover:bg-red-50 hover:text-red-600 transition"
-                >
-                  <LogoutIcon />
-                </button>
-              </form>
-            </div>
-          </div>
-        </header>
-
-        {/* ── Desktop top bar (hidden on mobile) ─────────────────────────────── */}
+        {/* â”€â”€ Mobile top header (hidden on desktop) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+        {/* â”€â”€ Desktop top bar (hidden on mobile) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
         <header className="hidden lg:flex sticky top-0 z-20 items-center justify-between border-b border-slate-200 bg-white px-6 py-3 shadow-sm">
           <div>
             <p className="text-base font-bold text-slate-900">
@@ -395,32 +444,51 @@ export function StaffPortalShell({
           </div>
         </header>
 
-        {/* ── Page content ────────────────────────────────────────────────────── */}
+        {/* â”€â”€ Page content â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
         <main className="flex-1 p-4 pb-28 lg:p-6 lg:pb-6">
           {children}
         </main>
-
-        {/* ── Mobile bottom navigation ────────────────────────────────────────── */}
+        {/* —— Mobile bottom navigation —— */}
         <nav
           className="fixed inset-x-0 bottom-0 z-20 border-t border-slate-200 bg-white lg:hidden"
+          aria-label="Staff mobile navigation"
           style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
         >
           <div className="flex">
             {MOBILE_NAV.map((item) => {
-              const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
               const Icon = item.icon;
+              const isActive =
+                item.kind === "menu"
+                  ? mobileSidebarOpen
+                  : pathname === item.href || pathname.startsWith(`${item.href}/`);
+              const baseClass =
+                "flex flex-1 select-none flex-col items-center gap-0.5 py-2.5 text-center active:opacity-70";
+              const activeClass = isActive ? "text-indigo-600" : "text-slate-400";
+
+              if (item.kind === "menu") {
+                return (
+                  <button
+                    key={item.label}
+                    type="button"
+                    onClick={() => setMobileSidebarOpen(true)}
+                    className={cn(baseClass, activeClass)}
+                    style={{ touchAction: "manipulation" }}
+                  >
+                    <Icon active={isActive} />
+                    <span className={cn("text-[10px] font-semibold", isActive ? "text-indigo-600" : "")}>{item.label}</span>
+                  </button>
+                );
+              }
+
               return (
                 <Link
                   key={item.href}
                   href={item.href}
-                  className={`flex flex-1 flex-col items-center gap-0.5 py-2.5 text-center transition ${
-                    active ? "text-indigo-600" : "text-slate-400 hover:text-slate-600"
-                  }`}
+                  className={cn(baseClass, activeClass)}
+                  style={{ touchAction: "manipulation" }}
                 >
-                  <Icon active={active} />
-                  <span className={`text-[10px] font-semibold ${active ? "text-indigo-600" : ""}`}>
-                    {item.label}
-                  </span>
+                  <Icon active={isActive} />
+                  <span className={cn("text-[10px] font-semibold", isActive ? "text-indigo-600" : "")}>{item.label}</span>
                 </Link>
               );
             })}
@@ -430,3 +498,6 @@ export function StaffPortalShell({
     </div>
   );
 }
+
+
+

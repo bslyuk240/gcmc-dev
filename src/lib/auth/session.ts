@@ -47,6 +47,7 @@ export type HMSSession = {
   staff_id: string;
   full_name: string;
   email: string;
+  avatar_url?: string | null;
   department: DepartmentKey;
   role: RoleKey;
   /** Flat permission strings e.g. "pharmacy:inventory:read" */
@@ -127,6 +128,36 @@ export async function writeStaffPortalSessionCookie(session: HMSSession): Promis
     ...sessionCookieOptions,
     secure: process.env.NODE_ENV === "production",
   });
+}
+
+/**
+ * Keep both portal session cookies in sync when staff profile data changes.
+ * Currently used for avatar updates so the new photo appears across portals
+ * without forcing a re-login.
+ */
+export async function syncStaffAvatarAcrossSessions(staffId: string, avatarUrl: string): Promise<void> {
+  const store = await cookies();
+  const cookieNames = [hmsSessionV2CookieName, hmsStaffPortalSessionCookieName];
+
+  for (const cookieName of cookieNames) {
+    const raw = store.get(cookieName)?.value;
+    if (!raw) continue;
+
+    const session = deserialiseSession(raw);
+    if (!session || session.staff_id !== staffId) continue;
+
+    store.set(
+      cookieName,
+      serialiseSession({
+        ...session,
+        avatar_url: avatarUrl,
+      }),
+      {
+        ...sessionCookieOptions,
+        secure: process.env.NODE_ENV === "production",
+      },
+    );
+  }
 }
 
 /**

@@ -47,6 +47,13 @@ function greet(name: string) {
 // ─── component ────────────────────────────────────────────────────────────────
 export default function StaffDashboardPage() {
   const session = useHMSSession();
+  const avatarUrl = session?.avatar_url?.trim() ?? null;
+  const initials = session?.full_name
+    .split(" ")
+    .map((word) => word[0])
+    .slice(0, 2)
+    .join("")
+    .toUpperCase() ?? "?";
 
   // Attendance
   const [clockedIn,   setClockedIn]   = useState(false);
@@ -73,26 +80,29 @@ export default function StaffDashboardPage() {
   }, [session?.staff_id]);
 
   useEffect(() => {
-    // Load attendance state from sessionStorage (resets on tab close — intentional for clock-in)
-    const saved = sessionStorage.getItem("staff_clock_in");
-    if (saved) {
-      const { time, ts } = JSON.parse(saved) as { time: string; ts: number };
-      setClockedIn(true);
-      setClockInTime(time);
-      startRef.current = ts;
-    }
-    // Load notifications
-    try {
-      const raw = localStorage.getItem("hms_notifications");
-      if (raw) {
-        const all = JSON.parse(raw) as Array<{ id: string; title: string; message: string; createdAt?: string; read?: boolean; targetDepartment?: string }>;
-        const mine = all
-          .filter((n) => !n.read)
-          .filter((n) => !n.targetDepartment || n.targetDepartment === session?.department)
-          .slice(0, 3);
-        setNotifs(mine.map((n) => ({ id: n.id, title: n.title, message: n.message, time: n.createdAt ?? "", read: !!n.read })));
+    const id = setTimeout(() => {
+      // Load attendance state from sessionStorage (resets on tab close — intentional for clock-in)
+      const saved = sessionStorage.getItem("staff_clock_in");
+      if (saved) {
+        const { time, ts } = JSON.parse(saved) as { time: string; ts: number };
+        setClockedIn(true);
+        setClockInTime(time);
+        startRef.current = ts;
       }
-    } catch { /* ignore */ }
+      // Load notifications
+      try {
+        const raw = localStorage.getItem("hms_notifications");
+        if (raw) {
+          const all = JSON.parse(raw) as Array<{ id: string; title: string; message: string; createdAt?: string; read?: boolean; targetDepartment?: string }>;
+          const mine = all
+            .filter((n) => !n.read)
+            .filter((n) => !n.targetDepartment || n.targetDepartment === session?.department)
+            .slice(0, 3);
+          setNotifs(mine.map((n) => ({ id: n.id, title: n.title, message: n.message, time: n.createdAt ?? "", read: !!n.read })));
+        }
+      } catch { /* ignore */ }
+    }, 0);
+    return () => clearTimeout(id);
   }, [session?.department]);
 
   // Live elapsed timer
@@ -145,29 +155,60 @@ export default function StaffDashboardPage() {
     <div className="space-y-5">
 
       {/* ── Welcome banner ──────────────────────────────────────────────── */}
-      <div className="rounded-2xl bg-gradient-to-br from-indigo-600 to-indigo-700 px-5 py-5 text-white">
-        <p className="text-sm font-medium text-indigo-200">{greet(session.full_name)}</p>
-        <h1 className="mt-1 text-2xl font-black">{session.full_name}</h1>
-        <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-indigo-200">
-          <span className="rounded-full bg-white/15 px-2.5 py-0.5 font-semibold">
-            {DEPT_LABELS[session.department] ?? session.department}
-          </span>
-          <span className="rounded-full bg-white/15 px-2.5 py-0.5 font-semibold capitalize">
-            {session.role.replace(/_/g, " ")}
-          </span>
-          {isOnShift && nextShift && (
-            <span className="rounded-full bg-emerald-400/30 px-2.5 py-0.5 font-semibold text-emerald-200">
-              On shift today · {nextShift.unit}
-            </span>
-          )}
+      <div
+        className={`relative overflow-hidden rounded-2xl px-5 py-5 text-white ${
+          avatarUrl ? "border border-indigo-200" : "bg-gradient-to-br from-indigo-600 to-indigo-700"
+        }`}
+      >
+        {avatarUrl ? (
+          <>
+            <div
+              className="absolute inset-0 scale-110 bg-cover bg-center blur-2xl opacity-90"
+              style={{ backgroundImage: `url(${avatarUrl})` }}
+            />
+            <div className="absolute inset-0 bg-slate-950/45" />
+          </>
+        ) : null}
+
+        <div className="relative flex items-start gap-4">
+          <Link
+            href="/staff/profile"
+            className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-white/20 bg-white/15 text-2xl font-black text-white shadow-sm"
+            aria-label="Open staff profile"
+          >
+            {avatarUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={avatarUrl} alt="" className="h-full w-full object-cover" />
+            ) : (
+              initials
+            )}
+          </Link>
+
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-medium text-indigo-200">{greet(session.full_name)}</p>
+            <h1 className="mt-1 truncate text-2xl font-black">{session.full_name}</h1>
+            <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-indigo-200">
+              <span className="rounded-full bg-white/15 px-2.5 py-0.5 font-semibold">
+                {DEPT_LABELS[session.department] ?? session.department}
+              </span>
+              <span className="rounded-full bg-white/15 px-2.5 py-0.5 font-semibold capitalize">
+                {session.role.replace(/_/g, " ")}
+              </span>
+              {isOnShift && nextShift && (
+                <span className="rounded-full bg-emerald-400/30 px-2.5 py-0.5 font-semibold text-emerald-200">
+                  On shift today · {nextShift.unit}
+                </span>
+              )}
+            </div>
+            <Link
+              href={`/app/${session.department}`}
+              className="mt-4 inline-flex items-center gap-1.5 rounded-xl border border-white/20 bg-white/10 px-3 py-2 text-xs font-bold text-white transition hover:bg-white/20"
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M9 18l6-6-6-6"/></svg>
+              Go to Work Portal
+            </Link>
+          </div>
         </div>
-        <Link
-          href={`/app/${session.department}`}
-          className="mt-4 inline-flex items-center gap-1.5 rounded-xl bg-white/10 border border-white/20 px-3 py-2 text-xs font-bold text-white hover:bg-white/20 transition"
-        >
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M9 18l6-6-6-6"/></svg>
-          Go to Work Portal
-        </Link>
       </div>
 
       {/* ── Attendance / Clock-in card ───────────────────────────────────── */}

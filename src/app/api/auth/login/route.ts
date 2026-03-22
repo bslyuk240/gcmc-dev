@@ -58,7 +58,7 @@ export async function POST(request: Request) {
 
   const { data: profile, error: profileError } = await supabase
     .from("staff_profiles")
-    .select("full_name, email, department, role, is_active, must_change_password")
+    .select("full_name, email, department, role, avatar_url, is_active, must_change_password")
     .eq("id", userId)
     .single();
 
@@ -88,6 +88,7 @@ export async function POST(request: Request) {
     staff_id: userId,
     full_name: profile.full_name,
     email: profile.email,
+    avatar_url: profile.avatar_url ?? null,
     department: profile.department,
     role: profile.role as RoleKey,
     permissions,

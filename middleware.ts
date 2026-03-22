@@ -111,6 +111,20 @@ export async function middleware(request: NextRequest) {
       (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
     );
 
+    if (
+      pathname === `${INTERNAL_PREFIX}/dashboard` &&
+      routeDepartment === "dashboard" &&
+      sessionDepartment !== "dashboard"
+    ) {
+      const response = NextResponse.redirect(
+        new URL(
+          departmentHomePaths[sessionDepartment as keyof typeof departmentHomePaths],
+          request.url,
+        ),
+      );
+      return applySecurityHeaders(response);
+    }
+
     // Redirect user to their own department if they try to access another
     if (
       !isSharedRoute &&

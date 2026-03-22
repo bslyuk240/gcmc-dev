@@ -4,11 +4,20 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { cn } from "@/lib/utils/cn";
 import { getDepartmentFromPath, INTERNAL_PREFIX } from "@/lib/constants/navigation";
+import {
+  getFrontDeskCharges,
+  getConsultationFees,
+  getSupplierPayments,
+  getPayrollBatches,
+  getKioskSales,
+  getLabCharges,
+  getNursingCharges,
+} from "@/lib/data/accounts-store";
 import { getPrescriptions, getPharmacyBills } from "@/lib/data/pharmacy-store";
 import { getLabTests } from "@/lib/data/lab-store";
 import { getWardPatients } from "@/lib/data/nurses-store";
 
-type SearchResult = {
+export type SearchResult = {
   id: string;
   title: string;
   subtitle: string;
@@ -16,11 +25,150 @@ type SearchResult = {
   type: string;
 };
 
-function searchForDept(dept: string, query: string): SearchResult[] {
+export function searchForDept(dept: string, query: string): SearchResult[] {
   const q = query.toLowerCase().trim();
   if (!q || q.length < 2) return [];
 
+  if (dept === "dashboard") {
+    return [
+      ...searchForDept("accounts", query),
+      ...searchForDept("pharmacy", query),
+      ...searchForDept("lab", query),
+      ...searchForDept("nurses", query),
+      ...searchForDept("frontdesk", query),
+    ].slice(0, 8);
+  }
+
   const results: SearchResult[] = [];
+
+  if (dept === "accounts") {
+    const frontDesk = getFrontDeskCharges();
+    frontDesk
+      .filter((c) =>
+        c.patientName.toLowerCase().includes(q) ||
+        c.patientId.toLowerCase().includes(q) ||
+        c.chargeType.toLowerCase().includes(q) ||
+        c.description.toLowerCase().includes(q) ||
+        c.id.toLowerCase().includes(q))
+      .slice(0, 4)
+      .forEach((c) =>
+        results.push({
+          id: c.id,
+          title: `FD ${c.id} — ${c.patientName}`,
+          subtitle: `${c.chargeType} · ₦${c.amount.toLocaleString()} · ${c.status}`,
+          href: `${INTERNAL_PREFIX}/accounts/receive-payment`,
+          type: "Charge",
+        }),
+      );
+
+    const consultations = getConsultationFees();
+    consultations
+      .filter((c) =>
+        c.patientName.toLowerCase().includes(q) ||
+        c.patientId.toLowerCase().includes(q) ||
+        c.doctorName.toLowerCase().includes(q) ||
+        c.consultationType.toLowerCase().includes(q) ||
+        c.id.toLowerCase().includes(q))
+      .slice(0, 4)
+      .forEach((c) =>
+        results.push({
+          id: c.id,
+          title: `CONS ${c.id} — ${c.patientName}`,
+          subtitle: `${c.doctorName} · ₦${c.fee.toLocaleString()} · ${c.status}`,
+          href: `${INTERNAL_PREFIX}/accounts/consultation-fees`,
+          type: "Consultation",
+        }),
+      );
+
+    const labCharges = getLabCharges();
+    labCharges
+      .filter((c) =>
+        c.patientName.toLowerCase().includes(q) ||
+        c.patientId.toLowerCase().includes(q) ||
+        c.testName.toLowerCase().includes(q) ||
+        c.id.toLowerCase().includes(q))
+      .slice(0, 4)
+      .forEach((c) =>
+        results.push({
+          id: c.id,
+          title: `LAB ${c.id} — ${c.patientName}`,
+          subtitle: `${c.testName} · ₦${c.amount.toLocaleString()} · ${c.status}`,
+          href: `${INTERNAL_PREFIX}/accounts/lab-billing`,
+          type: "Lab Charge",
+        }),
+      );
+
+    const nursingCharges = getNursingCharges();
+    nursingCharges
+      .filter((c) =>
+        c.patientName.toLowerCase().includes(q) ||
+        c.patientId.toLowerCase().includes(q) ||
+        c.procedureType.toLowerCase().includes(q) ||
+        c.description.toLowerCase().includes(q) ||
+        c.id.toLowerCase().includes(q))
+      .slice(0, 4)
+      .forEach((c) =>
+        results.push({
+          id: c.id,
+          title: `NURS ${c.id} — ${c.patientName}`,
+          subtitle: `${c.procedureType} · ₦${c.amount.toLocaleString()} · ${c.status}`,
+          href: `${INTERNAL_PREFIX}/accounts/nursing-billing`,
+          type: "Nursing Charge",
+        }),
+      );
+
+    const supplierPayments = getSupplierPayments();
+    supplierPayments
+      .filter((p) =>
+        p.supplier.toLowerCase().includes(q) ||
+        p.poId.toLowerCase().includes(q) ||
+        p.description.toLowerCase().includes(q) ||
+        p.id.toLowerCase().includes(q))
+      .slice(0, 3)
+      .forEach((p) =>
+        results.push({
+          id: p.id,
+          title: `PO ${p.poId} — ${p.supplier}`,
+          subtitle: `${p.description} · ₦${p.amount.toLocaleString()} · ${p.status}`,
+          href: `${INTERNAL_PREFIX}/accounts/supplier-payments`,
+          type: "Supplier Payment",
+        }),
+      );
+
+    const payrollBatches = getPayrollBatches();
+    payrollBatches
+      .filter((b) =>
+        b.period.toLowerCase().includes(q) ||
+        b.preparedBy.toLowerCase().includes(q) ||
+        b.id.toLowerCase().includes(q))
+      .slice(0, 3)
+      .forEach((b) =>
+        results.push({
+          id: b.id,
+          title: `Payroll ${b.period}`,
+          subtitle: `${b.totalStaff} staff · ₦${b.totalAmount.toLocaleString()} · ${b.status}`,
+          href: `${INTERNAL_PREFIX}/accounts/payroll`,
+          type: "Payroll",
+        }),
+      );
+
+    const kioskSales = getKioskSales();
+    kioskSales
+      .filter((k) =>
+        k.date.toLowerCase().includes(q) ||
+        k.reportedBy.toLowerCase().includes(q) ||
+        k.id.toLowerCase().includes(q))
+      .slice(0, 3)
+      .forEach((k) =>
+        results.push({
+          id: k.id,
+          title: `Kiosk ${k.date}`,
+          subtitle: `${k.reportedBy} · ₦${k.totalRevenue.toLocaleString()} · ${k.status}`,
+          href: `${INTERNAL_PREFIX}/accounts/kiosk`,
+          type: "Kiosk",
+        }),
+      );
+  }
 
   if (dept === "pharmacy" || dept === "doctors") {
     const rxs = getPrescriptions();
