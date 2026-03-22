@@ -19,7 +19,7 @@ export async function POST(request: Request) {
   const nextUrl = String(formData.get("next") ?? "").trim();
 
   const loginError = (code: string) =>
-    NextResponse.redirect(new URL(`/staff/login?error=${code}`, request.url));
+    NextResponse.redirect(new URL(`/staff/login?error=${code}`, request.url), 303);
 
   if (!email || !password) {
     return loginError("invalid");
@@ -84,5 +84,5 @@ export async function POST(request: Request) {
   await writeStaffPortalSessionCookie(session);
 
   const destination = nextUrl && isAllowedStaffNext(nextUrl) ? nextUrl : "/staff/dashboard";
-  return NextResponse.redirect(new URL(destination, request.url));
+  return NextResponse.redirect(new URL(destination, request.url), 303);
 }

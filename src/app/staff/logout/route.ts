@@ -10,5 +10,5 @@ export async function POST(request: Request) {
 
   await clearSessionCookies();
 
-  return NextResponse.redirect(new URL("/staff/login", request.url));
+  return NextResponse.redirect(new URL("/staff/login", request.url), 303);
 }

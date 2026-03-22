@@ -35,7 +35,7 @@ export async function POST(request: Request) {
   const nextUrl = String(formData.get("next") ?? "").trim();
 
   const loginError = (code: string) =>
-    NextResponse.redirect(new URL(`/login?error=${code}`, request.url));
+    NextResponse.redirect(new URL(`/login?error=${code}`, request.url), 303);
 
   if (!email || !password) {
     return loginError("invalid");
@@ -99,7 +99,7 @@ export async function POST(request: Request) {
   if (profile.must_change_password) {
     await clearStaffPortalSessionCookies();
     await writePendingSessionCookie(session);
-    return NextResponse.redirect(new URL("/change-password", request.url));
+    return NextResponse.redirect(new URL("/change-password", request.url), 303);
   }
 
   await clearStaffPortalSessionCookies();
@@ -112,5 +112,5 @@ export async function POST(request: Request) {
   store.set(sessionStaffNameCookieName, profile.full_name, opts);
 
   const destination = nextUrl && isAllowedNext(nextUrl) ? nextUrl : getDepartmentHomePath(profile.department);
-  return NextResponse.redirect(new URL(destination, request.url));
+  return NextResponse.redirect(new URL(destination, request.url), 303);
 }
