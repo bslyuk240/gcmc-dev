@@ -23,6 +23,10 @@ export async function resolveStaffProfile(
     .eq("id", userId)
     .maybeSingle<StaffProfileRecord>();
 
+  if (byId.error) {
+    console.error("[resolveStaffProfile] id lookup failed:", byId.error.message, byId.error.details);
+  }
+
   if (byId.data) {
     return byId.data;
   }
@@ -36,6 +40,10 @@ export async function resolveStaffProfile(
     .select(select)
     .eq("email", email)
     .maybeSingle<StaffProfileRecord>();
+
+  if (byEmail.error) {
+    console.error("[resolveStaffProfile] email lookup failed:", byEmail.error.message, byEmail.error.details);
+  }
 
   return byEmail.data ?? null;
 }
