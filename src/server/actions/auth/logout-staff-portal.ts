@@ -1,12 +1,12 @@
 "use server";
 
 import { redirect } from "next/navigation";
-import { clearStaffPortalSessionCookies } from "@/lib/auth/session";
+import { clearSessionCookies } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
 
 /**
  * Logout action for the Staff Self-Service Portal.
- * Clears ONLY the staff portal session cookie — management portal session is unaffected.
+ * Clears all portal session cookies so switching portals requires a fresh login.
  */
 export async function logoutStaffPortalAction() {
   const supabase = await createClient();
@@ -14,7 +14,7 @@ export async function logoutStaffPortalAction() {
     await supabase.auth.signOut();
   }
 
-  await clearStaffPortalSessionCookies();
+  await clearSessionCookies();
 
   redirect("/staff/login");
 }

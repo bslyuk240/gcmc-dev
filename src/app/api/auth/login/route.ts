@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import {
   getDepartmentHomePath,
   isDepartmentKey,
+  clearStaffPortalSessionCookies,
   writePendingSessionCookie,
   writeSessionCookie,
   type HMSSession,
@@ -96,10 +97,12 @@ export async function POST(request: Request) {
   };
 
   if (profile.must_change_password) {
+    await clearStaffPortalSessionCookies();
     await writePendingSessionCookie(session);
     return NextResponse.redirect(new URL("/change-password", request.url));
   }
 
+  await clearStaffPortalSessionCookies();
   await writeSessionCookie(session);
 
   const store = await cookies();

@@ -10,6 +10,7 @@ import {
 } from "@/lib/auth/constants";
 import {
   isDepartmentKey,
+  clearStaffPortalSessionCookies,
   getDepartmentHomePath,
   writeSessionCookie,
   writePendingSessionCookie,
@@ -99,10 +100,12 @@ export async function loginStaffAction(formData: FormData) {
     // /change-password with a short-lived pending session cookie.
     // The real hms-session-v2 is only written after they set a new password.
     if (profile.must_change_password) {
+      await clearStaffPortalSessionCookies();
       await writePendingSessionCookie(session);
       redirect("/change-password");
     }
 
+    await clearStaffPortalSessionCookies();
     await writeSessionCookie(session);
 
     // Also write legacy cookies so existing components keep working

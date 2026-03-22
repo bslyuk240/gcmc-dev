@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { clearStaffPortalSessionCookies } from "@/lib/auth/session";
+import { clearSessionCookies } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
 
 export async function POST(request: Request) {
@@ -8,7 +8,7 @@ export async function POST(request: Request) {
     await supabase.auth.signOut();
   }
 
-  await clearStaffPortalSessionCookies();
+  await clearSessionCookies();
 
   return NextResponse.redirect(new URL("/staff/login", request.url));
 }

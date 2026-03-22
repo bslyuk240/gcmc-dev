@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import {
   isDepartmentKey,
+  clearManagementSessionCookies,
   writeStaffPortalSessionCookie,
   type HMSSession,
   type RoleKey,
@@ -79,6 +80,7 @@ export async function POST(request: Request) {
     issued_at: new Date().toISOString(),
   };
 
+  await clearManagementSessionCookies();
   await writeStaffPortalSessionCookie(session);
 
   const destination = nextUrl && isAllowedStaffNext(nextUrl) ? nextUrl : "/staff/dashboard";

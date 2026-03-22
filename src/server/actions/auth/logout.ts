@@ -1,7 +1,7 @@
 "use server";
 
 import { redirect } from "next/navigation";
-import { clearManagementSessionCookies } from "@/lib/auth/session";
+import { clearSessionCookies } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
 
 export async function logoutStaffAction() {
@@ -10,8 +10,7 @@ export async function logoutStaffAction() {
     await supabase.auth.signOut();
   }
 
-  // Clear only the management portal cookies — staff portal session is unaffected
-  await clearManagementSessionCookies();
+  await clearSessionCookies();
 
   redirect("/login");
 }

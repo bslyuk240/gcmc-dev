@@ -10,6 +10,7 @@
 
 import { redirect } from "next/navigation";
 import {
+  clearManagementSessionCookies,
   isDepartmentKey,
   writeStaffPortalSessionCookie,
   type HMSSession,
@@ -24,9 +25,9 @@ function isAllowedStaffNext(next: string): boolean {
 }
 
 export async function loginStaffPortalAction(formData: FormData) {
-  const email   = String(formData.get("email")    ?? "").trim();
-  const password= String(formData.get("password") ?? "").trim();
-  const nextUrl = String(formData.get("next")     ?? "").trim();
+  const email = String(formData.get("email") ?? "").trim();
+  const password = String(formData.get("password") ?? "").trim();
+  const nextUrl = String(formData.get("next") ?? "").trim();
 
   if (!email || !password) {
     redirect("/staff/login?error=invalid");
@@ -75,16 +76,16 @@ export async function loginStaffPortalAction(formData: FormData) {
     const permissions = (permRows ?? []).map((r: { permission: string }) => r.permission);
 
     const session: HMSSession = {
-      staff_id:    userId,
-      full_name:   profile.full_name,
-      email:       profile.email,
-      department:  profile.department,
-      role:        profile.role as RoleKey,
+      staff_id: userId,
+      full_name: profile.full_name,
+      email: profile.email,
+      department: profile.department,
+      role: profile.role as RoleKey,
       permissions,
-      issued_at:   new Date().toISOString(),
+      issued_at: new Date().toISOString(),
     };
 
-    // Write ONLY the staff portal cookie — management portal cookie is untouched
+    await clearManagementSessionCookies();
     await writeStaffPortalSessionCookie(session);
 
     redirect(isAllowedStaffNext(nextUrl) ? nextUrl : STAFF_PORTAL_HOME);
