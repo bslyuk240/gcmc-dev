@@ -191,7 +191,7 @@ export default function HRPayrollPage() {
     }));
   }
 
-  function handleCreatePayslip(event: React.FormEvent<HTMLFormElement>) {
+  async function handleCreatePayslip(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!selectedStaff) {
       setToast({ message: "Select a staff member before creating a payslip.", type: "error" });
@@ -206,16 +206,23 @@ export default function HRPayrollPage() {
       draftAdjustments,
     );
 
-    addGeneratedPayslip(payslip);
-    setToast({
-      message: `${selectedStaff.name}'s ${periodLabel} payslip has been created and published to the staff portal.`,
-      type: "success",
-    });
-    resetDraft();
-    setShowCreate(false);
+    try {
+      await addGeneratedPayslip(payslip);
+      setToast({
+        message: `${selectedStaff.name}'s ${periodLabel} payslip has been created and published to the staff portal.`,
+        type: "success",
+      });
+      resetDraft();
+      setShowCreate(false);
+    } catch (error) {
+      setToast({
+        message: error instanceof Error ? error.message : "Failed to create payslip.",
+        type: "error",
+      });
+    }
   }
 
-  function handleGenerateDepartmentBatch(department: StaffDepartment) {
+  async function handleGenerateDepartmentBatch(department: StaffDepartment) {
     const group = payslipGroups.find((item) => item.department === department);
     if (!group || group.items.length === 0) {
       setToast({ message: `No generated payslips found for ${department} in ${periodLabel}.`, type: "error" });
@@ -247,22 +254,36 @@ export default function HRPayrollPage() {
       entries,
     };
 
-    addPayrollBatch(batch);
-    assignPayslipsToBatch(batchId, group.items.map((item) => item.id));
-    setToast({
-      message: `${department} payroll batch generated from ${group.items.length} payslips for ${periodLabel}.`,
-      type: "success",
-    });
+    try {
+      await addPayrollBatch(batch);
+      await assignPayslipsToBatch(batchId, group.items.map((item) => item.id));
+      setToast({
+        message: `${department} payroll batch generated from ${group.items.length} payslips for ${periodLabel}.`,
+        type: "success",
+      });
+    } catch (error) {
+      setToast({
+        message: error instanceof Error ? error.message : "Failed to generate payroll batch.",
+        type: "error",
+      });
+    }
   }
 
-  function handleSubmitToAccounts(batch: PayrollBatch) {
-    updatePayrollStatus(batch.id, "Submitted");
-    updatePayslipWorkflowByBatch(batch.id, "Submitted to Accounts");
-    setSubmitTarget(null);
-    setToast({
-      message: `${batch.department ?? "Department"} payroll for ${batch.period} submitted to Accounts.`,
-      type: "success",
-    });
+  async function handleSubmitToAccounts(batch: PayrollBatch) {
+    try {
+      await updatePayslipWorkflowByBatch(batch.id, "Submitted to Accounts");
+      await updatePayrollStatus(batch.id, "Submitted");
+      setSubmitTarget(null);
+      setToast({
+        message: `${batch.department ?? "Department"} payroll for ${batch.period} submitted to Accounts.`,
+        type: "success",
+      });
+    } catch (error) {
+      setToast({
+        message: error instanceof Error ? error.message : "Failed to submit payroll to Accounts.",
+        type: "error",
+      });
+    }
   }
 
   const inputCls =

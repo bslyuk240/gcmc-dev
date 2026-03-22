@@ -3,7 +3,15 @@
 import Link from "next/link";
 import { useState, useEffect, useRef } from "react";
 import { useHMSSession } from "@/modules/rbac/hooks";
-import { fetchStaffShifts, fetchLeaveRequests, type StaffShift } from "@/lib/supabase/db";
+import { fetchStaffShifts, fetchLeaveRequests, fetchLeaveYearPolicies, type StaffShift } from "@/lib/supabase/db";
+import type { AttendanceRecord } from "@/modules/workforce/attendance/types";
+import {
+  clockInStaffAttendance,
+  clockOutStaffAttendance,
+  fetchStaffAttendanceRecords,
+  isLateClockIn,
+  todayAttendanceDate,
+} from "@/lib/attendance/client";
 
 // ─── constants ─────────────────────────────────────────────────────────────────
 const DEPT_LABELS: Record<string, string> = {
@@ -35,9 +43,6 @@ const QUICK_TILES = [
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
 }
-function today() {
-  return new Date().toISOString().slice(0, 10);
-}
 function greet(name: string) {
   const h = new Date().getHours();
   const salutation = h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening";
@@ -56,9 +61,11 @@ export default function StaffDashboardPage() {
     .toUpperCase() ?? "?";
 
   // Attendance
-  const [clockedIn,   setClockedIn]   = useState(false);
-  const [clockInTime, setClockInTime] = useState<string | null>(null);
-  const [elapsed,     setElapsed]     = useState("00:00:00");
+  const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>([]);
+  const [attendanceLoading, setAttendanceLoading] = useState(true);
+  const [attendanceSaving, setAttendanceSaving] = useState(false);
+  const [attendanceError, setAttendanceError] = useState<string | null>(null);
+  const [elapsed, setElapsed] = useState("00:00:00");
   const startRef = useRef<number | null>(null);
 
   // Shift and leave data from Supabase
@@ -66,46 +73,75 @@ export default function StaffDashboardPage() {
   const [leaveBalance, setLeaveBalance] = useState({ annual: { daysUsed: 0, daysTotal: 21 }, sick: { daysUsed: 0, daysTotal: 10 } });
 
   // Notifications from shared store
-  const [notifs, setNotifs] = useState<Array<{ id: string; title: string; message: string; time: string; read: boolean }>>([]);
+  const [notifs] = useState<Array<{ id: string; title: string; message: string; time: string; read: boolean }>>([]);
 
   useEffect(() => {
     if (!session?.staff_id) return;
     fetchStaffShifts(session.staff_id).then(setShifts).catch(() => {});
-    fetchLeaveRequests().then((reqs) => {
-      const mine = reqs.filter((r) => r.staffId === session.staff_id);
-      const annualUsed = mine.filter((r) => r.leaveType === "Annual" && r.status === "Approved").reduce((s, r) => s + r.days, 0);
-      const sickUsed = mine.filter((r) => r.leaveType === "Sick" && r.status === "Approved").reduce((s, r) => s + r.days, 0);
-      setLeaveBalance({ annual: { daysUsed: annualUsed, daysTotal: 21 }, sick: { daysUsed: sickUsed, daysTotal: 10 } });
-    }).catch(() => {});
+    Promise.all([fetchLeaveRequests(), fetchLeaveYearPolicies()])
+      .then(([reqs, policies]) => {
+        const mine = reqs.filter((r) => r.staffId === session.staff_id);
+        const currentYear = new Date().getFullYear();
+        const policy = policies.find((item) => item.year === currentYear);
+        const annualTotal = (policy?.annualDays ?? 21) + (policy?.carryForwardDays ?? 0);
+        const annualUsed = mine
+          .filter((r) => r.leaveType === "Annual" && r.status === "Approved" && new Date(`${r.startDate}T00:00:00`).getFullYear() === currentYear)
+          .reduce((s, r) => s + r.days, 0);
+        const sickUsed = mine.filter((r) => r.leaveType === "Sick" && r.status === "Approved").reduce((s, r) => s + r.days, 0);
+        setLeaveBalance({ annual: { daysUsed: annualUsed, daysTotal: annualTotal }, sick: { daysUsed: sickUsed, daysTotal: 10 } });
+      })
+      .catch(() => {});
+  }, [session?.staff_id]);
+
+  const todayRecord = attendanceRecords.find((record) => record.attendanceDate === todayAttendanceDate()) ?? null;
+  const clockedIn = Boolean(todayRecord?.clockInAt && !todayRecord?.clockOutAt);
+  const clockInTime = todayRecord?.clockInAt
+    ? new Date(todayRecord.clockInAt).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })
+    : null;
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadAttendance() {
+      if (!session?.staff_id) return;
+      setAttendanceLoading(true);
+      setAttendanceError(null);
+
+      try {
+        const records = await fetchStaffAttendanceRecords({ scope: "today" });
+        if (!cancelled) {
+          setAttendanceRecords(records);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setAttendanceError(err instanceof Error ? err.message : "Failed to load attendance.");
+        }
+      } finally {
+        if (!cancelled) {
+          setAttendanceLoading(false);
+        }
+      }
+    }
+
+    void loadAttendance();
+
+    return () => {
+      cancelled = true;
+    };
   }, [session?.staff_id]);
 
   useEffect(() => {
-    const id = setTimeout(() => {
-      // Load attendance state from sessionStorage (resets on tab close — intentional for clock-in)
-      const saved = sessionStorage.getItem("staff_clock_in");
-      if (saved) {
-        const { time, ts } = JSON.parse(saved) as { time: string; ts: number };
-        setClockedIn(true);
-        setClockInTime(time);
-        startRef.current = ts;
-      }
-      // Load notifications
-      try {
-        const raw = localStorage.getItem("hms_notifications");
-        if (raw) {
-          const all = JSON.parse(raw) as Array<{ id: string; title: string; message: string; createdAt?: string; read?: boolean; targetDepartment?: string }>;
-          const mine = all
-            .filter((n) => !n.read)
-            .filter((n) => !n.targetDepartment || n.targetDepartment === session?.department)
-            .slice(0, 3);
-          setNotifs(mine.map((n) => ({ id: n.id, title: n.title, message: n.message, time: n.createdAt ?? "", read: !!n.read })));
-        }
-      } catch { /* ignore */ }
-    }, 0);
-    return () => clearTimeout(id);
-  }, [session?.department]);
+    if (!todayRecord?.clockInAt || todayRecord.clockOutAt) {
+      startRef.current = null;
+      setElapsed("00:00:00");
+      return;
+    }
 
-  // Live elapsed timer
+    const startMs = new Date(todayRecord.clockInAt).getTime();
+    startRef.current = Number.isNaN(startMs) ? null : startMs;
+    setElapsed("00:00:00");
+  }, [todayRecord?.clockInAt, todayRecord?.clockOutAt]);
+
   useEffect(() => {
     if (!clockedIn || !startRef.current) return;
     const id = setInterval(() => {
@@ -118,24 +154,61 @@ export default function StaffDashboardPage() {
     return () => clearInterval(id);
   }, [clockedIn]);
 
-  function handleClockIn() {
-    const now   = Date.now();
-    const time  = new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
-    setClockedIn(true);
-    setClockInTime(time);
-    startRef.current = now;
-    sessionStorage.setItem("staff_clock_in", JSON.stringify({ time, ts: now }));
+  async function refreshAttendance() {
+    if (!session?.staff_id) return;
+    try {
+      const records = await fetchStaffAttendanceRecords({ scope: "today" });
+      setAttendanceRecords(records);
+    } catch {
+      // Keep the existing state if the refresh fails after a successful save.
+    }
   }
-  function handleClockOut() {
-    setClockedIn(false);
-    setClockInTime(null);
-    startRef.current = null;
-    setElapsed("00:00:00");
-    sessionStorage.removeItem("staff_clock_in");
+
+  async function handleClockIn() {
+    if (!session) return;
+
+    setAttendanceSaving(true);
+    setAttendanceError(null);
+
+    const now = new Date();
+    const clockInAt = now.toISOString();
+
+    try {
+      await clockInStaffAttendance({
+        attendanceDate: todayAttendanceDate(now),
+        clockInAt,
+        status: isLateClockIn(clockInAt) ? "Late" : "Present",
+        unit: session.department,
+      });
+      await refreshAttendance();
+    } catch (err) {
+      setAttendanceError(err instanceof Error ? err.message : "Failed to clock in.");
+    } finally {
+      setAttendanceSaving(false);
+    }
+  }
+
+  async function handleClockOut() {
+    if (!session) return;
+
+    setAttendanceSaving(true);
+    setAttendanceError(null);
+
+    try {
+      await clockOutStaffAttendance({
+        attendanceDate: todayAttendanceDate(),
+        clockOutAt: new Date().toISOString(),
+      });
+      await refreshAttendance();
+    } catch (err) {
+      setAttendanceError(err instanceof Error ? err.message : "Failed to clock out.");
+    } finally {
+      setAttendanceSaving(false);
+    }
   }
 
   // Compute upcoming shifts (today + forward)
-  const todayStr   = today();
+  const todayStr   = todayAttendanceDate();
   const upcoming   = shifts.filter((s) => s.shiftDate >= todayStr).sort((a, b) => a.shiftDate.localeCompare(b.shiftDate));
   const nextShift  = upcoming[0] ?? null;
   const isOnShift  = nextShift?.shiftDate === todayStr;
@@ -212,17 +285,29 @@ export default function StaffDashboardPage() {
       </div>
 
       {/* ── Attendance / Clock-in card ───────────────────────────────────── */}
+      {attendanceError && (
+        <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700">
+          {attendanceError}
+        </div>
+      )}
+
       <div className={`rounded-2xl border p-4 transition-all ${clockedIn ? "border-emerald-200 bg-emerald-50" : "border-slate-200 bg-white"}`}>
         <div className="flex items-center justify-between">
           <div>
             <p className="text-xs font-bold uppercase tracking-wide text-slate-500">
               {new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" })}
             </p>
-            {clockedIn ? (
+            {attendanceLoading ? (
+              <p className="mt-1 text-sm font-semibold text-slate-500">Checking attendance status...</p>
+            ) : clockedIn ? (
               <>
                 <p className="mt-1 text-sm font-semibold text-emerald-700">Clocked in at {clockInTime}</p>
                 <p className="font-mono text-xl font-black text-emerald-600">{elapsed}</p>
               </>
+            ) : todayRecord?.clockOutAt ? (
+              <p className="mt-1 text-sm font-semibold text-slate-700">
+                Clocked out at {new Date(todayRecord.clockOutAt).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}
+              </p>
             ) : (
               <p className="mt-1 text-sm font-semibold text-slate-700">You have not clocked in today.</p>
             )}
@@ -230,16 +315,18 @@ export default function StaffDashboardPage() {
           {clockedIn ? (
             <button
               onClick={handleClockOut}
-              className="rounded-xl border border-red-200 bg-white px-4 py-2.5 text-sm font-bold text-red-600 hover:bg-red-50 transition"
+              disabled={attendanceSaving}
+              className="rounded-xl border border-red-200 bg-white px-4 py-2.5 text-sm font-bold text-red-600 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              Clock Out
+              {attendanceSaving ? "Saving..." : "Clock Out"}
             </button>
           ) : (
             <button
               onClick={handleClockIn}
-              className="rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-indigo-700 transition"
+              disabled={attendanceSaving}
+              className="rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              Clock In
+              {attendanceSaving ? "Saving..." : "Clock In"}
             </button>
           )}
         </div>

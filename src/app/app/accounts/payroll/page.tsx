@@ -53,7 +53,7 @@ export default function AccountsPayrollPage() {
     [payrollBatches],
   );
 
-  function handleAction() {
+  async function handleAction() {
     if (!actionTarget) return;
 
     const today = new Date().toLocaleDateString("en-GB", {
@@ -62,21 +62,28 @@ export default function AccountsPayrollPage() {
       year: "numeric",
     });
 
-    if (actionTarget.action === "approve") {
-      updatePayrollStatus(actionTarget.batch.id, "Approved", { approvedAt: today });
-      updatePayslipWorkflowByBatch(actionTarget.batch.id, "Approved");
-      window.dispatchEvent(new Event(ACCOUNTS_PAYMENT_UPDATED_EVENT));
+    try {
+      if (actionTarget.action === "approve") {
+        await updatePayslipWorkflowByBatch(actionTarget.batch.id, "Approved");
+        await updatePayrollStatus(actionTarget.batch.id, "Approved", { approvedAt: today });
+        window.dispatchEvent(new Event(ACCOUNTS_PAYMENT_UPDATED_EVENT));
+        setToast({
+          message: `${actionTarget.batch.department ?? "Department"} payroll for ${actionTarget.batch.period} approved and ready for disbursement.`,
+          type: "success",
+        });
+      } else {
+        await updatePayslipWorkflowByBatch(actionTarget.batch.id, "Paid", { paymentStatus: "Paid", paidAt: today });
+        await updatePayrollStatus(actionTarget.batch.id, "Paid", { paidAt: today });
+        window.dispatchEvent(new Event(ACCOUNTS_PAYMENT_UPDATED_EVENT));
+        setToast({
+          message: `${money(actionTarget.batch.totalAmount)} disbursed for ${actionTarget.batch.department ?? "department"} - ${actionTarget.batch.period}.`,
+          type: "success",
+        });
+      }
+    } catch (error) {
       setToast({
-        message: `${actionTarget.batch.department ?? "Department"} payroll for ${actionTarget.batch.period} approved and ready for disbursement.`,
-        type: "success",
-      });
-    } else {
-      updatePayrollStatus(actionTarget.batch.id, "Paid", { paidAt: today });
-      updatePayslipWorkflowByBatch(actionTarget.batch.id, "Paid", { paymentStatus: "Paid", paidAt: today });
-      window.dispatchEvent(new Event(ACCOUNTS_PAYMENT_UPDATED_EVENT));
-      setToast({
-        message: `${money(actionTarget.batch.totalAmount)} disbursed for ${actionTarget.batch.department ?? "department"} - ${actionTarget.batch.period}.`,
-        type: "success",
+        message: error instanceof Error ? error.message : "Failed to update payroll status.",
+        type: "error",
       });
     }
 

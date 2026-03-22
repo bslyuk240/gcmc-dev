@@ -85,6 +85,8 @@ export default function StaffDirectoryPage() {
   const [editJobTitle,setEditJobTitle]= useState("");
   const [editUnit,    setEditUnit]    = useState("");
   const [editSpecialty, setEditSpecialty] = useState("");
+  const [editPhone, setEditPhone] = useState("");
+  const [editHomeAddress, setEditHomeAddress] = useState("");
 
   // ── Add modal ──────────────────────────────────────────────────────────────
   const [showAdd,    setShowAdd]    = useState(false);
@@ -97,6 +99,7 @@ export default function StaffDirectoryPage() {
   const [addEmail,   setAddEmail]   = useState("");
   const [addPhone,   setAddPhone]   = useState("");
   const [addSalary,  setAddSalary]  = useState("");
+  const [addHomeAddress, setAddHomeAddress] = useState("");
 
   // ── Filtered list ──────────────────────────────────────────────────────────
   const filtered = staff.filter((s) => {
@@ -127,6 +130,8 @@ export default function StaffDirectoryPage() {
     setEditJobTitle(s.role);
     setEditUnit(s.unit ?? "");
     setEditSpecialty(s.specialty ?? "");
+    setEditPhone(s.phone ?? "");
+    setEditHomeAddress(s.homeAddress ?? "");
   }
 
   async function handleSaveEdit() {
@@ -142,6 +147,8 @@ export default function StaffDirectoryPage() {
       roleKey: editRoleKey,
       role: editJobTitle || ROLE_KEY_LABELS[editRoleKey],
       specialty: editDept === "Doctors" ? editSpecialty.trim() : undefined,
+      phone: editPhone,
+      homeAddress: editHomeAddress || undefined,
     };
     try {
       await insertStaffMember(updatedStaff);
@@ -161,25 +168,27 @@ export default function StaffDirectoryPage() {
       return;
     }
     const id = createLocalStaffId();
-    addStaffMember({
-      id, name: addName,
-      department: addDept,
-      unit: addUnit || undefined,
-      specialty: addDept === "Doctors" ? addSpecialty.trim() : undefined,
-      role: addJobTitle || ROLE_KEY_LABELS[addRoleKey],
-      roleKey: addRoleKey,
-      contractType: "Permanent",
-      email: addEmail || `${addName.toLowerCase().replace(/\s+/g, ".")}@gcmc.local`,
-      phone: addPhone,
-      joinDate: new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }),
-      status: "Active",
-      salary: parseInt(addSalary || "3000"),
-      systemAccessCreated: false,
-    });
+      addStaffMember({
+        id, name: addName,
+        department: addDept,
+        unit: addUnit || undefined,
+        specialty: addDept === "Doctors" ? addSpecialty.trim() : undefined,
+        role: addJobTitle || ROLE_KEY_LABELS[addRoleKey],
+        roleKey: addRoleKey,
+        contractType: "Permanent",
+        email: addEmail || `${addName.toLowerCase().replace(/\s+/g, ".")}@gcmc.local`,
+        phone: addPhone,
+        homeAddress: addHomeAddress || undefined,
+        joinDate: new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }),
+        status: "Active",
+        salary: parseInt(addSalary || "3000"),
+        systemAccessCreated: false,
+      });
     showToast(`${addName} added to ${addDept}. Raise onboarding in HR → Onboarding.`, "success");
     setShowAdd(false);
     setAddName(""); setAddDept("Doctors"); setAddRoleKey("doctor");
     setAddJobTitle(""); setAddUnit(""); setAddSpecialty(""); setAddEmail(""); setAddPhone(""); setAddSalary("");
+    setAddHomeAddress("");
   }
 
   function handleSuspendToggle() {
@@ -366,7 +375,7 @@ export default function StaffDirectoryPage() {
             </div>
 
             {/* Detail grid */}
-            <div className="grid grid-cols-2 gap-2 text-xs">
+              <div className="grid grid-cols-2 gap-2 text-xs">
                 {[
                   { label: "Staff ID",       value: viewStaff.id },
                   { label: "Department",     value: viewStaff.department },
@@ -375,23 +384,42 @@ export default function StaffDirectoryPage() {
                   { label: "Contract",       value: viewStaff.contractType },
                   { label: "Email",          value: viewStaff.email },
                   { label: "Phone",          value: viewStaff.phone || "—" },
-                { label: "Joined",         value: viewStaff.joinDate },
-                { label: "Salary",         value: `₦${viewStaff.salary.toLocaleString()}` },
-                { label: "Licence",        value: viewStaff.licenseNumber || "—" },
-                { label: "Licence Expiry", value: viewStaff.licenseExpiry || "—" },
-                { label: "System Access",  value: viewStaff.systemAccessCreated ? "Active" : "Pending IT" },
-              ].map((row) => (
-                <div key={row.label} className="rounded-lg bg-slate-50 px-3 py-2">
-                  <p className="text-[10px] uppercase tracking-wide text-slate-400">{row.label}</p>
-                  <p className="font-semibold text-slate-800">{row.value}</p>
-                </div>
-              ))}
-            </div>
-
-            {viewStaff.notes && (
-              <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-                <strong>HR Note:</strong> {viewStaff.notes}
+                  { label: "Home Address",   value: viewStaff.homeAddress || "—" },
+                  { label: "Joined",         value: viewStaff.joinDate },
+                  { label: "Salary",         value: `₦${viewStaff.salary.toLocaleString()}` },
+                  { label: "Licence",        value: viewStaff.licenseNumber || "—" },
+                  { label: "Licence Expiry", value: viewStaff.licenseExpiry || "—" },
+                  { label: "System Access",  value: viewStaff.systemAccessCreated ? "Active" : "Pending IT" },
+                ].map((row) => (
+                  <div key={row.label} className="rounded-lg bg-slate-50 px-3 py-2">
+                    <p className="text-[10px] uppercase tracking-wide text-slate-400">{row.label}</p>
+                    <p className="font-semibold text-slate-800">{row.value}</p>
+                  </div>
+                ))}
               </div>
+
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                {[
+                  { label: "Bank", value: viewStaff.bankName || "—" },
+                  { label: "Account", value: viewStaff.bankAccount || "—" },
+                  { label: "Tax ID", value: viewStaff.taxId || "—" },
+                  { label: "Pension No.", value: viewStaff.pensionNumber || "—" },
+                  { label: "NHF No.", value: viewStaff.nhfNumber || "—" },
+                  { label: "Emergency Contact", value: viewStaff.emergencyContactName || "—" },
+                  { label: "Contact Phone", value: viewStaff.emergencyContactPhone || "—" },
+                  { label: "Contact Relationship", value: viewStaff.emergencyContactRelationship || "—" },
+                ].map((row) => (
+                  <div key={row.label} className="rounded-lg bg-slate-50 px-3 py-2">
+                    <p className="text-[10px] uppercase tracking-wide text-slate-400">{row.label}</p>
+                    <p className="font-semibold text-slate-800">{row.value}</p>
+                  </div>
+                ))}
+              </div>
+
+              {viewStaff.notes && (
+                <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                  <strong>HR Note:</strong> {viewStaff.notes}
+                </div>
             )}
           </div>
         )}
@@ -447,19 +475,37 @@ export default function StaffDirectoryPage() {
               </div>
             )}
 
-            {editDept === "Doctors" && (
-              <div>
-                <label className="mb-1 block text-xs font-semibold text-slate-600">Doctor Specialty</label>
-                <select value={editSpecialty} onChange={(e) => setEditSpecialty(e.target.value)} className={inputCls}>
-                  <option value="">— Select specialty —</option>
-                  {DEFAULT_DOCTOR_SPECIALTIES.map((specialty) => (
-                    <option key={specialty} value={specialty}>{specialty}</option>
-                  ))}
-                </select>
+              {editDept === "Doctors" && (
+                <div>
+                  <label className="mb-1 block text-xs font-semibold text-slate-600">Doctor Specialty</label>
+                  <select value={editSpecialty} onChange={(e) => setEditSpecialty(e.target.value)} className={inputCls}>
+                    <option value="">— Select specialty —</option>
+                    {DEFAULT_DOCTOR_SPECIALTIES.map((specialty) => (
+                      <option key={specialty} value={specialty}>{specialty}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="mb-1 block text-xs font-semibold text-slate-600">Phone</label>
+                  <input value={editPhone} onChange={(e) => setEditPhone(e.target.value)} className={inputCls} />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-semibold text-slate-600">Home Address</label>
+                  <input value={editHomeAddress} onChange={(e) => setEditHomeAddress(e.target.value)} className={inputCls} />
+                </div>
               </div>
-            )}
-          </div>
-        )}
+
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-2">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Payroll & Emergency Details</p>
+                <p className="text-xs text-slate-500">
+                  Managed by Accounts HOD and used for payroll generation and staff records. HR can view the current values here but should not edit them.
+                </p>
+              </div>
+            </div>
+          )}
 
         <ModalFooter>
           {!editMode ? (
@@ -553,10 +599,23 @@ export default function StaffDirectoryPage() {
               <input value={addPhone} onChange={(e) => setAddPhone(e.target.value)} placeholder="+233…" className={inputCls} />
             </div>
 
+            {/* Home Address */}
+            <div className="col-span-2">
+              <label className="mb-1 block text-xs font-semibold text-slate-600">Home Address</label>
+              <input value={addHomeAddress} onChange={(e) => setAddHomeAddress(e.target.value)} placeholder="Residential address" className={inputCls} />
+            </div>
+
             {/* Salary */}
             <div>
               <label className="mb-1 block text-xs font-semibold text-slate-600">Monthly Salary (₦)</label>
               <input type="number" value={addSalary} onChange={(e) => setAddSalary(e.target.value)} placeholder="3000" className={inputCls} />
+            </div>
+
+            <div className="col-span-2 rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-2">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Payroll & Emergency Details</p>
+              <p className="text-xs text-slate-500">
+                Managed by Accounts HOD for payroll details and emergency visibility. Use the Accounts staff banking page to update these fields.
+              </p>
             </div>
           </div>
 

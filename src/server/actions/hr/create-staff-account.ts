@@ -9,8 +9,19 @@ export type CreateStaffAccountInput = {
   email: string;
   department: DBDepartmentKey;
   role: RoleKey;
+  phone?: string;
+  home_address?: string;
   unit_name?: string; // non-clinical staff only
   specialty?: string; // doctor clinical specialty
+  bank_name?: string;
+  bank_account?: string;
+  tax_id?: string;
+  pension_number?: string;
+  nhf_number?: string;
+  emergency_contact_name?: string;
+  emergency_contact_relationship?: string;
+  emergency_contact_phone?: string;
+  emergency_contact_address?: string;
 };
 
 export type CreateStaffAccountResult =
@@ -31,16 +42,45 @@ function isMissingColumnError(error: { message?: string } | null | undefined, co
   return (error?.message ?? "").toLowerCase().includes(`column ${column.toLowerCase()} does not exist`);
 }
 
-function withoutSpecialty<T extends { specialty?: unknown }>(payload: T): Omit<T, "specialty"> {
+function withoutOptionalFields<T extends Record<string, unknown>>(payload: T) {
   const fallbackPayload = { ...payload };
   delete fallbackPayload.specialty;
+  delete fallbackPayload.phone;
+  delete fallbackPayload.home_address;
+  delete fallbackPayload.bank_name;
+  delete fallbackPayload.bank_account;
+  delete fallbackPayload.tax_id;
+  delete fallbackPayload.pension_number;
+  delete fallbackPayload.nhf_number;
+  delete fallbackPayload.emergency_contact_name;
+  delete fallbackPayload.emergency_contact_relationship;
+  delete fallbackPayload.emergency_contact_phone;
+  delete fallbackPayload.emergency_contact_address;
   return fallbackPayload;
 }
 
 export async function createStaffAccountAction(
   input: CreateStaffAccountInput,
 ): Promise<CreateStaffAccountResult> {
-  const { full_name, email, department, role, unit_name, specialty } = input;
+  const {
+    full_name,
+    email,
+    department,
+    role,
+    phone,
+    home_address,
+    unit_name,
+    specialty,
+    bank_name,
+    bank_account,
+    tax_id,
+    pension_number,
+    nhf_number,
+    emergency_contact_name,
+    emergency_contact_relationship,
+    emergency_contact_phone,
+    emergency_contact_address,
+  } = input;
 
   if (!full_name || !email || !department || !role) {
     return { success: false, error: "All fields are required." };
@@ -80,15 +120,39 @@ export async function createStaffAccountAction(
     is_active: true,
     must_change_password: true,
     system_setup_done: false,
+    ...(phone ? { phone } : {}),
+    ...(home_address ? { home_address } : {}),
     ...(unit_name ? { unit_name } : {}),
     ...(specialty?.trim() ? { specialty: specialty.trim() } : {}),
+    ...(bank_name ? { bank_name } : {}),
+    ...(bank_account ? { bank_account } : {}),
+    ...(tax_id ? { tax_id } : {}),
+    ...(pension_number ? { pension_number } : {}),
+    ...(nhf_number ? { nhf_number } : {}),
+    ...(emergency_contact_name ? { emergency_contact_name } : {}),
+    ...(emergency_contact_relationship ? { emergency_contact_relationship } : {}),
+    ...(emergency_contact_phone ? { emergency_contact_phone } : {}),
+    ...(emergency_contact_address ? { emergency_contact_address } : {}),
   };
   let { error: profileError } = await admin
     .from("staff_profiles")
     .insert(payload);
 
-  if (profileError && isMissingColumnError(profileError, "staff_profiles.specialty")) {
-    ({ error: profileError } = await admin.from("staff_profiles").insert(withoutSpecialty(payload)));
+  if (profileError && (
+    isMissingColumnError(profileError, "staff_profiles.specialty")
+    || isMissingColumnError(profileError, "staff_profiles.phone")
+    || isMissingColumnError(profileError, "staff_profiles.home_address")
+    || isMissingColumnError(profileError, "staff_profiles.bank_name")
+    || isMissingColumnError(profileError, "staff_profiles.bank_account")
+    || isMissingColumnError(profileError, "staff_profiles.tax_id")
+    || isMissingColumnError(profileError, "staff_profiles.pension_number")
+    || isMissingColumnError(profileError, "staff_profiles.nhf_number")
+    || isMissingColumnError(profileError, "staff_profiles.emergency_contact_name")
+    || isMissingColumnError(profileError, "staff_profiles.emergency_contact_relationship")
+    || isMissingColumnError(profileError, "staff_profiles.emergency_contact_phone")
+    || isMissingColumnError(profileError, "staff_profiles.emergency_contact_address")
+  )) {
+    ({ error: profileError } = await admin.from("staff_profiles").insert(withoutOptionalFields(payload)));
   }
 
   if (profileError) {

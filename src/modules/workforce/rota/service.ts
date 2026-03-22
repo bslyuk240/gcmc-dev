@@ -6,12 +6,16 @@
  */
 
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import type { DepartmentKey } from "@/lib/constants/navigation";
-import type { RotaAssignment, CreateRotaPayload, WeekRota } from "@/modules/workforce/rota/types";
-
-// ─── Static mock (fallback when Supabase is not configured) ──────────────────
-
-const MOCK_ROTA: RotaAssignment[] = [];
+import type {
+  RotaAssignment,
+  CreateRotaPayload,
+  WeekRota,
+  RotaSwapRequest,
+  RotaSwapRequestStatus,
+  CreateRotaSwapRequestPayload,
+} from "@/modules/workforce/rota/types";
 
 // ─── Queries ─────────────────────────────────────────────────────────────────
 
@@ -57,6 +61,13 @@ export async function getMyRota(staffId: string, weekOf: string): Promise<RotaAs
   const weekStart = getWeekMonday(weekOf);
   const weekEnd   = offsetDate(weekStart, 6);
 
+  return getMyRotaRange(staffId, weekStart, weekEnd);
+}
+
+/**
+ * Get a staff member's rota for a custom date range.
+ */
+export async function getMyRotaRange(staffId: string, from: string, to: string): Promise<RotaAssignment[]> {
   const supabase = await createClient();
 
   if (supabase) {
@@ -68,8 +79,8 @@ export async function getMyRota(staffId: string, weekOf: string): Promise<RotaAs
         staff:staff_profiles(full_name, email, department)
       `)
       .eq("staff_id", staffId)
-      .gte("shift_date", weekStart)
-      .lte("shift_date", weekEnd)
+      .gte("shift_date", from)
+      .lte("shift_date", to)
       .order("shift_date")
       .order("shift_start");
 
@@ -147,6 +158,126 @@ export async function updateRotaStatus(
 }
 
 // ─── Date utilities ──────────────────────────────────────────────────────────
+
+function mapRotaSwapRequest(row: Record<string, unknown>): RotaSwapRequest {
+  return {
+    id: row.id as string,
+    assignmentId: row.assignment_id as string,
+    staffId: row.staff_id as string,
+    staffName: (row.staff_name as string) ?? "",
+    department: row.department as RotaSwapRequest["department"],
+    shiftDate: row.shift_date as string,
+    shiftType: row.shift_type as RotaSwapRequest["shiftType"],
+    shiftStart: (row.shift_start as string) ?? null,
+    shiftEnd: (row.shift_end as string) ?? null,
+    unitId: (row.unit_id as string) ?? null,
+    unitName: (row.unit_name as string) ?? null,
+    reason: (row.reason as string) ?? null,
+    status: (row.status as RotaSwapRequestStatus) ?? "pending",
+    reviewedBy: (row.reviewed_by as string) ?? null,
+    reviewedAt: (row.reviewed_at as string) ?? null,
+    reviewNote: (row.review_note as string) ?? null,
+    createdAt: (row.created_at as string) ?? new Date().toISOString(),
+    updatedAt: (row.updated_at as string) ?? new Date().toISOString(),
+  };
+}
+
+export async function getRotaSwapRequests(department?: DepartmentKey): Promise<RotaSwapRequest[]> {
+  const sb = createAdminClient();
+  if (!sb) return [];
+
+  let query = sb.from("rota_swap_requests").select("*").order("created_at", { ascending: false });
+  if (department) query = query.eq("department", department);
+
+  const { data, error } = await query;
+  if (error) {
+    console.error("[getRotaSwapRequests]", error.message);
+    return [];
+  }
+
+  return (data ?? []).map((row) => mapRotaSwapRequest(row as Record<string, unknown>));
+}
+
+export async function getMyRotaSwapRequests(staffId: string): Promise<RotaSwapRequest[]> {
+  const sb = createAdminClient();
+  if (!sb) return [];
+
+  const { data, error } = await sb
+    .from("rota_swap_requests")
+    .select("*")
+    .eq("staff_id", staffId)
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    console.error("[getMyRotaSwapRequests]", error.message);
+    return [];
+  }
+
+  return (data ?? []).map((row) => mapRotaSwapRequest(row as Record<string, unknown>));
+}
+
+export async function createRotaSwapRequest(
+  payload: CreateRotaSwapRequestPayload,
+): Promise<RotaSwapRequest | null> {
+  const sb = createAdminClient();
+  if (!sb) return null;
+
+  const { data, error } = await sb
+    .from("rota_swap_requests")
+    .insert({
+      assignment_id: payload.assignmentId,
+      staff_id: payload.staffId,
+      staff_name: payload.staffName,
+      department: payload.department,
+      shift_date: payload.shiftDate,
+      shift_type: payload.shiftType,
+      shift_start: payload.shiftStart,
+      shift_end: payload.shiftEnd,
+      unit_id: payload.unitId,
+      unit_name: payload.unitName,
+      reason: payload.reason ?? null,
+      status: "pending",
+    })
+    .select("*")
+    .single();
+
+  if (error || !data) {
+    console.error("[createRotaSwapRequest]", error?.message ?? "Unknown error");
+    return null;
+  }
+
+  return mapRotaSwapRequest(data as Record<string, unknown>);
+}
+
+export async function reviewRotaSwapRequest(
+  requestId: string,
+  status: RotaSwapRequestStatus,
+  reviewerId: string,
+  reviewNote?: string,
+): Promise<RotaSwapRequest | null> {
+  const sb = createAdminClient();
+  if (!sb) return null;
+
+  const { data, error } = await sb
+    .from("rota_swap_requests")
+    .update({
+      status,
+      reviewed_by: reviewerId,
+      reviewed_at: new Date().toISOString(),
+      review_note: reviewNote ?? null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", requestId)
+    .select("*")
+    .single();
+
+  if (error || !data) {
+    console.error("[reviewRotaSwapRequest]", error?.message ?? "Unknown error");
+    return null;
+  }
+
+  return mapRotaSwapRequest(data as Record<string, unknown>);
+}
 
 function getWeekMonday(isoDate: string): string {
   const d    = new Date(isoDate);

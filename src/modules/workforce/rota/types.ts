@@ -1,4 +1,4 @@
-import type { DepartmentKey } from "@/lib/constants/navigation";
+import type { DBDepartmentKey, DepartmentKey } from "@/lib/constants/navigation";
 
 export type ShiftType   = "morning" | "afternoon" | "evening" | "night" | "on_call";
 export type RotaStatus  = "scheduled" | "confirmed" | "swapped" | "cancelled" | "completed";
@@ -43,9 +43,47 @@ export type RotaAssignment = {
   staff?: { full_name: string; email: string; department: DepartmentKey };
 };
 
+export type RotaSwapRequestStatus = "pending" | "approved" | "rejected" | "cancelled";
+
+export type RotaSwapRequest = {
+  id: string;
+  assignmentId: string;
+  staffId: string;
+  staffName: string;
+  department: DBDepartmentKey;
+  shiftDate: string;
+  shiftType: ShiftType;
+  shiftStart: string | null;
+  shiftEnd: string | null;
+  unitId: string | null;
+  unitName: string | null;
+  reason: string | null;
+  status: RotaSwapRequestStatus;
+  reviewedBy: string | null;
+  reviewedAt: string | null;
+  reviewNote: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type CreateRotaPayload = Pick<
   RotaAssignment,
   "staff_id" | "department" | "unit_id" | "shift_date" | "shift_type" | "shift_start" | "shift_end" | "notes"
+>;
+
+export type CreateRotaSwapRequestPayload = Pick<
+  RotaSwapRequest,
+  | "assignmentId"
+  | "staffId"
+  | "staffName"
+  | "department"
+  | "shiftDate"
+  | "shiftType"
+  | "shiftStart"
+  | "shiftEnd"
+  | "unitId"
+  | "unitName"
+  | "reason"
 >;
 
 export type WeekRota = {

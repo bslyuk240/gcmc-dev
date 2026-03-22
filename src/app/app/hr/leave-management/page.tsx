@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card } from "@/components/ui/card";
@@ -8,6 +9,7 @@ import { Modal, ModalFooter } from "@/components/ui/modal";
 import { Toast, type ToastData } from "@/components/ui/toast";
 import { useHRStore } from "@/lib/hooks/use-hr-store";
 import { updateLeaveStatus, type LeaveRequest } from "@/lib/data/hr-store";
+import { INTERNAL_PREFIX } from "@/lib/constants/navigation";
 
 const STATUS_STYLES: Record<string, string> = {
   Pending: "bg-amber-50 text-amber-700",
@@ -46,6 +48,7 @@ export default function LeaveManagementPage() {
   const [reviewerName, setReviewerName] = useState("HR Manager");
   const [hrNotes, setHrNotes] = useState("");
   const [toast, setToast] = useState<ToastData | null>(null);
+  const [saving, setSaving] = useState(false);
 
   const allDepts = ["All", ...Array.from(new Set(leaveRequests.map((l) => l.department)))];
 
@@ -61,12 +64,19 @@ export default function LeaveManagementPage() {
     setHrNotes("");
   }
 
-  function handleReview() {
+  async function handleReview() {
     if (!reviewTarget || !action) return;
-    updateLeaveStatus(reviewTarget.id, action, reviewerName, hrNotes);
-    setToast({ message: `${reviewTarget.staffName}'s leave request ${action.toLowerCase()}.`, type: action === "Approved" ? "success" : "info" });
-    setReviewTarget(null);
-    setAction(null);
+    setSaving(true);
+    try {
+      await updateLeaveStatus(reviewTarget.id, action, reviewerName, hrNotes);
+      setToast({ message: `${reviewTarget.staffName}'s leave request ${action.toLowerCase()}.`, type: action === "Approved" ? "success" : "info" });
+      setReviewTarget(null);
+      setAction(null);
+    } catch {
+      setToast({ message: "Failed to update leave request.", type: "error" });
+    } finally {
+      setSaving(false);
+    }
   }
 
   const inputCls = "w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-200";
@@ -74,6 +84,15 @@ export default function LeaveManagementPage() {
   return (
     <div className="space-y-6">
       <PageHeader title="Leave Management" description="Review and manage leave requests from all departments. Approved leave updates staff status automatically." />
+
+      <div className="flex justify-end">
+        <Link
+          href={`${INTERNAL_PREFIX}/hr/leave-settings`}
+          className="rounded-full border border-violet-200 bg-violet-50 px-4 py-2 text-xs font-bold text-violet-700 hover:bg-violet-100"
+        >
+          Annual Leave Settings
+        </Link>
+      </div>
 
       <div className="flex gap-3">
         {[
@@ -185,8 +204,8 @@ export default function LeaveManagementPage() {
         )}
         <ModalFooter>
           <Button variant="ghost" size="md" onClick={() => setReviewTarget(null)}>Cancel</Button>
-          <Button size="md" onClick={handleReview}>
-            {action === "Approved" ? "Approve Leave" : "Reject Leave"}
+          <Button size="md" onClick={() => void handleReview()} disabled={saving}>
+            {saving ? "Saving..." : action === "Approved" ? "Approve Leave" : "Reject Leave"}
           </Button>
         </ModalFooter>
       </Modal>

@@ -12,6 +12,7 @@ import {
   getOffboarding,
   getPayrollPreps,
   getGeneratedPayslips,
+  getLeavePolicies,
   getHRMetrics,
   getStaffByDepartment,
   getDepartmentHeads,
@@ -32,6 +33,8 @@ export function useHRStore() {
       ?.channel("hr-payroll-realtime")
       .on("postgres_changes", { event: "*", schema: "public", table: "generated_payslips" }, () => void syncHRFromSupabase())
       .on("postgres_changes", { event: "*", schema: "public", table: "payroll_batches" }, () => void syncHRFromSupabase())
+      .on("postgres_changes", { event: "*", schema: "public", table: "leave_requests" }, () => void syncHRFromSupabase())
+      .on("postgres_changes", { event: "*", schema: "public", table: "staff_profiles" }, () => void syncHRFromSupabase())
       .subscribe();
     return () => {
       window.removeEventListener(ACCOUNTS_PAYMENT_UPDATED_EVENT, refresh);
@@ -47,6 +50,7 @@ export function useHRStore() {
     offboarding: getOffboarding(),
     payrollPreps: getPayrollPreps(),
     generatedPayslips: getGeneratedPayslips(),
+    leavePolicies: getLeavePolicies(),
     metrics: getHRMetrics(),
     departmentHeads: getDepartmentHeads(),
     getByDept: (dept: StaffDepartment) => getStaffByDepartment(dept),

@@ -24,8 +24,6 @@ export function useNotificationStore(department: string) {
 
   useEffect(() => {
     syncNotificationsFromSupabase();
-    setNotifications(getNotificationsForDept(department));
-    setUnreadCount(getUnreadCountForDept(department));
     return subscribeNotificationStore(() => {
       setNotifications(getNotificationsForDept(department));
       setUnreadCount(getUnreadCountForDept(department));

@@ -188,7 +188,10 @@ export default function HRDashboardPage() {
             <div className="grid grid-cols-2 gap-2">
               {[
                 { label: "Add Staff", href: `${INTERNAL_PREFIX}/hr/staff-directory` },
+                { label: "Attendance", href: `${INTERNAL_PREFIX}/hr/attendance` },
                 { label: "Leave Requests", href: `${INTERNAL_PREFIX}/hr/leave-management` },
+                { label: "Leave Settings", href: `${INTERNAL_PREFIX}/hr/leave-settings` },
+                { label: "Notifications", href: `${INTERNAL_PREFIX}/hr/notifications` },
                 { label: "Onboarding", href: `${INTERNAL_PREFIX}/hr/onboarding` },
                 { label: "Dept Staffing", href: `${INTERNAL_PREFIX}/hr/department-staffing` },
                 { label: "Payroll Prep", href: `${INTERNAL_PREFIX}/hr/payroll` },

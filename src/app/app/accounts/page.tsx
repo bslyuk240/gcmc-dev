@@ -296,6 +296,7 @@ export default function AccountsDashboardPage() {
                 { label: "Nursing Billing", href: `${INTERNAL_PREFIX}/accounts/nursing-billing` },
                 { label: "Supplier Payments", href: `${INTERNAL_PREFIX}/accounts/supplier-payments` },
                 { label: "Payroll", href: `${INTERNAL_PREFIX}/accounts/payroll` },
+                { label: "Staff Banking", href: `${INTERNAL_PREFIX}/accounts/staff-banking` },
                 { label: "Kiosk Revenue", href: `${INTERNAL_PREFIX}/accounts/kiosk` },
                 { label: "Expenses", href: `${INTERNAL_PREFIX}/accounts/expenses` },
                 { label: "Daily Reports", href: `${INTERNAL_PREFIX}/accounts/daily-reports` },

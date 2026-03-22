@@ -21,15 +21,19 @@ const STATUS_STYLES: Record<LeaveStatus, string> = {
 
 export default function LeavePage() {
   const session = useHMSSession();
-  const { leaveRequests } = useHRStore();
+  const { leaveRequests, leavePolicies } = useHRStore();
   const [showForm, setShowForm] = useState(false);
   const [type, setType] = useState<LeaveType>("Annual");
   const [startDate, setStart] = useState("");
   const [endDate, setEnd] = useState("");
   const [reason, setReason] = useState("");
   const [toast, setToast] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
   const requests = leaveRequests.filter((request) => request.staffId === session?.staff_id);
+  const currentYear = new Date().getFullYear();
+  const leavePolicy = leavePolicies.find((policy) => policy.year === currentYear) ?? null;
+  const annualTotal = (leavePolicy?.annualDays ?? 21) + (leavePolicy?.carryForwardDays ?? 0);
 
   function countDays(start: string, end: string) {
     if (!start || !end) return 0;
@@ -37,40 +41,53 @@ export default function LeavePage() {
     return Math.max(1, Math.round(ms / 86400000) + 1);
   }
 
-  function handleSubmit() {
+  async function handleSubmit() {
     if (!session || !startDate || !endDate || !reason) {
       setToast("Please fill in all fields.");
       return;
     }
 
-    addLeaveRequest({
-      id: `LV-${String(Date.now()).slice(-6)}`,
-      staffId: session.staff_id,
-      staffName: session.full_name,
-      department: DB_TO_STAFF_DEPT[session.department] ?? "Administration",
-      role: session.role.replace(/_/g, " "),
-      leaveType: type,
-      startDate,
-      endDate,
-      days: countDays(startDate, endDate),
-      reason,
-      status: "Pending",
-      submittedAt: new Date().toISOString().slice(0, 10),
-    });
+    setSaving(true);
 
-    setToast("Leave request submitted successfully.");
-    setShowForm(false);
-    setStart("");
-    setEnd("");
-    setReason("");
-    setType("Annual");
-    setTimeout(() => setToast(null), 3000);
+    try {
+      const requestId = `LV-${crypto.randomUUID()}`;
+      await addLeaveRequest({
+        id: requestId,
+        staffId: session.staff_id,
+        staffName: session.full_name,
+        department: DB_TO_STAFF_DEPT[session.department] ?? "Administration",
+        role: session.role.replace(/_/g, " "),
+        leaveType: type,
+        startDate,
+        endDate,
+        days: countDays(startDate, endDate),
+        reason,
+        status: "Pending",
+        submittedAt: new Date().toISOString(),
+      });
+
+      setToast("Leave request submitted successfully.");
+      setShowForm(false);
+      setStart("");
+      setEnd("");
+      setReason("");
+      setType("Annual");
+      setTimeout(() => setToast(null), 3000);
+    } catch (error) {
+      setToast(error instanceof Error ? error.message : "Failed to submit leave request.");
+    } finally {
+      setSaving(false);
+    }
   }
 
   const annual = requests
-    .filter((request) => request.leaveType === "Annual" && request.status === "Approved")
+    .filter((request) =>
+      request.leaveType === "Annual"
+      && request.status === "Approved"
+      && new Date(`${request.startDate}T00:00:00`).getFullYear() === currentYear)
     .reduce((sum, request) => sum + request.days, 0);
   const pending = requests.filter((request) => request.status === "Pending").length;
+  const remaining = Math.max(0, annualTotal - annual);
   const inputCls = "w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100";
 
   return (
@@ -78,12 +95,16 @@ export default function LeavePage() {
       <div>
         <h1 className="text-2xl font-black text-slate-900">Leave</h1>
         <p className="mt-1 text-sm text-slate-500">Apply for leave and track approval status from HR records.</p>
+        <p className="mt-1 text-xs font-semibold text-indigo-600">
+          {currentYear} entitlement: {annualTotal} days
+          {leavePolicy ? "" : " (default until HR sets the year policy)"}
+        </p>
       </div>
 
       <div className="grid grid-cols-3 gap-3">
         {[
-          { label: "Annual Used", value: annual, unit: "days", color: "text-indigo-700" },
-          { label: "Remaining", value: Math.max(0, 21 - annual), unit: "days", color: "text-emerald-700" },
+          { label: `Annual Used (${currentYear})`, value: annual, unit: "days", color: "text-indigo-700" },
+          { label: "Remaining", value: remaining, unit: "days", color: "text-emerald-700" },
           { label: "Pending", value: pending, unit: "requests", color: pending > 0 ? "text-amber-600" : "text-slate-400" },
         ].map((block) => (
           <div key={block.label} className="rounded-xl border border-slate-200 bg-white px-3 py-4 text-center">
@@ -131,8 +152,8 @@ export default function LeavePage() {
             <button onClick={() => setShowForm(false)} className="flex-1 rounded-xl border border-slate-200 py-2.5 text-sm font-semibold text-slate-600">
               Cancel
             </button>
-            <button onClick={handleSubmit} className="flex-1 rounded-xl bg-indigo-600 py-2.5 text-sm font-bold text-white">
-              Submit
+            <button onClick={() => void handleSubmit()} disabled={saving} className="flex-1 rounded-xl bg-indigo-600 py-2.5 text-sm font-bold text-white disabled:opacity-50">
+              {saving ? "Submitting..." : "Submit"}
             </button>
           </div>
         </div>
@@ -150,10 +171,7 @@ export default function LeavePage() {
             <div key={request.id} className="rounded-xl border border-slate-200 bg-white px-4 py-3">
               <div className="flex items-start justify-between">
                 <div>
-                  <div className="flex items-center gap-2">
-                    <p className="font-bold text-slate-900">{request.leaveType} Leave</p>
-                    <span className="font-mono text-xs text-slate-400">{request.id}</span>
-                  </div>
+                  <p className="font-bold text-slate-900">{request.leaveType} Leave</p>
                   <p className="text-sm text-slate-500">
                     {new Date(request.startDate).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}
                     {" - "}

@@ -26,6 +26,7 @@ export default function PayslipsPage() {
   const session = useHMSSession();
   const { generatedPayslips } = useHRStore();
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const currentYear = new Date().getFullYear();
 
   const myPayslips = useMemo(
     () =>
@@ -36,7 +37,7 @@ export default function PayslipsPage() {
   );
 
   const selected = myPayslips.find((payslip) => payslip.id === selectedId) ?? null;
-  const ytdPayslips = myPayslips.filter((payslip) => payslip.paymentStatus === "Paid" && payslip.monthKey.startsWith("2026"));
+  const ytdPayslips = myPayslips.filter((payslip) => payslip.paymentStatus === "Paid" && payslip.monthKey.startsWith(String(currentYear)));
 
   if (selected) {
     return (
@@ -119,7 +120,7 @@ export default function PayslipsPage() {
       </div>
 
       <div className="rounded-xl border border-slate-200 bg-white p-4">
-        <p className="text-xs font-bold uppercase tracking-wider text-slate-400">Year to Date (2026)</p>
+        <p className="text-xs font-bold uppercase tracking-wider text-slate-400">Year to Date ({currentYear})</p>
         <div className="mt-2 flex justify-between text-sm">
           <div><p className="text-slate-500">Gross Paid</p><p className="font-bold text-slate-900">{money(ytdPayslips.reduce((sum, payslip) => sum + payslip.grossPay, 0))}</p></div>
           <div><p className="text-slate-500">Total Deductions</p><p className="font-bold text-red-600">{money(ytdPayslips.reduce((sum, payslip) => sum + payslip.totalDeductions, 0))}</p></div>

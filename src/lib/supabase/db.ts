@@ -47,6 +47,7 @@ import type {
   StaffMember,
   DepartmentHead,
   LeaveRequest,
+  LeaveYearPolicy,
   OnboardingRecord,
   OffboardingRecord,
   PayrollPrep,
@@ -93,9 +94,35 @@ function isMissingColumnError(error: { message?: string } | null | undefined, co
   return (error?.message ?? "").toLowerCase().includes(`column ${column.toLowerCase()} does not exist`);
 }
 
-function withoutSpecialty<T extends { specialty?: unknown }>(payload: T): Omit<T, "specialty"> {
+type StaffProfileOptionalFields = {
+  specialty?: unknown;
+  phone?: unknown;
+  home_address?: unknown;
+  bank_name?: unknown;
+  bank_account?: unknown;
+  tax_id?: unknown;
+  pension_number?: unknown;
+  nhf_number?: unknown;
+  emergency_contact_name?: unknown;
+  emergency_contact_relationship?: unknown;
+  emergency_contact_phone?: unknown;
+  emergency_contact_address?: unknown;
+};
+
+function withoutOptionalStaffProfileFields<T extends StaffProfileOptionalFields>(payload: T) {
   const fallbackPayload = { ...payload };
   delete fallbackPayload.specialty;
+  delete fallbackPayload.phone;
+  delete fallbackPayload.home_address;
+  delete fallbackPayload.bank_name;
+  delete fallbackPayload.bank_account;
+  delete fallbackPayload.tax_id;
+  delete fallbackPayload.pension_number;
+  delete fallbackPayload.nhf_number;
+  delete fallbackPayload.emergency_contact_name;
+  delete fallbackPayload.emergency_contact_relationship;
+  delete fallbackPayload.emergency_contact_phone;
+  delete fallbackPayload.emergency_contact_address;
   return fallbackPayload;
 }
 
@@ -1147,7 +1174,7 @@ export async function insertPayrollBatch(b: PayrollBatch): Promise<void> {
     payslip_ids: b.payslipIds ?? [],
     entries: b.entries ?? [],
   });
-  if (error) console.error("[db] insertPayrollBatch:", error.message);
+  if (error) throw new Error(error.message);
 }
 
 export async function upsertGeneratedPayslip(payslip: GeneratedPayslip): Promise<void> {
@@ -1177,7 +1204,7 @@ export async function upsertGeneratedPayslip(payslip: GeneratedPayslip): Promise
     batch_id: payslip.batchId ?? null,
     paid_at: payslip.paidAt ? toIsoTimestamp(payslip.paidAt) : null,
   });
-  if (error) console.error("[db] upsertGeneratedPayslip:", error.message);
+  if (error) throw new Error(error.message);
 }
 
 export async function upsertPayrollBatchStatus(
@@ -1188,7 +1215,7 @@ export async function upsertPayrollBatchStatus(
   if (extra?.approvedAt) patch.approved_at = new Date(extra.approvedAt).toISOString();
   if (extra?.paidAt) patch.paid_at = new Date(extra.paidAt).toISOString();
   const { error } = await sb.from("payroll_batches").update(patch).eq("id", id);
-  if (error) console.error("[db] upsertPayrollBatchStatus:", error.message);
+  if (error) throw new Error(error.message);
 }
 
 export async function insertKioskSale(s: KioskSale): Promise<void> {
@@ -1416,12 +1443,22 @@ function mapStaffMember(r: Record<string, unknown>): StaffMember {
     contractType: (r.contract_type as StaffMember["contractType"]) ?? "Permanent",
     email: (r.email as string) ?? "",
     phone: (r.phone as string) ?? "",
+    homeAddress: r.home_address as string | undefined,
     joinDate: createdAt ? new Date(createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "",
     contractEndDate: r.contract_end_date as string | undefined,
     status: typeof r.is_active === "boolean" ? (r.is_active ? "Active" : "Terminated") : ((r.status as StaffMember["status"]) ?? "Active"),
     licenseNumber: r.license_number as string | undefined,
     licenseExpiry: r.license_expiry as string | undefined,
     salary: (r.salary as number) ?? 0,
+    bankName: r.bank_name as string | undefined,
+    bankAccount: r.bank_account as string | undefined,
+    taxId: r.tax_id as string | undefined,
+    pensionNumber: r.pension_number as string | undefined,
+    nhfNumber: r.nhf_number as string | undefined,
+    emergencyContactName: r.emergency_contact_name as string | undefined,
+    emergencyContactRelationship: r.emergency_contact_relationship as string | undefined,
+    emergencyContactPhone: r.emergency_contact_phone as string | undefined,
+    emergencyContactAddress: r.emergency_contact_address as string | undefined,
     systemAccessCreated: typeof r.system_access_created === "boolean" ? Boolean(r.system_access_created) : true,
     notes: r.notes as string | undefined,
   };
@@ -1444,6 +1481,18 @@ function mapLeaveRequest(r: Record<string, unknown>): LeaveRequest {
     reviewedBy: r.reviewed_by as string | undefined,
     reviewedAt: r.reviewed_at as string | undefined,
     hrNotes: r.hr_notes as string | undefined,
+  };
+}
+
+function mapLeaveYearPolicy(r: Record<string, unknown>): LeaveYearPolicy {
+  return {
+    year: Number(r.year ?? new Date().getFullYear()),
+    annualDays: Number(r.annual_days ?? 21),
+    carryForwardDays: Number(r.carry_forward_days ?? 0),
+    notes: (r.notes as string) ?? undefined,
+    updatedBy: (r.updated_by as string) ?? undefined,
+    createdAt: (r.created_at as string) ?? "",
+    updatedAt: (r.updated_at as string) ?? "",
   };
 }
 
@@ -1472,25 +1521,95 @@ export async function insertStaffMember(s: StaffMember): Promise<void> {
     email: s.email,
     department: STAFF_DEPT_TO_DB[s.department],
     role: s.roleKey ?? "viewer",
+    phone: s.phone || null,
+    home_address: s.homeAddress ?? null,
     unit_name: s.unit ?? null,
     specialty: s.specialty ?? null,
+    bank_name: s.bankName ?? null,
+    bank_account: s.bankAccount ?? null,
+    tax_id: s.taxId ?? null,
+    pension_number: s.pensionNumber ?? null,
+    nhf_number: s.nhfNumber ?? null,
+    emergency_contact_name: s.emergencyContactName ?? null,
+    emergency_contact_relationship: s.emergencyContactRelationship ?? null,
+    emergency_contact_phone: s.emergencyContactPhone ?? null,
+    emergency_contact_address: s.emergencyContactAddress ?? null,
     is_active: s.status === "Active" || s.status === "On Leave" || s.status === "Probation",
   };
   let { error } = await sb.from("staff_profiles").upsert(payload);
-  if (error && isMissingColumnError(error, "staff_profiles.specialty")) {
-    ({ error } = await sb.from("staff_profiles").upsert(withoutSpecialty(payload)));
+  if (error && (
+    isMissingColumnError(error, "staff_profiles.specialty")
+    || isMissingColumnError(error, "staff_profiles.phone")
+    || isMissingColumnError(error, "staff_profiles.home_address")
+    || isMissingColumnError(error, "staff_profiles.bank_name")
+    || isMissingColumnError(error, "staff_profiles.bank_account")
+    || isMissingColumnError(error, "staff_profiles.tax_id")
+    || isMissingColumnError(error, "staff_profiles.pension_number")
+    || isMissingColumnError(error, "staff_profiles.nhf_number")
+    || isMissingColumnError(error, "staff_profiles.emergency_contact_name")
+    || isMissingColumnError(error, "staff_profiles.emergency_contact_relationship")
+    || isMissingColumnError(error, "staff_profiles.emergency_contact_phone")
+    || isMissingColumnError(error, "staff_profiles.emergency_contact_address")
+  )) {
+    ({ error } = await sb.from("staff_profiles").upsert(withoutOptionalStaffProfileFields(payload)));
   }
+  if (error) throw new Error(error.message);
+}
+
+export async function updateStaffFinancialDetails(
+  staffId: string,
+  details: Pick<StaffMember, "bankName" | "bankAccount" | "taxId" | "pensionNumber" | "nhfNumber">,
+): Promise<void> {
+  const sb = getSupabase(); if (!sb) return;
+  const payload = {
+    bank_name: details.bankName ?? null,
+    bank_account: details.bankAccount ?? null,
+    tax_id: details.taxId ?? null,
+    pension_number: details.pensionNumber ?? null,
+    nhf_number: details.nhfNumber ?? null,
+  };
+
+  let { error } = await sb
+    .from("staff_profiles")
+    .update(payload)
+    .eq("id", staffId);
+
+  if (error && (
+    isMissingColumnError(error, "staff_profiles.bank_name")
+    || isMissingColumnError(error, "staff_profiles.bank_account")
+    || isMissingColumnError(error, "staff_profiles.tax_id")
+    || isMissingColumnError(error, "staff_profiles.pension_number")
+    || isMissingColumnError(error, "staff_profiles.nhf_number")
+  )) {
+    ({ error } = await sb
+      .from("staff_profiles")
+      .update(withoutOptionalStaffProfileFields(payload))
+      .eq("id", staffId));
+  }
+
   if (error) throw new Error(error.message);
 }
 
 export async function insertLeaveRequest(r: LeaveRequest): Promise<void> {
   const sb = getSupabase(); if (!sb) return;
-  await sb.from("leave_requests").upsert({
-    id: r.id, staff_id: r.staffId, staff_name: r.staffName, department: r.department,
-    role: r.role, leave_type: r.leaveType, start_date: r.startDate, end_date: r.endDate,
-    days: r.days, reason: r.reason, status: r.status, submitted_at: r.submittedAt,
-    reviewed_by: r.reviewedBy, reviewed_at: r.reviewedAt, hr_notes: r.hrNotes,
+  const { error } = await sb.from("leave_requests").insert({
+    id: r.id,
+    staff_id: r.staffId,
+    staff_name: r.staffName,
+    department: r.department,
+    role: r.role,
+    leave_type: r.leaveType,
+    start_date: r.startDate,
+    end_date: r.endDate,
+    days: r.days,
+    reason: r.reason,
+    status: r.status,
+    submitted_at: r.submittedAt,
+    reviewed_by: r.reviewedBy ?? null,
+    reviewed_at: r.reviewedAt ?? null,
+    hr_notes: r.hrNotes ?? null,
   });
+  if (error) throw new Error(error.message);
 }
 
 export async function fetchLeaveRequestsByDept(department: string): Promise<LeaveRequest[]> {
@@ -1512,12 +1631,38 @@ export async function reviewLeaveRequestByHOD(
 ): Promise<void> {
   const sb = getSupabase();
   if (!sb) return;
-  await sb.from("leave_requests").update({
+  const { error } = await sb.from("leave_requests").update({
     status,
     reviewed_by: reviewedBy,
     reviewed_at: new Date().toISOString(),
     hr_notes: notes,
   }).eq("id", id);
+  if (error) throw new Error(error.message);
+}
+
+export async function fetchLeaveYearPolicies(): Promise<LeaveYearPolicy[]> {
+  const sb = getSupabase();
+  if (!sb) return [];
+  try {
+    const { data } = await sb.from("leave_year_policies").select("*").order("year", { ascending: false });
+    return (data ?? []).map(mapLeaveYearPolicy);
+  } catch {
+    return [];
+  }
+}
+
+export async function upsertLeaveYearPolicy(policy: LeaveYearPolicy): Promise<void> {
+  const sb = getSupabase();
+  if (!sb) return;
+  const { error } = await sb.from("leave_year_policies").upsert({
+    year: policy.year,
+    annual_days: policy.annualDays,
+    carry_forward_days: policy.carryForwardDays,
+    notes: policy.notes ?? null,
+    updated_by: policy.updatedBy ?? null,
+    updated_at: policy.updatedAt,
+  }, { onConflict: "year" });
+  if (error) throw new Error(error.message);
 }
 
 // ─── Performance Reviews ──────────────────────────────────────────────────────

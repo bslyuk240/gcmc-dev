@@ -15,6 +15,15 @@ function guessAvatarExtension(file: File) {
   return "jpg";
 }
 
+function isMissingBucketError(message: string) {
+  const lower = message.toLowerCase();
+  return lower.includes("bucket not found") || lower.includes("bucket") && lower.includes("not found");
+}
+
+function isMissingAvatarColumnError(message: string) {
+  return message.toLowerCase().includes("column avatar_url does not exist");
+}
+
 export async function POST(request: Request) {
   const session = await getStaffPortalSession();
   if (!session) {
@@ -45,10 +54,22 @@ export async function POST(request: Request) {
   const path = `staff-avatars/${session.staff_id}/avatar.${ext}`;
   const bytes = Buffer.from(await fileValue.arrayBuffer());
 
-  const { error: uploadError } = await admin.storage.from(STAFF_AVATAR_BUCKET).upload(path, bytes, {
+  const bucket = admin.storage.from(STAFF_AVATAR_BUCKET);
+  let { error: uploadError } = await bucket.upload(path, bytes, {
     contentType: fileValue.type,
     upsert: true,
   });
+
+  if (uploadError && isMissingBucketError(uploadError.message)) {
+    const storage = admin.storage as unknown as {
+      createBucket?: (name: string, options?: { public?: boolean }) => Promise<{ error: { message: string } | null }>;
+    };
+    await storage.createBucket?.(STAFF_AVATAR_BUCKET, { public: true });
+    ({ error: uploadError } = await bucket.upload(path, bytes, {
+      contentType: fileValue.type,
+      upsert: true,
+    }));
+  }
 
   if (uploadError) {
     return NextResponse.json({ error: uploadError.message }, { status: 500 });
@@ -62,7 +83,7 @@ export async function POST(request: Request) {
     .update({ avatar_url: avatarUrl })
     .eq("id", session.staff_id);
 
-  if (updateError) {
+  if (updateError && !isMissingAvatarColumnError(updateError.message)) {
     return NextResponse.json({ error: updateError.message }, { status: 500 });
   }
 

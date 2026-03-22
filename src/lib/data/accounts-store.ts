@@ -393,18 +393,18 @@ export function updateSupplierPaymentStatus(id: string, status: SupplierPaymentS
 // ─── Payroll ──────────────────────────────────────────────────────────────────
 
 export function getPayrollBatches(): PayrollBatch[] { return [...getState().payrollBatches]; }
-export function addPayrollBatch(b: PayrollBatch) {
+export async function addPayrollBatch(b: PayrollBatch) {
+  const { insertPayrollBatch } = await import("@/lib/supabase/db");
+  await insertPayrollBatch(b);
   mutate((s) => { s.payrollBatches = [b, ...s.payrollBatches]; });
-  import("@/lib/supabase/db").then(({ insertPayrollBatch }) => insertPayrollBatch(b))
-    .catch((err) => console.error("[accounts-store] addPayrollBatch failed:", err));
   if (typeof window !== "undefined") {
     window.dispatchEvent(new Event(ACCOUNTS_PAYMENT_UPDATED_EVENT));
   }
 }
-export function updatePayrollStatus(id: string, status: PayrollStatus, extra?: Partial<PayrollBatch>) {
+export async function updatePayrollStatus(id: string, status: PayrollStatus, extra?: Partial<PayrollBatch>) {
+  const { upsertPayrollBatchStatus } = await import("@/lib/supabase/db");
+  await upsertPayrollBatchStatus(id, status, extra);
   mutate((s) => { s.payrollBatches = s.payrollBatches.map((b) => b.id === id ? { ...b, status, ...extra } : b); });
-  import("@/lib/supabase/db").then(({ upsertPayrollBatchStatus }) => upsertPayrollBatchStatus(id, status, extra))
-    .catch((err) => console.error("[accounts-store] updatePayrollStatus failed:", err));
   if (typeof window !== "undefined") {
     window.dispatchEvent(new Event(ACCOUNTS_PAYMENT_UPDATED_EVENT));
   }

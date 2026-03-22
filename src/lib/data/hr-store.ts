@@ -146,12 +146,22 @@ export type StaffMember = {
   contractType: ContractType;
   email: string;
   phone: string;
+  homeAddress?: string;
   joinDate: string;
   contractEndDate?: string;
   status: StaffStatus;
   licenseNumber?: string;
   licenseExpiry?: string;
   salary: number;
+  bankName?: string;
+  bankAccount?: string;
+  taxId?: string;
+  pensionNumber?: string;
+  nhfNumber?: string;
+  emergencyContactName?: string;
+  emergencyContactRelationship?: string;
+  emergencyContactPhone?: string;
+  emergencyContactAddress?: string;
   systemAccessCreated: boolean; // tracks IT account creation
   notes?: string;
 };
@@ -172,6 +182,16 @@ export type LeaveRequest = {
   reviewedBy?: string;
   reviewedAt?: string;
   hrNotes?: string;
+};
+
+export type LeaveYearPolicy = {
+  year: number;
+  annualDays: number;
+  carryForwardDays: number;
+  notes?: string;
+  updatedBy?: string;
+  createdAt: string;
+  updatedAt: string;
 };
 
 export type OnboardingRecord = {
@@ -259,6 +279,7 @@ export type GeneratedPayslip = {
 type HRStoreState = {
   staff: StaffMember[];
   leaveRequests: LeaveRequest[];
+  leavePolicies: LeaveYearPolicy[];
   onboarding: OnboardingRecord[];
   offboarding: OffboardingRecord[];
   payrollPreps: PayrollPrep[];
@@ -271,6 +292,7 @@ type HRStoreState = {
 const SEED: HRStoreState = {
   staff: [],
   leaveRequests: [],
+  leavePolicies: [],
   onboarding: [],
   offboarding: [],
   payrollPreps: [],
@@ -323,6 +345,7 @@ const EMPTY_HR_STATE: HRStoreState = {
   ...SEED,
   staff: [],
   leaveRequests: [],
+  leavePolicies: [],
   onboarding: [],
   offboarding: [],
   payrollPreps: [],
@@ -344,6 +367,7 @@ function loadState(): HRStoreState {
         // fresh data once the async fetch completes).
         staff:            parsed.staff            ?? [],
         leaveRequests:    parsed.leaveRequests    ?? [],
+        leavePolicies:    parsed.leavePolicies    ?? [],
         onboarding:       parsed.onboarding       ?? [],
         offboarding:      parsed.offboarding      ?? [],
         departmentHeads:  parsed.departmentHeads  ?? [],
@@ -391,8 +415,16 @@ let _synced = false;
 export async function syncHRFromSupabase() {
   if (typeof window === "undefined" || _synced) return;
   try {
-    const { fetchStaffMembers, fetchLeaveRequests } = await import("@/lib/supabase/db");
-    const [staff, leaveRequests] = await Promise.all([fetchStaffMembers(), fetchLeaveRequests()]);
+    const {
+      fetchStaffMembers,
+      fetchLeaveRequests,
+    } = await import("@/lib/supabase/db");
+    const [staffResult, leaveResult] = await Promise.allSettled([
+      fetchStaffMembers(),
+      fetchLeaveRequests(),
+    ]);
+    const staff = staffResult.status === "fulfilled" ? staffResult.value : [];
+    const leaveRequests = leaveResult.status === "fulfilled" ? leaveResult.value : [];
     const current = getState();
     _state = {
       ...current,
@@ -402,7 +434,8 @@ export async function syncHRFromSupabase() {
     };
     saveState(_state);
     listeners.forEach((l) => l());
-    _synced = true;
+    _synced = staffResult.status === "fulfilled"
+      && leaveResult.status === "fulfilled";
   } catch { /* keep local state */ }
 }
 
@@ -419,6 +452,18 @@ export function addStaffMember(s: StaffMember) {
 export function replaceStaffMember(nextStaff: StaffMember) {
   mutate((state) => {
     state.staff = state.staff.map((entry) => (entry.id === nextStaff.id ? nextStaff : entry));
+  });
+}
+export async function updateStaffFinancialDetails(
+  id: string,
+  details: Pick<StaffMember, "bankName" | "bankAccount" | "taxId" | "pensionNumber" | "nhfNumber">,
+) {
+  const { updateStaffFinancialDetails: persistStaffFinancialDetails } = await import("@/lib/supabase/db");
+  await persistStaffFinancialDetails(id, details);
+  mutate((state) => {
+    state.staff = state.staff.map((staff) =>
+      staff.id === id ? { ...staff, ...details } : staff,
+    );
   });
 }
 export function updateStaffStatus(id: string, status: StaffStatus, notes?: string) {
@@ -534,11 +579,19 @@ export function setDepartmentHead(
 // ─── Leave ────────────────────────────────────────────────────────────────────
 
 export function getLeaveRequests(): LeaveRequest[] { return [...getState().leaveRequests]; }
-export function addLeaveRequest(l: LeaveRequest) {
+export function getLeavePolicies(): LeaveYearPolicy[] { return [...getState().leavePolicies]; }
+export function getLeavePolicy(year: number): LeaveYearPolicy | null {
+  return getState().leavePolicies.find((policy) => policy.year === year) ?? null;
+}
+export async function addLeaveRequest(l: LeaveRequest) {
+  const { insertLeaveRequest } = await import("@/lib/supabase/db");
+  await insertLeaveRequest(l);
   mutate((state) => { state.leaveRequests = [l, ...state.leaveRequests]; });
 }
-export function updateLeaveStatus(id: string, status: LeaveStatus, reviewedBy: string, notes?: string) {
-  const now = "Mar 15, 2026";
+export async function updateLeaveStatus(id: string, status: "Approved" | "Rejected", reviewedBy: string, notes?: string) {
+  const now = new Date().toISOString();
+  const { reviewLeaveRequestByHOD } = await import("@/lib/supabase/db");
+  await reviewLeaveRequestByHOD(id, status, reviewedBy, notes ?? "");
   mutate((state) => {
     state.leaveRequests = state.leaveRequests.map((l) =>
       l.id === id ? { ...l, status, reviewedBy, reviewedAt: now, hrNotes: notes ?? l.hrNotes } : l
@@ -550,6 +603,17 @@ export function updateLeaveStatus(id: string, status: LeaveStatus, reviewedBy: s
         s.id === req.staffId ? { ...s, status: status === "Approved" ? "On Leave" : s.status } : s
       );
     }
+  });
+}
+
+export async function setLeavePolicy(policy: LeaveYearPolicy) {
+  const { upsertLeaveYearPolicy } = await import("@/lib/supabase/db");
+  await upsertLeaveYearPolicy(policy);
+  mutate((state) => {
+    state.leavePolicies = [
+      policy,
+      ...state.leavePolicies.filter((item) => item.year !== policy.year),
+    ].sort((left, right) => right.year - left.year);
   });
 }
 
@@ -590,7 +654,9 @@ export function getGeneratedPayslips(): GeneratedPayslip[] {
   return [...getState().generatedPayslips];
 }
 
-export function addGeneratedPayslip(payslip: GeneratedPayslip) {
+export async function addGeneratedPayslip(payslip: GeneratedPayslip) {
+  const { upsertGeneratedPayslip } = await import("@/lib/supabase/db");
+  await upsertGeneratedPayslip(payslip);
   mutate((state) => {
     state.generatedPayslips = [
       payslip,
@@ -602,33 +668,49 @@ export function addGeneratedPayslip(payslip: GeneratedPayslip) {
   });
 }
 
-export function assignPayslipsToBatch(batchId: string, payslipIds: string[]) {
+export async function assignPayslipsToBatch(batchId: string, payslipIds: string[]) {
+  const { upsertGeneratedPayslip } = await import("@/lib/supabase/db");
+  const current = getState();
+  const updated: GeneratedPayslip[] = current.generatedPayslips.map((item) =>
+    payslipIds.includes(item.id)
+      ? { ...item, batchId, workflowStatus: "Batched", paymentStatus: "Processing" }
+      : item,
+  );
+  await Promise.all(
+    updated
+      .filter((item) => payslipIds.includes(item.id))
+      .map((item) => upsertGeneratedPayslip(item)),
+  );
   mutate((state) => {
-    state.generatedPayslips = state.generatedPayslips.map((item) =>
-      payslipIds.includes(item.id)
-        ? { ...item, batchId, workflowStatus: "Batched", paymentStatus: "Processing" }
-        : item,
-    );
+    state.generatedPayslips = updated;
     state.payrollPreps = buildPayrollPrepsFromPayslips(state.generatedPayslips);
   });
 }
 
-export function updatePayslipWorkflowByBatch(
+export async function updatePayslipWorkflowByBatch(
   batchId: string,
   workflowStatus: GeneratedPayslip["workflowStatus"],
   options?: { paymentStatus?: GeneratedPayslip["paymentStatus"]; paidAt?: string },
 ) {
+  const { upsertGeneratedPayslip } = await import("@/lib/supabase/db");
+  const current = getState();
+  const updated: GeneratedPayslip[] = current.generatedPayslips.map((item) =>
+    item.batchId === batchId
+      ? {
+          ...item,
+          workflowStatus,
+          paymentStatus: options?.paymentStatus ?? item.paymentStatus,
+          paidAt: options?.paidAt ?? item.paidAt,
+        }
+      : item,
+  );
+  await Promise.all(
+    updated
+      .filter((item) => item.batchId === batchId)
+      .map((item) => upsertGeneratedPayslip(item)),
+  );
   mutate((state) => {
-    state.generatedPayslips = state.generatedPayslips.map((item) =>
-      item.batchId === batchId
-        ? {
-            ...item,
-            workflowStatus,
-            paymentStatus: options?.paymentStatus ?? item.paymentStatus,
-            paidAt: options?.paidAt ?? item.paidAt,
-          }
-        : item,
-    );
+    state.generatedPayslips = updated;
     state.payrollPreps = buildPayrollPrepsFromPayslips(state.generatedPayslips);
   });
 }

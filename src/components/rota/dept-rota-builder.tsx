@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useHRStore } from "@/lib/hooks/use-hr-store";
+import { pushNotification, type DeptKey } from "@/lib/data/notification-store";
 import {
   fetchShiftsForDept,
   createDeptShift,
@@ -12,6 +13,7 @@ import {
   type NcShift,
   type ShiftPreset,
 } from "@/lib/supabase/db";
+import type { RotaSwapRequest } from "@/modules/workforce/rota/types";
 import { cn } from "@/lib/utils/cn";
 
 // Fallback hardcoded types — used when no presets loaded yet
@@ -43,6 +45,13 @@ const SHIFT_TYPE_TO_COLOR: Record<NcShift["shiftType"], string> = {
   morning: "amber", afternoon: "sky", night: "indigo", on_call: "rose",
 };
 
+const REQUEST_STATUS_STYLES: Record<RotaSwapRequest["status"], string> = {
+  pending: "text-amber-700",
+  approved: "text-emerald-700",
+  rejected: "text-rose-700",
+  cancelled: "text-slate-500",
+};
+
 const DAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
 function getMondayOf(date: Date): Date {
@@ -69,6 +78,10 @@ function getInitials(name: string) {
   return name.split(" ").filter(Boolean).map((p) => p[0]?.toUpperCase() ?? "").slice(0, 2).join("");
 }
 
+function getRequestLabel(status: RotaSwapRequest["status"]): string {
+  return status === "pending" ? "Pending review" : status.charAt(0).toUpperCase() + status.slice(1);
+}
+
 type ShiftCell = { staffId: string; date: string };
 
 export function DeptRotaBuilder({
@@ -82,9 +95,13 @@ export function DeptRotaBuilder({
 
   const [weekStart, setWeekStart]     = useState<Date>(() => getMondayOf(new Date()));
   const [shifts, setShifts]           = useState<NcShift[]>([]);
+  const [swapRequests, setSwapRequests] = useState<RotaSwapRequest[]>([]);
   const [loading, setLoading]         = useState(true);
+  const [swapLoading, setSwapLoading] = useState(true);
   const [saving, setSaving]           = useState(false);
+  const [reviewingId, setReviewingId] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<NcShift | null>(null);
+  const [requestError, setRequestError] = useState<string | null>(null);
 
   // Presets
   const [presets, setPresets]         = useState<ShiftPreset[]>([]);
@@ -125,8 +142,27 @@ export function DeptRotaBuilder({
     setPresets(data);
   }, [department]);
 
+  const loadSwapRequests = useCallback(async () => {
+    setSwapLoading(true);
+    setRequestError(null);
+    try {
+      const response = await fetch(`/api/rota-requests?department=${encodeURIComponent(department)}`);
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(payload?.error ?? "Failed to load swap requests.");
+      }
+      setSwapRequests(Array.isArray(payload?.requests) ? (payload.requests as RotaSwapRequest[]) : []);
+    } catch (error) {
+      setSwapRequests([]);
+      setRequestError(error instanceof Error ? error.message : "Failed to load swap requests.");
+    } finally {
+      setSwapLoading(false);
+    }
+  }, [department]);
+
   useEffect(() => { void loadShifts(); }, [loadShifts]);
   useEffect(() => { void loadPresets(); }, [loadPresets]);
+  useEffect(() => { void loadSwapRequests(); }, [loadSwapRequests]);
 
   function getShift(staffId: string, date: string): NcShift | undefined {
     return shifts.find((s) => s.staffId === staffId && s.shiftDate === date);
@@ -244,6 +280,38 @@ export function DeptRotaBuilder({
     await deleteShiftPreset(id);
     setPresets((prev) => prev.filter((p) => p.id !== id));
     if (activeBrush?.id === id) setActiveBrush(null);
+  }
+
+  async function handleReviewSwapRequest(requestId: string, status: "approved" | "rejected") {
+    setReviewingId(requestId);
+    try {
+      const response = await fetch("/api/rota-requests", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ requestId, status }),
+      });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(payload?.error ?? "Failed to review swap request.");
+      }
+
+      const reviewed = payload?.request as RotaSwapRequest | undefined;
+      if (reviewed) {
+        setSwapRequests((prev) => prev.map((item) => (item.id === reviewed.id ? reviewed : item)));
+        pushNotification({
+          category: "hr",
+          severity: status === "approved" ? "success" : "warning",
+          title: `Shift swap ${status}`,
+          body: `${reviewed.staffName}'s ${reviewed.shiftDate} ${reviewed.shiftType.replace("_", " ")} request was ${status}.`,
+          href: `/app/${department}/rota`,
+          targetDepartments: [department as DeptKey, "hr", "admin"],
+        });
+      }
+    } catch (error) {
+      setRequestError(error instanceof Error ? error.message : "Failed to review swap request.");
+    } finally {
+      setReviewingId(null);
+    }
   }
 
   // When picking a preset type in modal, update default times
@@ -442,6 +510,84 @@ export function DeptRotaBuilder({
               )}
             </tbody>
           </table>
+        )}
+      </div>
+
+      <div className="rounded-xl border border-slate-200 bg-white shadow-sm">
+        <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
+          <div>
+            <h3 className="text-sm font-black text-slate-900">Swap Requests</h3>
+            <p className="text-xs text-slate-500">Review staff requests against the rota builder.</p>
+          </div>
+          <span className="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-bold text-amber-700">
+            {swapRequests.filter((request) => request.status === "pending").length} pending
+          </span>
+        </div>
+
+        {requestError ? (
+          <div className="px-4 py-3 text-sm text-rose-700">{requestError}</div>
+        ) : swapLoading ? (
+          <div className="px-4 py-5 text-sm text-slate-500">Loading swap requests...</div>
+        ) : swapRequests.length === 0 ? (
+          <div className="px-4 py-5 text-sm text-slate-400">No swap requests yet.</div>
+        ) : (
+          <div className="divide-y divide-slate-100">
+            {swapRequests.map((request) => {
+              const pending = request.status === "pending";
+              return (
+                <div key={request.id} className="flex flex-col gap-3 px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="truncate text-sm font-semibold text-slate-900">{request.staffName}</p>
+                      <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold capitalize ${REQUEST_STATUS_STYLES[request.status] ?? "text-slate-500"}`}>
+                        {getRequestLabel(request.status)}
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-500">
+                      {new Date(request.shiftDate + "T00:00:00").toLocaleDateString("en-GB", {
+                        weekday: "short",
+                        day: "numeric",
+                        month: "short",
+                      })} · {request.shiftType.replace("_", " ")} · {request.shiftStart ?? "00:00"}-{request.shiftEnd ?? "00:00"}
+                    </p>
+                    <p className="text-xs text-slate-400">
+                      {request.reason ?? "No reason provided"}
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-semibold text-slate-500">
+                      {request.unitName ?? request.department}
+                    </span>
+                    {pending ? (
+                      <>
+                        <button
+                          type="button"
+                          disabled={reviewingId === request.id}
+                          onClick={() => void handleReviewSwapRequest(request.id, "approved")}
+                          className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          Approve
+                        </button>
+                        <button
+                          type="button"
+                          disabled={reviewingId === request.id}
+                          onClick={() => void handleReviewSwapRequest(request.id, "rejected")}
+                          className="rounded-lg border border-rose-200 px-3 py-1.5 text-xs font-semibold text-rose-600 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          Reject
+                        </button>
+                      </>
+                    ) : (
+                      <span className="text-xs text-slate-400">
+                        Reviewed {request.reviewedAt ? new Date(request.reviewedAt).toLocaleDateString("en-GB") : "—"}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         )}
       </div>
 

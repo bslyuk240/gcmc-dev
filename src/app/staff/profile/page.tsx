@@ -1,59 +1,67 @@
-"use client";
+﻿"use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useHMSSession } from "@/modules/rbac/hooks";
+import { useHRStore } from "@/lib/hooks/use-hr-store";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { DB_TO_STAFF_DEPT } from "@/lib/data/hr-store";
 import { formatStaffDisplayId } from "@/lib/staff-id";
+import { formatDepartmentLabel } from "@/lib/chat/types";
 
 const DEPT_LABELS: Record<string, string> = {
   frontdesk: "Front Desk", doctors: "Doctors", nurses: "Nurses Bay",
   pharmacy: "Pharmacy", lab: "Laboratory", accounts: "Accounts",
   store: "Store", admin: "Admin", hr: "HR", it: "IT",
+  nhis: "NHIS",
 };
 
-// Seed employment data (would come from Supabase in production)
-const EMPLOYMENT_DATA = {
-  startDate:     "15 Jan 2023",
-  contractType:  "Full-time Permanent",
-  unit:          "ICU / Ward A",
-  lineManager:   "Dr. Kwame Mensah",
-  bankName:      "GTBank",
-  accountNumber: "****4521",
-  taxId:         "TIN-8821",
-  pension:       "PEN-0021-A",
-  nhfNumber:     "NHF-8812",
-};
+function formatPersonName(value: string) {
+  return value
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+    .join(" ");
+}
 
-const EMERGENCY_DATA = {
-  name:         "Mrs. Adaeze Osei",
-  relationship: "Spouse",
-  phone:        "+234 801 *** ****",
-  address:      "14 Lekki Phase 1, Lagos",
-};
+function formatRoleTitle(value: string) {
+  return value
+    .trim()
+    .split(/[_\s]+/)
+    .filter(Boolean)
+    .map((part) => {
+      const lower = part.toLowerCase();
 
-const ACTIVITY_LOG = [
-  { time: "Today 08:32",    action: "Clocked in",                     detail: "ICU Unit" },
-  { time: "Yesterday 14:05",action: "Clocked out",                    detail: "7.1 hours worked" },
-  { time: "Mar 14",         action: "Leave application submitted",    detail: "Annual Leave · Apr 7–11" },
-  { time: "Mar 13",         action: "Payslip viewed",                 detail: "March 2026" },
-  { time: "Mar 10",         action: "Shift swap requested",           detail: "Mar 20 Night Shift" },
-  { time: "Mar 01",         action: "Password changed",               detail: "Security update" },
-];
+      if (["hr", "it", "icu", "nhis", "hmo"].includes(lower)) {
+        return lower.toUpperCase();
+      }
 
-type Tab = "info" | "employment" | "security" | "activity";
+      return lower.charAt(0).toUpperCase() + lower.slice(1);
+    })
+    .join(" ");
+}
+
+function maskAccountNumber(value: string) {
+  const digits = value.replace(/\D/g, "");
+  if (digits.length <= 4) return value;
+  return `${"*".repeat(Math.max(0, digits.length - 4))}${digits.slice(-4)}`;
+}
+
+type Tab = "info" | "employment" | "security";
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "info",       label: "My Info" },
   { id: "employment", label: "Employment" },
   { id: "security",   label: "Security" },
-  { id: "activity",   label: "Activity" },
 ];
 
 export default function StaffProfilePage() {
   const session = useHMSSession();
+  const { staff, generatedPayslips, getDeptHead } = useHRStore();
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const hydratedProfileRef = useRef(false);
 
   const [tab, setTab]         = useState<Tab>("info");
   const [editing, setEditing] = useState(false);
@@ -62,9 +70,11 @@ export default function StaffProfilePage() {
   const [avatarMsg, setAvatarMsg] = useState<string | null>(null);
 
   // Editable personal fields
-  const [phone, setPhone]     = useState("+234 801 234 5678");
-  const [address, setAddress] = useState("12 Lekki Phase 1, Lagos");
+  const [phone, setPhone]     = useState("");
+  const [address, setAddress] = useState("");
   const [saved, setSaved]     = useState(false);
+  const [saveBusy, setSaveBusy] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   // Security
   const [currentPw, setCurrentPw] = useState("");
@@ -72,19 +82,72 @@ export default function StaffProfilePage() {
   const [confirmPw, setConfirmPw] = useState("");
   const [pwMsg,     setPwMsg]     = useState<{ text: string; ok: boolean } | null>(null);
 
-  function handleSaveProfile() {
-    setSaved(true);
-    setEditing(false);
-    setTimeout(() => setSaved(false), 3000);
+  async function handleSaveProfile() {
+    setSaveBusy(true);
+    setSaveError(null);
+
+    try {
+      const response = await fetch("/staff/profile/details", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ phone, homeAddress: address }),
+      });
+
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(payload?.error ?? "Profile update failed.");
+      }
+
+      if (typeof payload?.phone === "string") {
+        setPhone(payload.phone);
+      }
+      if (typeof payload?.homeAddress === "string") {
+        setAddress(payload.homeAddress);
+      }
+
+      setSaved(true);
+      setEditing(false);
+      setTimeout(() => setSaved(false), 3000);
+      router.refresh();
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : "Profile update failed.");
+    } finally {
+      setSaveBusy(false);
+    }
   }
 
-  function handleChangePassword() {
+  async function handleChangePassword() {
     if (!currentPw || !newPw || !confirmPw) { setPwMsg({ text: "Fill in all fields.", ok: false }); return; }
     if (newPw !== confirmPw)               { setPwMsg({ text: "Passwords do not match.", ok: false }); return; }
     if (newPw.length < 8)                  { setPwMsg({ text: "Password must be at least 8 characters.", ok: false }); return; }
-    setPwMsg({ text: "Password changed successfully.", ok: true });
-    setCurrentPw(""); setNewPw(""); setConfirmPw("");
-    setTimeout(() => setPwMsg(null), 3000);
+
+    try {
+      const response = await fetch("/staff/profile/password", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          currentPassword: currentPw,
+          newPassword: newPw,
+          confirmPassword: confirmPw,
+        }),
+      });
+
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(payload?.error ?? "Password update failed.");
+      }
+
+      setPwMsg({ text: "Password changed successfully.", ok: true });
+      setCurrentPw("");
+      setNewPw("");
+      setConfirmPw("");
+      setTimeout(() => setPwMsg(null), 3000);
+    } catch (error) {
+      setPwMsg({
+        text: error instanceof Error ? error.message : "Password update failed.",
+        ok: false,
+      });
+    }
   }
 
   async function handleAvatarUpload(file: File) {
@@ -128,16 +191,47 @@ export default function StaffProfilePage() {
   const inputCls = "w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100";
   const readCls  = "w-full rounded-xl border border-slate-100 bg-slate-50 px-3 py-2.5 text-sm text-slate-800 cursor-default";
 
-  const initials = session?.full_name.split(" ").map((w) => w[0]).slice(0, 2).join("").toUpperCase() ?? "?";
-  const employeeId = session
+  const currentSession = session;
+  const initials = currentSession?.full_name?.split(" ").map((w) => w[0]).slice(0, 2).join("").toUpperCase() ?? "?";
+  const employeeId = currentSession
     ? formatStaffDisplayId({
-        id: session.staff_id,
-        name: session.full_name,
-        department: session.department,
+        id: currentSession.staff_id,
+        name: currentSession.full_name,
+        department: currentSession.department,
       })
     : "STA.XX0000";
+  const displayName = currentSession ? formatPersonName(currentSession.full_name) : "Staff Member";
+  const departmentLabel = currentSession
+    ? (DEPT_LABELS[currentSession.department] ?? formatDepartmentLabel(currentSession.department))
+    : "—";
+  const roleLabel = currentSession ? formatRoleTitle(currentSession.role) : "—";
+  const staffRecord = currentSession ? staff.find((member) => member.id === currentSession.staff_id) ?? null : null;
+  const departmentHead = currentSession ? getDeptHead(DB_TO_STAFF_DEPT[currentSession.department] ?? "Administration") : null;
+  const latestPayslip = currentSession ? generatedPayslips.find((item) => item.staffId === currentSession.staff_id) ?? null : null;
+  const employmentStartDate = staffRecord?.joinDate ?? "Pending HR setup";
+  const employmentContractType = staffRecord?.contractType ?? "Permanent";
+  const employmentUnit = staffRecord?.unit ?? "—";
+  const employmentLineManager = departmentHead?.staffName ?? "HR Manager";
+  const employmentSalary = staffRecord ? `₦${staffRecord.salary.toLocaleString()}` : "Pending HR setup";
+  const bankName = staffRecord?.bankName ?? latestPayslip?.bankName ?? "Managed by Accounts";
+  const bankAccountSource = staffRecord?.bankAccount ?? latestPayslip?.bankAccount ?? "";
+  const bankAccount = bankAccountSource ? maskAccountNumber(bankAccountSource) : "Managed by Accounts";
+  const taxId = staffRecord?.taxId ?? latestPayslip?.taxId ?? "Managed by Accounts";
+  const pensionNumber = staffRecord?.pensionNumber ?? "Managed by Accounts";
+  const nhfNumber = staffRecord?.nhfNumber ?? "Managed by Accounts";
+  const emergencyName = staffRecord?.emergencyContactName ?? "Pending HR setup";
+  const emergencyRelationship = staffRecord?.emergencyContactRelationship ?? "Pending HR setup";
+  const emergencyPhone = staffRecord?.emergencyContactPhone ?? "Pending HR setup";
+  const emergencyAddress = staffRecord?.emergencyContactAddress ?? "Pending HR setup";
 
-  if (!session) {
+  useEffect(() => {
+    if (hydratedProfileRef.current || !staffRecord) return;
+    setPhone(staffRecord.phone || "");
+    setAddress(staffRecord.homeAddress || "");
+    hydratedProfileRef.current = true;
+  }, [staffRecord]);
+
+  if (!currentSession) {
     return (
       <div className="flex h-40 items-center justify-center">
         <div className="h-8 w-8 animate-spin rounded-full border-4 border-indigo-200 border-t-indigo-600" />
@@ -182,11 +276,11 @@ export default function StaffProfilePage() {
             )}
           </button>
           <div className="flex-1 min-w-0">
-            <h1 className={`truncate text-xl font-black ${avatarUrl ? "text-white" : "text-slate-900"}`}>{session.full_name}</h1>
+            <h1 className={`truncate text-xl font-black ${avatarUrl ? "text-white" : "text-slate-900"}`}>{displayName}</h1>
             <p className={`text-sm ${avatarUrl ? "text-white/85" : "text-slate-500"}`}>
-              {DEPT_LABELS[session.department] ?? session.department} · {session.role.replace(/_/g, " ")}
+              {departmentLabel} · {roleLabel}
             </p>
-            <p className={`text-xs mt-0.5 ${avatarUrl ? "text-white/70" : "text-slate-400"}`}>{employeeId} · {EMPLOYMENT_DATA.contractType}</p>
+            <p className={`text-xs mt-0.5 ${avatarUrl ? "text-white/70" : "text-slate-400"}`}>{employeeId} · {employmentContractType}</p>
           </div>
         </div>
       </div>
@@ -242,18 +336,18 @@ export default function StaffProfilePage() {
                 Edit
               </button>
             ) : (
-              <button onClick={handleSaveProfile} className="text-xs font-bold text-emerald-600 hover:underline">
-                Save Changes
+              <button onClick={() => void handleSaveProfile()} className="text-xs font-bold text-emerald-600 hover:underline" disabled={saveBusy}>
+                {saveBusy ? "Saving..." : "Save Changes"}
               </button>
             )}
           </div>
 
           {[
-            { label: "Full Name",    value: session.full_name, readOnly: true },
+            { label: "Full Name",    value: displayName, readOnly: true },
             { label: "Email",        value: session.email,     readOnly: true },
             { label: "Staff ID",     value: employeeId, readOnly: true },
-            { label: "Department",   value: DEPT_LABELS[session.department] ?? session.department, readOnly: true },
-            { label: "Role",         value: session.role.replace(/_/g, " "), readOnly: true },
+            { label: "Department",   value: departmentLabel, readOnly: true },
+            { label: "Role",         value: roleLabel, readOnly: true },
           ].map((f) => (
             <div key={f.label}>
               <p className="mb-1 text-xs font-semibold text-slate-500">{f.label}</p>
@@ -275,7 +369,7 @@ export default function StaffProfilePage() {
             {editing ? (
               <textarea rows={2} value={address} onChange={(e) => setAddress(e.target.value)} className={inputCls} />
             ) : (
-              <div className={readCls}>{address}</div>
+              <div className={readCls}>{address || "Update with HR"}</div>
             )}
           </div>
 
@@ -284,9 +378,15 @@ export default function StaffProfilePage() {
               Profile updated successfully.
             </p>
           )}
+          {saveError && (
+            <p className="rounded-xl bg-rose-50 py-2 text-center text-sm font-semibold text-rose-700">
+              {saveError}
+            </p>
+          )}
 
           <p className="text-center text-xs text-slate-400">
-            Name, email, and role can only be updated by HR.{" "}
+            Only your photo, phone number, home address, and password can be edited here.{" "}
+            Name, email, department, staff ID, and role are controlled by HR.{" "}
             <Link href="/staff/documents" className="text-indigo-600 hover:underline">View documents →</Link>
           </p>
         </div>
@@ -300,11 +400,12 @@ export default function StaffProfilePage() {
             <p className="text-xs font-bold uppercase tracking-wide text-slate-400">Contract & Posting</p>
             {[
               { label: "Employee ID",    value: employeeId },
-              { label: "Start Date",     value: EMPLOYMENT_DATA.startDate },
-              { label: "Contract Type",  value: EMPLOYMENT_DATA.contractType },
-              { label: "Department",     value: DEPT_LABELS[session.department] ?? session.department },
-              { label: "Assigned Unit",  value: EMPLOYMENT_DATA.unit },
-              { label: "Line Manager",   value: EMPLOYMENT_DATA.lineManager },
+              { label: "Start Date",     value: employmentStartDate },
+              { label: "Contract Type",  value: employmentContractType },
+              { label: "Department",     value: departmentLabel },
+              { label: "Assigned Unit",  value: employmentUnit },
+              { label: "Line Manager",   value: employmentLineManager },
+              { label: "Base Salary",    value: employmentSalary },
             ].map((f) => (
               <div key={f.label} className="flex justify-between text-sm">
                 <span className="text-slate-500">{f.label}</span>
@@ -317,35 +418,35 @@ export default function StaffProfilePage() {
           <div className="rounded-2xl border border-slate-200 bg-white p-4 space-y-3">
             <p className="text-xs font-bold uppercase tracking-wide text-slate-400">Banking & Statutory</p>
             {[
-              { label: "Bank",           value: EMPLOYMENT_DATA.bankName },
-              { label: "Account Number", value: EMPLOYMENT_DATA.accountNumber },
-              { label: "Tax ID (TIN)",   value: EMPLOYMENT_DATA.taxId },
-              { label: "Pension No.",    value: EMPLOYMENT_DATA.pension },
-              { label: "NHF Number",     value: EMPLOYMENT_DATA.nhfNumber },
+              { label: "Bank",           value: bankName },
+              { label: "Account Number", value: bankAccount },
+              { label: "Tax ID (TIN)",   value: taxId },
+              { label: "Pension No.",    value: pensionNumber },
+              { label: "NHF Number",     value: nhfNumber },
             ].map((f) => (
               <div key={f.label} className="flex justify-between text-sm">
                 <span className="text-slate-500">{f.label}</span>
                 <span className="font-semibold text-slate-900 font-mono">{f.value}</span>
               </div>
             ))}
-            <p className="text-xs text-slate-400">Contact HR or Accounts to update banking details.</p>
+            <p className="text-xs text-slate-400">Contact Accounts to confirm payroll and banking details.</p>
           </div>
 
           {/* Emergency contact */}
           <div className="rounded-2xl border border-amber-100 bg-amber-50 p-4 space-y-3">
             <p className="text-xs font-bold uppercase tracking-wide text-amber-700">Emergency Contact</p>
             {[
-              { label: "Name",         value: EMERGENCY_DATA.name },
-              { label: "Relationship", value: EMERGENCY_DATA.relationship },
-              { label: "Phone",        value: EMERGENCY_DATA.phone },
-              { label: "Address",      value: EMERGENCY_DATA.address },
+              { label: "Name",         value: emergencyName },
+              { label: "Relationship", value: emergencyRelationship },
+              { label: "Phone",        value: emergencyPhone },
+              { label: "Address",      value: emergencyAddress },
             ].map((f) => (
               <div key={f.label} className="flex justify-between text-sm">
                 <span className="text-amber-700/70">{f.label}</span>
                 <span className="font-semibold text-amber-900 text-right max-w-[60%]">{f.value}</span>
               </div>
             ))}
-            <p className="text-xs text-amber-600">Update emergency contacts with HR.</p>
+            <p className="text-xs text-amber-600">Emergency contact details are set and maintained by HR.</p>
           </div>
 
           {/* Payslip quick access */}
@@ -377,7 +478,7 @@ export default function StaffProfilePage() {
             {pwMsg && (
               <p className={`text-sm font-semibold ${pwMsg.ok ? "text-emerald-600" : "text-red-600"}`}>{pwMsg.text}</p>
             )}
-            <button onClick={handleChangePassword} className="w-full rounded-xl bg-indigo-600 py-2.5 text-sm font-bold text-white hover:bg-indigo-700 transition">
+            <button type="button" onClick={() => void handleChangePassword()} className="w-full rounded-xl bg-indigo-600 py-2.5 text-sm font-bold text-white hover:bg-indigo-700 transition">
               Update Password
             </button>
           </div>
@@ -390,7 +491,7 @@ export default function StaffProfilePage() {
             </div>
             <div className="flex items-center justify-between text-sm">
               <span className="text-slate-500">Department</span>
-              <span className="font-semibold text-slate-900">{DEPT_LABELS[session.department] ?? session.department}</span>
+              <span className="font-semibold text-slate-900">{departmentLabel}</span>
             </div>
             <button
               type="button"
@@ -406,29 +507,10 @@ export default function StaffProfilePage() {
         </div>
       )}
 
-      {/* ── ACTIVITY tab ────────────────────────────────────────────────── */}
-      {tab === "activity" && (
-        <div className="space-y-2">
-          <p className="text-xs font-bold uppercase tracking-wide text-slate-400">Recent Activity</p>
-          {ACTIVITY_LOG.map((a, i) => (
-            <div key={i} className="flex items-start gap-3 rounded-xl border border-slate-100 bg-white px-4 py-3">
-              <div className="mt-1 h-2 w-2 rounded-full bg-indigo-300 shrink-0" />
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-slate-900">{a.action}</p>
-                <p className="text-xs text-slate-400">{a.detail}</p>
-              </div>
-              <span className="shrink-0 text-[10px] text-slate-300">{a.time}</span>
-            </div>
-          ))}
-          <p className="text-center text-xs text-slate-300 pt-2">
-            Showing last 6 activities.
-          </p>
-        </div>
-      )}
-
     </div>
   );
 }
+
 
 
 

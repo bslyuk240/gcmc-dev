@@ -7,10 +7,10 @@ import type {
   AttendanceStatus,
 } from "@/modules/workforce/attendance/types";
 import {
-  clockInStaffAttendance,
-  clockOutStaffAttendance,
+  clockInAppAttendance,
+  clockOutAppAttendance,
   currentMonthRange,
-  fetchStaffAttendanceRecords,
+  fetchAppAttendanceRecords,
   formatAttendanceClockTime,
   formatAttendanceDate,
   isLateClockIn,
@@ -51,7 +51,7 @@ function computeElapsed(startMs: number | null) {
   return `${h}:${m}:${s}`;
 }
 
-export default function AttendancePage() {
+export default function AppProfileAttendancePage() {
   const session = useHMSSession();
   const startRef = useRef<number | null>(null);
 
@@ -84,7 +84,7 @@ export default function AttendancePage() {
       setLoading(true);
       setError(null);
       try {
-        const data = await fetchStaffAttendanceRecords({ from, to });
+        const data = await fetchAppAttendanceRecords({ from, to });
         if (!cancelled) {
           setRecords(data);
         }
@@ -129,7 +129,7 @@ export default function AttendancePage() {
   async function refreshAttendance() {
     if (!session?.staff_id) return;
     try {
-      const data = await fetchStaffAttendanceRecords({ from, to });
+      const data = await fetchAppAttendanceRecords({ from, to });
       setRecords(data);
     } catch {
       // Keep the last loaded records if the refresh fails after a successful save.
@@ -145,7 +145,7 @@ export default function AttendancePage() {
     const clockInAt = now.toISOString();
 
     try {
-      await clockInStaffAttendance({
+      await clockInAppAttendance({
         attendanceDate: todayAttendanceDate(now),
         clockInAt,
         status: isLateClockIn(clockInAt) ? "Late" : "Present",
@@ -165,7 +165,7 @@ export default function AttendancePage() {
     setError(null);
 
     try {
-      await clockOutStaffAttendance({
+      await clockOutAppAttendance({
         attendanceDate: todayAttendanceDate(),
         clockOutAt: new Date().toISOString(),
       });

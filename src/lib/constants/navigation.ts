@@ -461,10 +461,13 @@ export const sidebarNavigationByDepartment: Record<
         { label: "Department Staffing", href: `${INTERNAL_PREFIX}/hr/department-staffing`, icon: "group" },
       ],
     },
-    {
+      {
       section: "HR Operations",
       items: [
+        { label: "Attendance", href: `${INTERNAL_PREFIX}/hr/attendance`, icon: "status" },
         { label: "Leave Management", href: `${INTERNAL_PREFIX}/hr/leave-management`, icon: "queue" },
+        { label: "Leave Settings", href: `${INTERNAL_PREFIX}/hr/leave-settings`, icon: "settings" },
+        { label: "Notifications", href: `${INTERNAL_PREFIX}/hr/notifications`, icon: "bell" },
         { label: "Onboarding & Exit", href: `${INTERNAL_PREFIX}/hr/onboarding`, icon: "hospital" },
         { label: "Payroll Preparation", href: `${INTERNAL_PREFIX}/hr/payroll`, icon: "billing" },
         { label: "Payslips", href: `${INTERNAL_PREFIX}/hr/payslips`, icon: "reports" },
