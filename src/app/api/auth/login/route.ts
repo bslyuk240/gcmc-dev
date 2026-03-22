@@ -9,6 +9,7 @@ import {
   type HMSSession,
   type RoleKey,
 } from "@/lib/auth/session";
+import { resolveStaffProfile } from "@/lib/auth/profile";
 import {
   sessionCookieName,
   sessionDepartmentCookieName,
@@ -56,14 +57,11 @@ export async function POST(request: Request) {
   }
 
   const userId = authData.user.id;
+  const userEmail = authData.user.email ?? email;
 
-  const { data: profile, error: profileError } = await supabase
-    .from("staff_profiles")
-    .select("full_name, email, department, role, avatar_url, is_active, must_change_password")
-    .eq("id", userId)
-    .single();
+  const profile = await resolveStaffProfile(supabase, userId, userEmail);
 
-  if (profileError || !profile) {
+  if (!profile) {
     await supabase.auth.signOut();
     return loginError("profile");
   }
@@ -86,7 +84,7 @@ export async function POST(request: Request) {
   const permissions = (permRows ?? []).map((r: { permission: string }) => r.permission);
 
   const session: HMSSession = {
-    staff_id: userId,
+    staff_id: profile.id,
     full_name: profile.full_name,
     email: profile.email,
     avatar_url: profile.avatar_url ?? null,
