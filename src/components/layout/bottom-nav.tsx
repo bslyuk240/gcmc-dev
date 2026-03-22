@@ -11,6 +11,10 @@ import {
 import type { DepartmentKey } from "@/lib/constants/navigation";
 
 function getHomeHref(dept: DepartmentKey): string {
+  if (dept === "profile" || dept === "notifications" || dept === "support") {
+    return departmentHomePaths.dashboard;
+  }
+
   return departmentHomePaths[dept] ?? `${INTERNAL_PREFIX}/profile`;
 }
 
@@ -113,7 +117,7 @@ export function BottomNav() {
           const NavIcon = item.Icon;
           return (
             <Link
-              key={item.href}
+              key={`${item.href}-${item.label}`}
               href={item.href}
               prefetch={true}
               className={cn(

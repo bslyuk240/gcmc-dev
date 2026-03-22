@@ -171,7 +171,7 @@ export function Topbar() {
                   onClick={async () => {
                     handleLogout();
                     await fetch("/logout", { method: "POST" });
-                    window.location.href = "/login";
+                    window.location.replace("/login");
                   }}
                   className="mt-1 flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-sm font-medium text-red-600 transition hover:bg-red-50"
                 >

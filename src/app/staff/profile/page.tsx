@@ -298,7 +298,7 @@ export default function StaffProfilePage() {
               className="w-full rounded-xl border border-red-200 py-2.5 text-sm font-bold text-red-600 hover:bg-red-50 transition"
               onClick={async () => {
                 await fetch("/staff/logout", { method: "POST" });
-                window.location.href = "/staff/login";
+                window.location.replace("/staff/login");
               }}
             >
               Sign Out

@@ -156,7 +156,7 @@ function SidebarInner({
           className="mt-2.5 flex w-full items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white py-2 text-xs font-semibold text-slate-700 transition hover:border-red-200 hover:bg-red-50 hover:text-red-700"
           onClick={async () => {
             await fetch("/logout", { method: "POST" });
-            window.location.href = "/login";
+            window.location.replace("/login");
           }}
         >
           <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>

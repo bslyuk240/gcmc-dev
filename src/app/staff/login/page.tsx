@@ -1,4 +1,3 @@
-import { loginStaffPortalAction } from "@/server/actions/auth/login-staff-portal";
 import { getStaffPortalSession } from "@/lib/auth/session";
 
 export const metadata = {
@@ -65,7 +64,7 @@ export default async function StaffLoginPage({
             </div>
           )}
 
-          <form action={loginStaffPortalAction} className="space-y-4">
+          <form action="/api/auth/staff-login" method="post" className="space-y-4">
             {/* Hidden fields */}
             {next && next.startsWith("/staff") && (
               <input type="hidden" name="next" value={next} />

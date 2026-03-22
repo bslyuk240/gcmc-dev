@@ -1,6 +1,5 @@
 import Link from "next/link";
 import { redirectToSessionHome } from "@/lib/auth/session";
-import { loginStaffAction } from "@/server/actions/auth/login";
 
 const errorMessages: Record<string, string> = {
   invalid:       "Invalid email or password.",
@@ -43,7 +42,7 @@ export default async function LoginPage({
               {errorMsg}
             </div>
           )}
-          <form action={loginStaffAction} className="mt-6 space-y-4">
+          <form action="/api/auth/login" method="post" className="mt-6 space-y-4">
             {next ? <input type="hidden" name="next" value={next} /> : null}
             <div>
               <label htmlFor="email" className="block text-sm font-medium text-slate-700">
