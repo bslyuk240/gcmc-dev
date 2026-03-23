@@ -27,6 +27,21 @@ function fmt(n: number) {
   return `₦${n.toLocaleString("en-NG", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
+function MobileMeta({
+  label,
+  value,
+}: {
+  label: string;
+  value: React.ReactNode;
+}) {
+  return (
+    <div className="rounded-lg bg-slate-50 px-3 py-2">
+      <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">{label}</p>
+      <div className="mt-0.5 text-xs font-medium text-slate-700">{value}</div>
+    </div>
+  );
+}
+
 export default function NhisDashboardPage() {
   const { schemes, enrollments, claims, hmoRegistrations, hydrated } = useNhisStore();
 
@@ -81,7 +96,7 @@ export default function NhisDashboardPage() {
       />
 
       {/* KPI Cards */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 xl:grid-cols-5">
         {[
           {
             label: "Enrolled Patients",
@@ -114,32 +129,54 @@ export default function NhisDashboardPage() {
             color: "text-emerald-700",
           },
         ].map((s) => (
-          <Card key={s.label} className="p-5">
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{s.label}</p>
-            <p className={`mt-1 text-2xl font-bold ${s.color}`}>{s.value}</p>
-            <p className="mt-0.5 text-xs text-slate-500">{s.sub}</p>
+          <Card key={s.label} className="p-4 sm:p-5">
+            <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 sm:text-xs">{s.label}</p>
+            <p className={`mt-1 text-xl font-bold sm:text-2xl ${s.color}`}>{s.value}</p>
+            <p className="mt-0.5 text-[10px] text-slate-500 sm:text-xs">{s.sub}</p>
           </Card>
         ))}
       </div>
 
       {pendingHmoRegistrations.length > 0 && (
-        <Card className="overflow-hidden p-0">
-          <div className="border-b border-slate-100 px-5 py-4">
-            <h3 className="font-bold text-slate-900">Front Desk HMO Registrations</h3>
-            <p className="text-xs text-slate-500">Patients marked as HMO at registration but not yet enrolled in NHIS.</p>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="min-w-full text-sm text-left">
-              <thead>
-                <tr className="bg-slate-50 border-b border-slate-100">
-                  {["Patient", "Patient ID", "Scheme", "Registered", "Status"].map((h) => (
+            <Card className="overflow-hidden p-0">
+              <div className="border-b border-slate-100 px-5 py-4">
+                <h3 className="font-bold text-slate-900">Front Desk HMO Registrations</h3>
+                <p className="text-xs text-slate-500">Patients marked as HMO at registration but not yet enrolled in NHIS.</p>
+              </div>
+              <div className="grid gap-3 p-4 md:hidden">
+                {pendingHmoRegistrations.slice(0, 10).map((registration: HmoRegistration) => {
+                  const schemeName = schemes.find((scheme) => scheme.id === registration.primaryHmoSchemeId)?.name ?? "—";
+                  return (
+                    <div key={registration.id} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-semibold text-slate-900">{registration.patientName}</p>
+                          <p className="mt-0.5 font-mono text-[11px] text-slate-500">{registration.patientDisplayId}</p>
+                        </div>
+                        <span className="shrink-0 rounded-full bg-amber-50 px-2.5 py-1 text-[10px] font-bold text-amber-700">
+                          Pending
+                        </span>
+                      </div>
+                      <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                        <MobileMeta label="Scheme" value={schemeName} />
+                        <MobileMeta label="Registered" value={formatDate(registration.registeredAt)} />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="hidden overflow-x-auto md:block">
+                <table className="min-w-full text-sm text-left">
+                <thead>
+                  <tr className="bg-slate-50 border-b border-slate-100">
+                    {["Patient", "Patient ID", "Scheme", "Registered", "Status"].map((h) => (
                     <th key={h} className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">{h}</th>
                   ))}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
-                {pendingHmoRegistrations.slice(0, 10).map((registration: HmoRegistration) => {
-                  const schemeName = schemes.find((scheme) => scheme.id === registration.primaryHmoSchemeId)?.name ?? "—";
+                <tbody className="divide-y divide-slate-100">
+                  {pendingHmoRegistrations.slice(0, 10).map((registration: HmoRegistration) => {
+                    const schemeName = schemes.find((scheme) => scheme.id === registration.primaryHmoSchemeId)?.name ?? "—";
                   return (
                     <tr key={registration.id} className="hover:bg-slate-50">
                       <td className="px-5 py-3 font-medium text-slate-900">{registration.patientName}</td>
@@ -153,21 +190,21 @@ export default function NhisDashboardPage() {
                       </td>
                     </tr>
                   );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </Card>
-      )}
+                  })}
+                </tbody>
+                </table>
+              </div>
+            </Card>
+          )}
 
       {/* Claims by status */}
-      <Card className="p-5">
+      <Card className="p-4 sm:p-5">
         <h3 className="mb-4 font-bold text-slate-900">Claims by Status</h3>
-        <div className="flex flex-wrap gap-3">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
           {Object.entries(statusCounts).map(([status, count]) => (
-            <div key={status} className={`rounded-lg px-4 py-2.5 text-sm font-semibold ${STATUS_STYLES[status]}`}>
+            <div key={status} className={`rounded-lg px-3 py-2 text-xs font-semibold sm:px-4 sm:py-2.5 sm:text-sm ${STATUS_STYLES[status]}`}>
               <span className="capitalize">{status}</span>
-              <span className="ml-2 text-base font-bold">{count}</span>
+              <span className="ml-2 text-sm font-bold sm:text-base">{count}</span>
             </div>
           ))}
         </div>
@@ -178,7 +215,34 @@ export default function NhisDashboardPage() {
         <div className="border-b border-slate-100 px-5 py-4">
           <h3 className="font-bold text-slate-900">Recent Claims</h3>
         </div>
-        <div className="overflow-x-auto">
+        <div className="grid gap-3 p-4 md:hidden">
+          {recentClaims.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm text-slate-400">
+              No claims yet.
+            </div>
+          ) : (
+            recentClaims.map((c: HmoClaim) => (
+              <div key={c.id} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold text-slate-900">{c.patientName}</p>
+                    <p className="mt-0.5 font-mono text-[11px] text-slate-500">{c.claimNumber || "—"}</p>
+                  </div>
+                  <span className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${STATUS_STYLES[c.status]}`}>
+                    {c.status.charAt(0).toUpperCase() + c.status.slice(1)}
+                  </span>
+                </div>
+                <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  <MobileMeta label="Scheme" value={c.schemeName} />
+                  <MobileMeta label="Amount" value={fmt(c.hmoAmount)} />
+                  <MobileMeta label="Services" value={`${c.services.length} item${c.services.length !== 1 ? "s" : ""}`} />
+                  <MobileMeta label="Date" value={formatDate(c.createdAt)} />
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+        <div className="hidden overflow-x-auto md:block">
           <table className="min-w-full text-sm text-left">
             <thead>
               <tr className="bg-slate-50 border-b border-slate-100">
@@ -220,7 +284,23 @@ export default function NhisDashboardPage() {
           <div className="border-b border-slate-100 px-5 py-4">
             <h3 className="font-bold text-slate-900">Scheme Breakdown</h3>
           </div>
-          <div className="overflow-x-auto">
+          <div className="grid gap-3 p-4 md:hidden">
+            {schemeBreakdown.map(({ scheme, enrolledCount, pendingAmount }) => (
+              <div key={scheme.id} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                <div className="flex items-start justify-between gap-3">
+                  <p className="text-sm font-semibold text-slate-900">{scheme.name}</p>
+                  <span className="rounded-full bg-blue-50 px-2.5 py-1 text-[10px] font-bold text-blue-700 capitalize">
+                    {scheme.type === "fee_for_service" ? "Fee-for-Service" : "Capitation"}
+                  </span>
+                </div>
+                <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  <MobileMeta label="Enrolled" value={enrolledCount} />
+                  <MobileMeta label="Pending" value={fmt(pendingAmount)} />
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="hidden overflow-x-auto md:block">
             <table className="min-w-full text-sm text-left">
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-100">

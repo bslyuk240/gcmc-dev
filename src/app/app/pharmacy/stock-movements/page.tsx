@@ -63,6 +63,15 @@ function fmtMovementDate(value: string) {
   });
 }
 
+function MobileMeta({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-start justify-between gap-3 border-b border-slate-100 py-2 last:border-b-0 last:pb-0">
+      <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{label}</span>
+      <span className="text-right text-sm font-medium text-slate-700">{value}</span>
+    </div>
+  );
+}
+
 function mapMovement(row: PharmacyStockMovement, inventoryById: Map<string, PharmacyInventoryItem>): StockMove {
   const item = inventoryById.get(row.inventoryId);
   const type: StockMove["type"] = row.movementType === "in" ? "in" : row.movementType === "adjustment" ? "adjustment" : "dispense";
@@ -297,7 +306,7 @@ export default function PharmacyStockMovementsPage() {
         description="Track pharmacy stock in, dispenses, adjustments, and walk-in sales."
       />
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 sm:gap-4">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4 sm:gap-4">
         {[
           { label: "Total Movements", value: String(moves.length), color: "text-slate-900" },
           { label: "Units Received", value: `+${totalIn}`, color: "text-emerald-600" },
@@ -346,7 +355,33 @@ export default function PharmacyStockMovementsPage() {
         </div>
       </div>
 
-      <Card className="overflow-hidden p-0">
+      <div className="space-y-3 md:hidden">
+        {displayed.map((move) => (
+          <Card key={move.id} className="p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="truncate font-semibold text-slate-900">{move.item}</p>
+                <p className="text-xs text-slate-500">{move.ref}</p>
+              </div>
+              <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${TYPE_STYLE[move.type]}`}>
+                {TYPE_LABEL[move.type]}
+              </span>
+            </div>
+
+            <div className="mt-4 space-y-2">
+              <MobileMeta label="Qty" value={String(move.qty)} />
+              <MobileMeta label="Source" value={move.source} />
+              <MobileMeta label="By" value={move.performedBy} />
+              <MobileMeta label="Date" value={move.date} />
+            </div>
+          </Card>
+        ))}
+        {displayed.length === 0 && (
+          <Card className="p-6 text-center text-sm text-slate-400">No stock movements found.</Card>
+        )}
+      </div>
+
+      <Card className="hidden overflow-hidden p-0 md:block">
         <div className="overflow-x-auto">
           <table className="min-w-full text-left text-sm">
             <thead className="bg-slate-50">

@@ -107,8 +107,17 @@ export default function KioskRevenuePage() {
   const inputCls =
     "w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/20";
 
+  function MobileMeta({ label, value }: { label: string; value: string }) {
+    return (
+      <div className="flex items-start justify-between gap-3 border-b border-slate-100 py-2 last:border-b-0 last:pb-0">
+        <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{label}</span>
+        <span className="text-right text-sm font-medium text-slate-700">{value}</span>
+      </div>
+    );
+  }
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6">
       <PageHeader
         title="Kiosk Revenue"
         description="Daily kiosk sales are reported here and confirmed by Accounts."
@@ -127,7 +136,7 @@ export default function KioskRevenuePage() {
           },
           { label: "Total Reports", value: kioskSales.filter((kioskSale) => kioskSale.totalRevenue > 0).length, sub: "Sales reports", color: "text-slate-700" },
         ].map((card) => (
-          <Card key={card.label} className="p-5">
+          <Card key={card.label} className="p-4 sm:p-5">
             <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{card.label}</p>
             <p className={`mt-1 text-2xl font-bold ${card.color}`}>{card.value}</p>
             <p className="mt-0.5 text-xs text-slate-500">{card.sub}</p>
@@ -136,7 +145,7 @@ export default function KioskRevenuePage() {
       </div>
 
       {kioskSales.filter((kioskSale) => kioskSale.totalRevenue > 0).length > 0 && (
-        <Card className="p-5">
+        <Card className="p-4 sm:p-5">
           <h3 className="mb-4 font-bold text-slate-900">Daily Revenue Trend</h3>
           <div className="flex h-24 items-end gap-3">
             {kioskSales
@@ -169,8 +178,53 @@ export default function KioskRevenuePage() {
         </Card>
       )}
 
-      <Card className="overflow-hidden p-0">
-        <div className="border-b border-slate-100 px-5 py-4">
+      <div className="space-y-3 md:hidden">
+        {kioskSales.map((sale) => (
+          <Card key={sale.id} className={`p-4 ${sale.status === "Pending" && sale.totalRevenue > 0 ? "bg-amber-50/20" : ""}`}>
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="truncate font-semibold text-slate-900">{sale.date}</p>
+                <p className="text-xs text-slate-500">{sale.reportedBy || "Unreported"}</p>
+              </div>
+              <span
+                className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${
+                  sale.status === "Confirmed"
+                    ? "bg-emerald-100 text-emerald-700"
+                    : sale.totalRevenue > 0
+                      ? "bg-amber-100 text-amber-700"
+                      : "bg-slate-100 text-slate-500"
+                }`}
+              >
+                {sale.totalRevenue === 0 ? "Not reported" : sale.status}
+              </span>
+            </div>
+
+            <div className="mt-4 space-y-2">
+              <MobileMeta label="Revenue" value={`NGN ${sale.totalRevenue.toLocaleString()}`} />
+              <MobileMeta label="Cash" value={`NGN ${sale.cashRevenue.toLocaleString()}`} />
+              <MobileMeta label="Mobile Money" value={`NGN ${sale.mobileRevenue.toLocaleString()}`} />
+              <MobileMeta label="Items Sold" value={`${sale.itemsSold}`} />
+            </div>
+
+            <div className="mt-4 flex flex-wrap gap-2">
+              {sale.status === "Pending" && sale.totalRevenue > 0 && (
+                <Button size="sm" onClick={() => setConfirmSale(sale)}>
+                  Confirm Revenue
+                </Button>
+              )}
+              {sale.status === "Confirmed" && <span className="text-xs font-semibold text-emerald-700">Confirmed</span>}
+              {sale.totalRevenue === 0 && (
+                <Button size="sm" variant="outline" onClick={() => setShowReport(true)}>
+                  Report Now
+                </Button>
+              )}
+            </div>
+          </Card>
+        ))}
+      </div>
+
+      <Card className="hidden overflow-hidden p-0 md:block">
+        <div className="border-b border-slate-100 px-4 py-3 sm:px-5 sm:py-4">
           <h3 className="font-bold text-slate-900">Sales Reports</h3>
         </div>
         <div className="overflow-x-auto">
@@ -226,7 +280,7 @@ export default function KioskRevenuePage() {
         </div>
       </Card>
 
-      <Card className="p-5">
+      <Card className="p-4 sm:p-5">
         <h3 className="mb-3 font-bold text-slate-900">Kiosk Menu / Items</h3>
         <div className="flex flex-wrap gap-2">
           {KIOSK_ITEMS.map((item) => (
@@ -238,7 +292,7 @@ export default function KioskRevenuePage() {
         <p className="mt-3 text-xs text-slate-400">Items sold during the day are tallied and reported to Accounts at end of shift.</p>
       </Card>
 
-      <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-500">
+      <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-500 sm:px-5">
         <strong className="text-slate-700">Flow:</strong> Kiosk attendant sells items → reports daily total here → Accounts confirms the revenue → appears in financial reports.
       </div>
 
@@ -248,7 +302,7 @@ export default function KioskRevenuePage() {
             <label className="mb-1 block text-sm font-semibold text-slate-700">Date *</label>
             <input type="date" required value={reportDate} onChange={(event) => setReportDate(event.target.value)} className={inputCls} />
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
               <label className="mb-1 block text-sm font-semibold text-slate-700">Cash Revenue (₦)</label>
               <input

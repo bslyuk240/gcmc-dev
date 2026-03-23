@@ -131,7 +131,7 @@ export default function AccountsDashboardPage() {
       )}
 
       {/* KPIs */}
-      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-4">
         {[
           { label: "Revenue Today", value: `₦${totalRevenue.toLocaleString()}`, sub: "Front Desk + Consult + Invoice + Kiosk", color: "text-emerald-700" },
           { label: "Pending Collections", value: `₦${totalPendingAmount.toLocaleString()}`, sub: `${metrics.frontDeskPendingCount + metrics.consultationPendingCount + invoicePendingCount} unpaid items`, color: "text-amber-600" },
@@ -222,7 +222,7 @@ export default function AccountsDashboardPage() {
               </div>
             </div>
             {/* Lab Bills summary row */}
-            <div className="grid grid-cols-2 divide-x divide-slate-100 border-t border-slate-100">
+            <div className="grid grid-cols-1 divide-y divide-slate-100 border-t border-slate-100 sm:grid-cols-2 sm:divide-x sm:divide-y-0">
               <div className="p-3 text-center">
                 <p className={`text-lg font-bold ${metrics.labPendingCount > 0 ? "text-amber-600" : "text-emerald-700"}`}>{metrics.labPendingCount}</p>
                 <p className="text-[10px] text-slate-500">Lab Bills Pending</p>
@@ -287,7 +287,7 @@ export default function AccountsDashboardPage() {
           {/* Quick Actions */}
           <Card className="p-5">
             <h3 className="font-bold text-slate-900 mb-4">Quick Actions</h3>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               {[
                 { label: "Receive Payment", href: `${INTERNAL_PREFIX}/accounts/receive-payment` },
                 { label: "Invoices", href: `${INTERNAL_PREFIX}/accounts/invoices` },
@@ -348,7 +348,7 @@ export default function AccountsDashboardPage() {
             {/* Net P&L headline */}
             <div className={`mb-4 rounded-xl p-4 text-center ${netPL >= 0 ? "bg-emerald-100" : "bg-red-50"}`}>
               <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Net Position Today</p>
-              <p className={`mt-1 text-3xl font-bold ${netPL >= 0 ? "text-emerald-700" : "text-red-600"}`}>
+              <p className={`mt-1 text-2xl font-bold sm:text-3xl ${netPL >= 0 ? "text-emerald-700" : "text-red-600"}`}>
                 {netPL >= 0 ? "+" : ""}₦{Math.abs(netPL).toLocaleString()}
               </p>
               <p className="mt-0.5 text-xs text-slate-500">{netPL >= 0 ? "Surplus" : "Deficit"}</p>

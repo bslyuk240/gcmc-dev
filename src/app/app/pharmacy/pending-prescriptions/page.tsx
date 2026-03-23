@@ -30,6 +30,15 @@ const STATUS_TONE: Record<string, string> = {
   Cancelled: "bg-slate-100 text-slate-600",
 };
 
+function MobileMeta({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-start justify-between gap-3 border-b border-slate-100 py-2 last:border-b-0 last:pb-0">
+      <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{label}</span>
+      <span className="text-right text-sm font-medium text-slate-700">{value}</span>
+    </div>
+  );
+}
+
 function fmtRxTime(s: string) {
   if (!s) return "—";
   if (!s.includes("T")) return s;
@@ -200,7 +209,7 @@ export default function PendingPrescriptionsPage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight text-slate-900">Pending Prescriptions</h1>
+          <h1 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">Pending Prescriptions</h1>
           <p className="mt-1 text-sm text-slate-500">
             Doctor-written prescriptions arrive here in real time. Dispense and auto-generate billing for Accounts.
           </p>
@@ -236,8 +245,65 @@ export default function PendingPrescriptionsPage() {
         ))}
       </div>
 
+      {/* Mobile cards */}
+      <div className="space-y-3 md:hidden">
+        {displayed.map((row) => {
+          const rowStatus = getRowStatus(row);
+          const total = calcTotal(row);
+          const currentStatus = effectiveStatus(row);
+          const summary = row.drugs
+            .slice(0, 2)
+            .map((d) => `${d.name} x${d.qty}`)
+            .join(", ");
+          const extraCount = row.drugs.length > 2 ? ` +${row.drugs.length - 2}` : "";
+          return (
+            <section
+              key={row.id}
+              className={`rounded-xl border border-slate-200 bg-white p-4 shadow-sm ${row.urgency === "Urgent" && row.status === "Pending" ? "bg-red-50/30" : ""}`}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="truncate font-semibold text-slate-900">{row.patientName}</p>
+                  <p className="text-xs text-slate-500">{row.id}</p>
+                </div>
+                <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${STATUS_TONE[rowStatus] ?? "bg-slate-100 text-slate-600"}`}>
+                  {rowStatus}
+                </span>
+              </div>
+
+              <div className="mt-4 space-y-2">
+                <MobileMeta label="Doctor" value={row.doctorName} />
+                <MobileMeta label="Department" value={row.department} />
+                <MobileMeta label="Received" value={fmtRxTime(row.createdAt)} />
+                <MobileMeta label="Drugs" value={summary ? `${summary}${extraCount}` : "No drugs listed"} />
+                <MobileMeta label="Est. Cost" value={total > 0 ? `â‚¦${total.toFixed(2)}` : "â€”"} />
+              </div>
+
+              <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+                {(currentStatus === "Pending" || currentStatus === "Processing") && (
+                  <Button size="sm" onClick={() => { setDispenseTarget(row); setDispenseNotes(""); }}>
+                    Dispense
+                  </Button>
+                )}
+                {currentStatus === "Dispensed" && (
+                  <Button size="sm" variant="outline" onClick={() => markCollected(row.id, row.patientName)}>
+                    Mark Collected
+                  </Button>
+                )}
+                {currentStatus === "Collected" && <span className="text-xs text-slate-400">Collected ✓</span>}
+              </div>
+            </section>
+          );
+        })}
+        {displayed.length === 0 && (
+          <section className="rounded-xl border border-slate-200 bg-white p-6 text-center text-sm text-slate-400 shadow-sm">
+            No prescriptions in this category.
+          </section>
+        )}
+      </div>
+
       {/* Table */}
-      <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+      <section className="hidden overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm md:block">
         <div className="overflow-x-auto">
           <table className="min-w-full text-left">
             <thead className="bg-slate-50">

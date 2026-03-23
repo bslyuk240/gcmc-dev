@@ -63,6 +63,15 @@ function StarRating({ value, onChange, readonly }: { value: number; onChange?: (
   );
 }
 
+function MobileMeta({ label, value }: { label: string; value: string | number }) {
+  return (
+    <div className="rounded-lg bg-slate-50 px-3 py-2">
+      <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">{label}</p>
+      <div className="mt-0.5 text-xs font-medium text-slate-700">{value}</div>
+    </div>
+  );
+}
+
 const statusChip = (status: string) => {
   const map: Record<string, string> = {
     draft:        "bg-slate-100 text-slate-600",
@@ -218,7 +227,44 @@ export function HodPerformancePage({ department }: { department: DBDepartmentKey
               </button>
             </div>
           ) : (
-            <div className="overflow-x-auto">
+            <>
+              <div className="space-y-3 md:hidden">
+                {reviews.map((r) => (
+                  <div
+                    key={r.id}
+                    className="space-y-3 border-b border-slate-100 px-4 py-4 last:border-b-0"
+                    onClick={() => setDetailReview(r)}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-semibold text-slate-900">{r.staffName}</p>
+                        <p className="text-xs text-slate-400">{r.periodLabel}</p>
+                      </div>
+                      <span className={statusChip(r.status)}>{r.status}</span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <MobileMeta label="Reviewer" value={r.reviewerName} />
+                      <MobileMeta label="Rating" value={r.overallRating != null ? `${r.overallRating}/5` : "—"} />
+                    </div>
+                    <div className="text-[10px] text-slate-400">
+                      {new Date(r.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}
+                    </div>
+                    {r.status === "draft" && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          loadForEdit(r);
+                        }}
+                        className="rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-medium text-slate-600 transition hover:bg-slate-50"
+                      >
+                        Edit
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+              <div className="hidden overflow-x-auto md:block">
               <table className="min-w-full divide-y divide-slate-100">
                 <thead>
                   <tr className="bg-slate-50">
@@ -254,7 +300,8 @@ export function HodPerformancePage({ department }: { department: DBDepartmentKey
                   ))}
                 </tbody>
               </table>
-            </div>
+              </div>
+            </>
           )}
         </Card>
       )}

@@ -24,8 +24,8 @@ import {
   addPharmacyBill,
   getRestockRequests,
   updateNurseRequestStatus,
-  type NurseMedRequest,
 } from "@/lib/data/pharmacy-store";
+import type { NurseMedRequest } from "@/lib/data/pharmacy-store";
 
 type StockStatus = "ok" | "low" | "critical" | "out";
 
@@ -49,6 +49,15 @@ const STATUS_BADGE: Record<StockStatus, "success" | "warning" | "destructive" | 
 
 
 const PAGE_SIZE = 6;
+
+function MobileMeta({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-start justify-between gap-3 border-b border-slate-100 py-2 last:border-b-0 last:pb-0">
+      <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{label}</span>
+      <span className="text-right text-sm font-medium text-slate-700">{value}</span>
+    </div>
+  );
+}
 
 function calcStockStatus(stock: number, reorder: number): StockStatus {
   if (stock === 0) return "out";
@@ -681,7 +690,42 @@ export default function PharmacyInventoryPage() {
         </div>
       )}
 
-      <Card className="overflow-hidden p-0">
+      <div className="space-y-3 md:hidden">
+        {paginated.map((item) => (
+          <Card key={item.id} className={`p-4 ${item.status !== "ok" ? "border-red-200 bg-red-50/20" : ""}`}>
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="truncate font-semibold text-slate-900">{item.product}</p>
+                <p className="mt-0.5 text-xs text-slate-500">{item.category}</p>
+              </div>
+              <StatusBadge variant={STATUS_BADGE[item.status]}>{item.status}</StatusBadge>
+            </div>
+
+            <div className="mt-4 space-y-2">
+              <MobileMeta label="Form" value={item.form} />
+              <MobileMeta label="Stock" value={String(item.stock)} />
+              <MobileMeta label="Reorder" value={String(item.reorderLevel)} />
+              <MobileMeta label="Price" value={item.price} />
+              <MobileMeta label="Expiry" value={item.expiry} />
+              <div className="flex flex-wrap gap-2 pt-2">
+                <Button size="sm" onClick={() => { setDispenseItem(item); setDispenseQty("1"); }} disabled={item.status === "out"}>Dispense</Button>
+                <Button size="sm" variant="outline" onClick={() => { setSaleItem(item); setSalePatient(""); setSalePatientId(""); setSaleQty(1); }} disabled={item.status === "out"}>Sell</Button>
+                <Button size="sm" variant="outline" onClick={() => openEdit(item)}>Edit</Button>
+                {item.status !== "ok" && (
+                  <Button size="sm" variant="ghost" onClick={() => openRestock(item)} className="text-orange-600 hover:text-orange-700">
+                    Restock
+                  </Button>
+                )}
+              </div>
+            </div>
+          </Card>
+        ))}
+        {paginated.length === 0 && (
+          <Card className="p-6 text-center text-sm text-slate-400">No items found.</Card>
+        )}
+      </div>
+
+      <Card className="hidden overflow-hidden p-0 md:block">
           <div className="flex flex-wrap items-center gap-3 border-b border-slate-100 px-5 py-4">
             <div className="relative flex-1 min-w-[200px]">
               <svg className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -781,7 +825,7 @@ export default function PharmacyInventoryPage() {
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
               <label className="block text-sm font-semibold text-slate-700 mb-1">Category <span className="text-red-500">*</span></label>
               <select required value={aCategory} onChange={(e) => setACategory(e.target.value)} className={INPUT_CLASS}>
@@ -796,7 +840,7 @@ export default function PharmacyInventoryPage() {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
               <label className="block text-sm font-semibold text-slate-700 mb-1">Opening Stock <span className="text-red-500">*</span></label>
               <input
@@ -823,7 +867,7 @@ export default function PharmacyInventoryPage() {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
               <label className="block text-sm font-semibold text-slate-700 mb-1">Unit Price (₦) <span className="text-red-500">*</span></label>
               <input
@@ -889,7 +933,7 @@ export default function PharmacyInventoryPage() {
               selectedId={editStoreItemId}
               onSelect={applyStoreItemToEdit}
             />
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Dosage Form</label>
                 <select value={editForm} onChange={(e) => setEditForm(e.target.value)} className={INPUT_CLASS}>

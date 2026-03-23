@@ -93,7 +93,7 @@ export default function HRNotificationsPage() {
         <div className="space-y-4">
           <Card className="p-5">
             <h3 className="font-bold text-slate-900">Quick Links</h3>
-            <div className="mt-4 grid grid-cols-2 gap-2">
+            <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
               {[
                 { label: "Leave Management", href: `${INTERNAL_PREFIX}/hr/leave-management` },
                 { label: "Payroll", href: `${INTERNAL_PREFIX}/hr/payroll` },

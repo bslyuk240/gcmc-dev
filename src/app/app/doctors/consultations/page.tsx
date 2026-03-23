@@ -69,6 +69,21 @@ function toErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : "Unknown error";
 }
 
+function MobileMeta({
+  label,
+  value,
+}: {
+  label: string;
+  value: string | number;
+}) {
+  return (
+    <div className="rounded-lg bg-slate-50 px-3 py-2">
+      <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">{label}</p>
+      <div className="mt-0.5 text-xs font-medium text-slate-700">{value}</div>
+    </div>
+  );
+}
+
 export default function DoctorsConsultationsPage() {
   const session = useHMSSession();
   const doctorName = session?.full_name ?? "";
@@ -358,7 +373,7 @@ export default function DoctorsConsultationsPage() {
         Consultation billing rates are managed centrally and applied here automatically. Doctors cannot edit billing presets from this portal.
       </div>
 
-      <div className="flex flex-wrap gap-3">
+      <div className="grid grid-cols-1 gap-3 sm:flex sm:gap-3">
         {[
           { label: "In Progress", value: stats.inProgress, color: "bg-sky-50 text-sky-700 border border-sky-200" },
           { label: "Completed", value: stats.completed, color: "bg-emerald-50 text-emerald-700 border border-emerald-200" },
@@ -377,7 +392,79 @@ export default function DoctorsConsultationsPage() {
           <h3 className="font-bold text-slate-900">My Consultations</h3>
           <p className="mt-0.5 text-xs text-slate-400">Only your consultations are shown here. Success is only shown after the recipient write completes.</p>
         </div>
-        <div className="overflow-x-auto">
+        <div className="grid gap-3 p-4 md:hidden">
+          {consultations.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm text-slate-400">
+              No consultations are currently assigned to this doctor.
+            </div>
+          ) : (
+            consultations.map((row) => (
+              <div key={row.id} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold text-slate-900">{row.patientName}</p>
+                    <p className="mt-0.5 text-[11px] text-slate-500">{row.patientId}</p>
+                  </div>
+                  <StatusBadge
+                    variant={row.status === "Completed" || row.status === "Admitted" ? "success" : row.status === "Awaiting Results" ? "warning" : "info"}
+                  >
+                    {row.status}
+                  </StatusBadge>
+                </div>
+                <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  <MobileMeta label="Complaint" value={row.chiefComplaint || row.diagnosis || "--"} />
+                  <MobileMeta label="Date" value={formatDate(row.date)} />
+                  <MobileMeta label="Rx" value={row.rxWritten ? "Sent" : "--"} />
+                  <MobileMeta label="Lab" value={row.labOrdered ? "Ordered" : "--"} />
+                </div>
+                {row.notes ? <p className="mt-3 line-clamp-2 text-xs text-slate-400">{row.notes}</p> : null}
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => { setRxTarget(row); setUrgency("Routine"); setDrugs([{ ...BLANK_DRUG }]); setRxNotes(""); }}
+                    className="rounded-lg bg-violet-600 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-violet-700"
+                  >
+                    {row.rxWritten ? "Re-prescribe" : "Write Rx"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setLabTarget(row); setLabLines([{ ...BLANK_LAB }]); setLabClinicalNotes(""); }}
+                    className="rounded-lg bg-sky-600 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-sky-700"
+                  >
+                    Order Lab
+                  </button>
+                  {row.admissionOrdered ? (
+                    <span className="rounded-lg bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700">Admission sent</span>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAdmitTarget(row);
+                        setAdmissionUnit(row.admissionUnit ?? "Ward");
+                        setAdmissionReason(row.diagnosis || row.chiefComplaint || "");
+                      }}
+                      className="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-red-700"
+                    >
+                      Admit
+                    </button>
+                  )}
+                  {consultationHasFee(row.id) ? (
+                    <span className="rounded-lg bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700">Fee sent</span>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => { setFeeTarget(row); setConsultType(["General", "Specialist", "Emergency", "Follow-up", "Antenatal"].includes(row.consultType) ? (row.consultType as ConsultType) : "General"); }}
+                      className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-emerald-700"
+                    >
+                      Bill Fee
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+        <div className="hidden overflow-x-auto md:block">
           <table className="min-w-full text-left text-sm">
             <thead>
               <tr className="border-b border-slate-100 bg-slate-50">
@@ -491,7 +578,7 @@ export default function DoctorsConsultationsPage() {
                     <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Drug {index + 1}</span>
                     {drugs.length > 1 ? <button type="button" onClick={() => setDrugs((prev) => prev.filter((_, itemIndex) => itemIndex !== index))} className="text-xs text-red-500 hover:text-red-700">Remove</button> : null}
                   </div>
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                     <div className="col-span-2">
                       <label className="mb-1 block text-xs text-slate-500">Medication *</label>
                       <SearchableSelect
@@ -557,7 +644,7 @@ export default function DoctorsConsultationsPage() {
           </div>
           <div>
             <label className="mb-2 block text-sm font-semibold text-slate-700">Consultation Type</label>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               {consultTypes.map((entry) => (
                 <button key={entry} type="button" onClick={() => setConsultType(entry)} className={`flex items-center justify-between rounded-xl border px-4 py-3 text-left transition-all ${consultType === entry ? "border-emerald-500 bg-emerald-50 ring-2 ring-emerald-400/30" : "border-slate-200 bg-white hover:border-slate-300"}`}>
                   <span className="text-sm font-medium text-slate-800">{entry}</span>
@@ -599,7 +686,7 @@ export default function DoctorsConsultationsPage() {
                     <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">Test {index + 1}</span>
                     {labLines.length > 1 ? <button type="button" onClick={() => setLabLines((prev) => prev.filter((_, itemIndex) => itemIndex !== index))} className="text-xs text-red-500 hover:text-red-700">Remove</button> : null}
                   </div>
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                     <div className="col-span-2">
                       <label className="mb-1 block text-xs text-slate-500">Test *</label>
                       <SearchableSelect

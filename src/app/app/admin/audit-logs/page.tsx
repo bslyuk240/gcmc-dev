@@ -26,6 +26,15 @@ const ACTION_TYPES = ["All actions", "Patient updated", "Payment received", "Pre
 
 const PAGE_SIZE = 8;
 
+function MobileMeta({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-start justify-between gap-3 rounded-lg bg-slate-50 px-3 py-2">
+      <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{label}</span>
+      <span className="text-right text-sm font-medium text-slate-700">{value}</span>
+    </div>
+  );
+}
+
 export default function AdminAuditLogsPage() {
   const [search, setSearch] = useState("");
   const [actionFilter, setActionFilter] = useState("All actions");
@@ -69,7 +78,26 @@ export default function AdminAuditLogsPage() {
             {ACTION_TYPES.map((a) => <option key={a}>{a}</option>)}
           </select>
         </div>
-        <div className="overflow-x-auto">
+        <div className="space-y-3 p-3 md:hidden">
+          {paginated.map((row, i) => (
+            <Card key={i} className="p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold text-slate-900">{row.action}</p>
+                  <p className="mt-1 text-xs text-slate-500">{row.entity}</p>
+                </div>
+                <span className="font-mono text-xs text-slate-400">{row.time}</span>
+              </div>
+              <div className="mt-3 grid gap-2">
+                <MobileMeta label="Actor" value={row.actor} />
+                <MobileMeta label="Department" value={row.dept} />
+                <MobileMeta label="IP Address" value={row.ip} />
+              </div>
+            </Card>
+          ))}
+          {paginated.length === 0 && <div className="px-5 py-10 text-center text-sm text-slate-400">No log entries matching your search.</div>}
+        </div>
+        <div className="hidden overflow-x-auto md:block">
           <table className="min-w-full text-left text-sm">
             <thead>
               <tr className="border-b border-slate-100 bg-slate-50">

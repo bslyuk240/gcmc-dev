@@ -6,6 +6,15 @@ import { PageHeader } from "@/components/layout/page-header";
 import { INTERNAL_PREFIX } from "@/lib/constants/navigation";
 import { useHRStore } from "@/lib/hooks/use-hr-store";
 
+function MobileMeta({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-center justify-between gap-3 rounded-lg bg-slate-50 px-3 py-2.5">
+      <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{label}</span>
+      <span className="text-right text-sm font-medium text-slate-700">{value}</span>
+    </div>
+  );
+}
+
 const DEPT_COLORS: Record<string, string> = {
   Doctors: "bg-violet-50 text-violet-700",
   Nurses: "bg-pink-50 text-pink-700",
@@ -78,7 +87,7 @@ export default function HRDashboardPage() {
       )}
 
       {/* KPI row */}
-      <div className="grid grid-cols-2 gap-3 sm:flex sm:gap-3">
+      <div className="grid grid-cols-1 gap-3 sm:flex sm:gap-3">
         {[
           { label: "Total Staff", value: metrics.totalStaff, color: "text-slate-900" },
           { label: "Active", value: metrics.activeStaff, color: "text-emerald-700" },
@@ -105,7 +114,38 @@ export default function HRDashboardPage() {
               </div>
               <Link href={`${INTERNAL_PREFIX}/hr/leave-management`} className="text-sm font-semibold text-blue-600 hover:underline">Manage all →</Link>
             </div>
-            <div className="overflow-x-auto">
+            <div className="space-y-3 px-4 py-4 md:hidden">
+              {recentLeave.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm text-slate-400">
+                  No leave requests yet.
+                </div>
+              ) : (
+                recentLeave.map((r) => (
+                  <div
+                    key={r.id}
+                    className={`rounded-2xl border border-slate-200 bg-white p-4 shadow-sm ${
+                      r.status === "Pending" ? "ring-1 ring-amber-100" : ""
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-semibold text-slate-900">{r.staffName}</p>
+                        <p className="mt-0.5 text-xs text-slate-500">{r.department}</p>
+                      </div>
+                      <span className={`rounded-full px-2.5 py-1 text-[10px] font-semibold ${LEAVE_STATUS_STYLES[r.status]}`}>
+                        {r.status}
+                      </span>
+                    </div>
+                    <div className="mt-3 space-y-2">
+                      <MobileMeta label="Type" value={r.leaveType} />
+                      <MobileMeta label="Dates" value={`${r.startDate} - ${r.endDate}`} />
+                      <MobileMeta label="Days" value={`${r.days} day${r.days === 1 ? "" : "s"}`} />
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+            <div className="hidden overflow-x-auto md:block">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-slate-100 bg-slate-50 text-left">
@@ -185,7 +225,7 @@ export default function HRDashboardPage() {
           {/* Quick actions */}
           <Card className="p-5">
             <h3 className="font-bold text-slate-900 mb-3">Quick Actions</h3>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               {[
                 { label: "Add Staff", href: `${INTERNAL_PREFIX}/hr/staff-directory` },
                 { label: "Attendance", href: `${INTERNAL_PREFIX}/hr/attendance` },

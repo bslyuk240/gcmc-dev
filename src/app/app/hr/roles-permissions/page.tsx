@@ -49,14 +49,43 @@ export default function HRRolesPermissionsPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6">
       <PageHeader title="Roles & Permissions" description="Manage role-based access controls for all staff." />
 
       <Card className="overflow-hidden p-0">
-        <div className="border-b border-slate-100 px-5 py-4">
+        <div className="border-b border-slate-100 px-4 py-3 sm:px-5 sm:py-4">
           <h3 className="font-bold text-slate-900">All Roles</h3>
         </div>
-        <div className="overflow-x-auto">
+        <div className="space-y-3 p-3 md:hidden">
+          {roles.map((row) => (
+            <div key={row.role} className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm sm:p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold text-slate-900">{row.role}</p>
+                  <p className="mt-0.5 text-[11px] text-slate-400">{row.count} staff assigned</p>
+                </div>
+                <Button size="sm" variant="outline" onClick={() => openEdit(row)}>
+                  Edit
+                </Button>
+              </div>
+              <div className="mt-3 flex flex-wrap gap-1">
+                {row.modules.slice(0, 6).map((m) => (
+                  <span key={m} className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600">
+                    {m}
+                  </span>
+                ))}
+                {row.modules.length > 6 && (
+                  <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-400">
+                    +{row.modules.length - 6} more
+                  </span>
+                )}
+              </div>
+              <p className="mt-3 text-xs text-slate-500">{row.permissions}</p>
+            </div>
+          ))}
+        </div>
+
+        <div className="hidden overflow-x-auto md:block">
           <table className="min-w-full text-left text-sm">
             <thead>
               <tr className="border-b border-slate-100 bg-slate-50">
@@ -92,7 +121,7 @@ export default function HRRolesPermissionsPage() {
       {editRole && (
         <Modal open={true} onClose={() => setEditRole(null)} title={`Edit Permissions — ${editRole.role}`} className="max-w-xl">
           <p className="mb-4 text-sm text-slate-500">Select which modules this role can access.</p>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {ALL_MODULES.map((mod) => (
               <label key={mod} className={`flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2.5 text-sm transition ${editModules.includes(mod) ? "border-[var(--accent)] bg-[var(--accent)]/5" : "border-slate-200 bg-white hover:border-slate-300"}`}>
                 <input

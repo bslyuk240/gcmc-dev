@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { Toast, type ToastData } from "@/components/ui/toast";
 import { Modal, ModalFooter } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import { useAccountsStore } from "@/lib/hooks/use-accounts-store";
 import { usePharmacyStore } from "@/lib/hooks/use-pharmacy-store";
 import { ACCOUNTS_PAYMENT_UPDATED_EVENT } from "@/lib/constants/accounts-events";
@@ -100,6 +101,15 @@ function paymentMethodToDb(method: PayMethod): PaymentRecord["paymentMethod"] {
 
 function invoiceBalance(invoice: InvoiceRecord) {
   return Math.max(0, Number((invoice.amountDue - invoice.amountPaid).toFixed(2)));
+}
+
+function MobileMeta({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-start justify-between gap-3 border-b border-slate-100 py-2 last:border-b-0 last:pb-0">
+      <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{label}</span>
+      <span className="text-right text-sm font-medium text-slate-700">{value}</span>
+    </div>
+  );
 }
 
 export default function ReceivePaymentPage() {
@@ -334,7 +344,7 @@ export default function ReceivePaymentPage() {
     "w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none focus:border-[var(--accent)] focus:bg-white focus:ring-2 focus:ring-[var(--accent)]/20";
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6">
       <div>
         <h1 className="text-xl font-black tracking-tight text-slate-900 sm:text-2xl">Receive Payment</h1>
         <p className="mt-1 text-sm text-slate-500">
@@ -342,7 +352,271 @@ export default function ReceivePaymentPage() {
         </p>
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-3">
+      <div className="space-y-4 xl:hidden">
+        <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+          <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3 sm:px-5 sm:py-4">
+            <h3 className="text-sm font-bold text-slate-900">
+              Awaiting Payment
+              {billedAll.length > 0 && (
+                <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-bold text-amber-700">
+                  {billedAll.length} items
+                </span>
+              )}
+            </h3>
+          </div>
+
+          {billedAll.length === 0 ? (
+            <div className="px-4 py-10 text-center text-sm text-slate-400 sm:px-6 sm:py-12">
+              No charges awaiting payment. Charges appear here after Front Desk or departments send them to Accounts.
+            </div>
+          ) : (
+            <div className="space-y-3 p-4">
+              {billedAll.map((charge) => (
+                <Card key={charge.id} className="p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate font-semibold text-slate-900">{charge.patientName}</p>
+                      <p className="text-xs text-slate-500">{chargeSource(charge)}</p>
+                    </div>
+                    <span className="rounded-full bg-sky-50 px-2 py-0.5 text-[10px] font-bold text-sky-700">
+                      {chargeSource(charge)}
+                    </span>
+                  </div>
+                  <div className="mt-4 space-y-2">
+                    <MobileMeta label="Description" value={chargeDescription(charge)} />
+                    <MobileMeta label="Amount" value={`NGN ${chargeAmount(charge).toLocaleString()}`} />
+                    <MobileMeta label="Date" value={fmtDate("createdAt" in charge ? charge.createdAt ?? "" : "")} />
+                  </div>
+                  <div className="mt-4">
+                    <Button size="sm" onClick={() => openChargePayment(charge)}>
+                      Collect Payment
+                    </Button>
+                  </div>
+                </Card>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+          <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3 sm:px-5 sm:py-4">
+            <h3 className="text-sm font-bold text-slate-900">
+              Invoices Awaiting Payment
+              {pendingInvoices.length > 0 && (
+                <span className="ml-2 rounded-full bg-violet-100 px-2 py-0.5 text-xs font-bold text-violet-700">
+                  {pendingInvoices.length}
+                </span>
+              )}
+            </h3>
+          </div>
+
+          {pendingInvoices.length === 0 ? (
+            <div className="px-4 py-10 text-center text-sm text-slate-400 sm:px-6 sm:py-12">No unpaid invoices found.</div>
+          ) : (
+            <div className="space-y-3 p-4">
+              {pendingInvoices.map((invoice) => {
+                const balance = invoiceBalance(invoice);
+                return (
+                  <Card key={invoice.id} className="p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="truncate font-semibold text-slate-900">{invoice.patient}</p>
+                        <p className="text-xs font-mono text-slate-500">{invoice.invoiceNumber}</p>
+                      </div>
+                      <span className="rounded-full bg-violet-50 px-2 py-0.5 text-[10px] font-bold text-violet-700">
+                        Due
+                      </span>
+                    </div>
+                    <div className="mt-4 space-y-2">
+                      <MobileMeta label="Services" value={invoice.items} />
+                      <MobileMeta label="Balance" value={`NGN ${balance.toLocaleString()}`} />
+                      <MobileMeta label="Due Date" value={fmtDate(invoice.dueDate)} />
+                    </div>
+                    <div className="mt-4">
+                      <Button size="sm" onClick={() => openInvoicePayment(invoice)}>
+                        Collect Payment
+                      </Button>
+                    </div>
+                  </Card>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        <aside className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+          <h3 className="mb-4 text-sm font-bold text-slate-900">
+            Paid Today
+            {collectedReceiptsToday > 0 && (
+              <span className="ml-2 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-bold text-emerald-700">
+                {collectedReceiptsToday} receipts
+              </span>
+            )}
+          </h3>
+          <div className="space-y-2.5">
+            {invoicePaymentsToday.length === 0 && paidTodayResolved.length === 0 ? (
+              <p className="text-xs text-slate-400">No payments collected today yet.</p>
+            ) : null}
+            {invoicePaymentsToday.map((payment) => (
+              <div key={payment.id} className="rounded-lg border border-violet-100 bg-violet-50 p-3 text-xs">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="font-semibold text-slate-900">{payment.patient}</span>
+                  <span className="font-bold text-violet-700">NGN {payment.amount.toFixed(2)}</span>
+                </div>
+                <p className="mt-0.5 text-slate-500">
+                  Invoice {payment.invoiceNumber} {payment.services ? `Â· ${payment.services}` : ""}
+                </p>
+              </div>
+            ))}
+            {paidTodayResolved.map((charge) => (
+              <div key={charge.id} className="rounded-lg bg-slate-50 p-3 text-xs">
+                <div className="flex items-center justify-between">
+                  <span className="font-semibold text-slate-900">{charge.patientName}</span>
+                  <span className="font-bold text-emerald-700">NGN {chargeAmount(charge).toFixed(2)}</span>
+                </div>
+                <p className="mt-0.5 text-slate-400">{chargeSource(charge)}</p>
+              </div>
+            ))}
+          </div>
+          <div className="mt-4 border-t border-slate-100 pt-4 text-xs text-slate-500">
+            <div className="flex justify-between">
+              <span>Total collected today</span>
+              <span className="font-bold text-slate-900">
+                NGN {collectedAmountToday.toFixed(2)}
+              </span>
+            </div>
+          </div>
+        </aside>
+      </div>
+
+      <div className="space-y-4 xl:hidden">
+        <Card className="p-4">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <h3 className="text-sm font-bold text-slate-900">
+              Awaiting Payment
+              {billedAll.length > 0 && (
+                <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-bold text-amber-700">
+                  {billedAll.length} items
+                </span>
+              )}
+            </h3>
+            {invoiceLoading ? <span className="text-xs text-slate-400">Loading...</span> : null}
+          </div>
+          {billedAll.length === 0 ? (
+            <p className="text-sm text-slate-400">
+              No charges awaiting payment. Charges appear here after Front Desk or departments send them to Accounts.
+            </p>
+          ) : (
+            <div className="space-y-3">
+              {billedAll.map((charge) => (
+                <div key={charge.id} className="rounded-xl border border-slate-200 bg-white p-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="font-semibold text-slate-900">{charge.patientName}</p>
+                      <p className="mt-0.5 text-xs text-slate-500">{chargeSource(charge)}</p>
+                    </div>
+                    <span className="text-sm font-bold text-slate-900">NGN {chargeAmount(charge).toFixed(2)}</span>
+                  </div>
+                  <div className="mt-2 space-y-1">
+                    <MobileMeta label="Description" value={chargeDescription(charge)} />
+                    <MobileMeta label="Date" value={fmtDate("createdAt" in charge ? charge.createdAt ?? "" : "")} />
+                  </div>
+                  <div className="mt-3">
+                    <Button size="sm" className="w-full" onClick={() => openChargePayment(charge)}>
+                      Collect Payment
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </Card>
+
+        <Card className="p-4">
+          <h3 className="mb-3 text-sm font-bold text-slate-900">
+            Invoices Awaiting Payment
+            {pendingInvoices.length > 0 && (
+              <span className="ml-2 rounded-full bg-violet-100 px-2 py-0.5 text-xs font-bold text-violet-700">
+                {pendingInvoices.length}
+              </span>
+            )}
+          </h3>
+          {pendingInvoices.length === 0 ? (
+            <p className="text-sm text-slate-400">No unpaid invoices found.</p>
+          ) : (
+            <div className="space-y-3">
+              {pendingInvoices.map((invoice) => {
+                const balance = invoiceBalance(invoice);
+                return (
+                  <div key={invoice.id} className="rounded-xl border border-slate-200 bg-white p-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="font-mono text-xs text-slate-500">{invoice.invoiceNumber}</p>
+                        <p className="mt-0.5 font-semibold text-slate-900">{invoice.patient}</p>
+                      </div>
+                      <span className="text-sm font-bold text-slate-900">NGN {balance.toLocaleString()}</span>
+                    </div>
+                    <div className="mt-2 space-y-1">
+                      <MobileMeta label="Services" value={invoice.items} />
+                      <MobileMeta label="Due Date" value={fmtDate(invoice.dueDate)} />
+                    </div>
+                    <div className="mt-3">
+                      <Button size="sm" className="w-full" onClick={() => openInvoicePayment(invoice)}>
+                        Collect Payment
+                      </Button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </Card>
+
+        <Card className="p-4">
+          <h3 className="mb-3 text-sm font-bold text-slate-900">
+            Paid Today
+            {collectedReceiptsToday > 0 && (
+              <span className="ml-2 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-bold text-emerald-700">
+                {collectedReceiptsToday} receipts
+              </span>
+            )}
+          </h3>
+          {invoicePaymentsToday.length === 0 && paidTodayResolved.length === 0 ? (
+            <p className="text-xs text-slate-400">No payments collected today yet.</p>
+          ) : (
+            <div className="space-y-2.5">
+              {invoicePaymentsToday.map((payment) => (
+                <div key={payment.id} className="rounded-lg border border-violet-100 bg-violet-50 p-3 text-xs">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="font-semibold text-slate-900">{payment.patient}</span>
+                    <span className="font-bold text-violet-700">NGN {payment.amount.toFixed(2)}</span>
+                  </div>
+                  <p className="mt-0.5 text-slate-500">
+                    Invoice {payment.invoiceNumber} {payment.services ? `Â· ${payment.services}` : ""}
+                  </p>
+                </div>
+              ))}
+              {paidTodayResolved.map((charge) => (
+                <div key={charge.id} className="rounded-lg bg-slate-50 p-3 text-xs">
+                  <div className="flex items-center justify-between">
+                    <span className="font-semibold text-slate-900">{charge.patientName}</span>
+                    <span className="font-bold text-emerald-700">NGN {chargeAmount(charge).toFixed(2)}</span>
+                  </div>
+                  <p className="mt-0.5 text-slate-400">{chargeSource(charge)}</p>
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="mt-4 border-t border-slate-100 pt-4 text-xs text-slate-500">
+            <div className="flex justify-between">
+              <span>Total collected today</span>
+              <span className="font-bold text-slate-900">NGN {collectedAmountToday.toFixed(2)}</span>
+            </div>
+          </div>
+        </Card>
+      </div>
+
+      <div className="hidden gap-6 xl:grid xl:grid-cols-3">
         <div className="space-y-4 xl:col-span-2">
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-bold text-slate-900">
@@ -555,7 +829,7 @@ export default function ReceivePaymentPage() {
 
             <div>
               <label className="mb-2 block text-sm font-semibold text-slate-700">Payment Method</label>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                 {(["Cash", "POS / Card", "Mobile Money", "Insurance"] as PayMethod[]).map((value) => (
                   <button
                     key={value}
@@ -602,4 +876,3 @@ export default function ReceivePaymentPage() {
     </div>
   );
 }
-

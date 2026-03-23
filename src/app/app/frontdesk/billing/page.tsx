@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -47,6 +46,15 @@ const CHARGE_STATUS_STYLES: Record<string, string> = {
 // From FD's view: "Billed" (sent to Accounts) still shows as "Pending" until patient pays
 function displayStatus(status: string): string {
   return status === "Billed" ? "Pending" : status;
+}
+
+function MobileMeta({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-start justify-between gap-3 border-b border-slate-100 py-2 last:border-b-0 last:pb-0">
+      <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{label}</span>
+      <span className="text-right text-sm font-medium text-slate-700">{value}</span>
+    </div>
+  );
 }
 
 export default function FrontDeskBillingPage() {
@@ -123,8 +131,6 @@ export default function FrontDeskBillingPage() {
   }
 
   const pending = frontDeskCharges.filter((c) => c.status === "Pending" && !sentIds.has(c.id));
-  const collected = frontDeskCharges.filter((c) => c.status === "Paid");
-
   const inputCls = "w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/20";
 
   return (
@@ -147,7 +153,7 @@ export default function FrontDeskBillingPage() {
       </div>
 
       {/* KPIs */}
-      <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 xl:grid-cols-4">
         {[
           { label: "Pending Charges", value: pending.length, sub: `₦${metrics.frontDeskPendingValue.toFixed(0)} to be billed`, color: "text-amber-600" },
           { label: "Sent to Accounts", value: frontDeskCharges.filter((c) => c.status === "Billed").length, sub: "Awaiting collection", color: "text-sky-700" },
@@ -169,7 +175,32 @@ export default function FrontDeskBillingPage() {
             <h3 className="font-bold text-slate-900">Charges Awaiting Accounts</h3>
             <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-bold text-amber-700">{pending.length}</span>
           </div>
-          <div className="overflow-x-auto">
+          <div className="space-y-3 p-3 md:hidden">
+            {pending.map((c) => (
+              <div key={c.id} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold text-slate-900">{c.patientName}</p>
+                    <p className="truncate text-[11px] text-slate-400">{c.patientId}</p>
+                  </div>
+                  <span className="rounded-full bg-sky-50 px-2.5 py-1 text-[11px] font-semibold text-sky-700">
+                    {c.chargeType}
+                  </span>
+                </div>
+                <div className="mt-3 space-y-1.5">
+                  <MobileMeta label="Description" value={c.description} />
+                  <MobileMeta label="Amount" value={`₦${c.amount.toFixed(2)}`} />
+                  <MobileMeta label="Created" value={fmtCreatedAt(c.createdAt)} />
+                </div>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <Button size="sm" onClick={() => setPayTarget(c)}>Send to Accounts</Button>
+                  <Button size="sm" variant="ghost" onClick={() => handleWaive(c)}>Waive</Button>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="hidden overflow-x-auto md:block">
             <table className="min-w-full text-sm text-left">
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-100">
@@ -208,7 +239,33 @@ export default function FrontDeskBillingPage() {
           <h3 className="font-bold text-slate-900">All Charges</h3>
           <span className="text-xs text-slate-400">Payments collected by Accounts dept.</span>
         </div>
-        <div className="overflow-x-auto">
+        <div className="space-y-3 p-3 md:hidden">
+          {frontDeskCharges.map((c) => (
+            <div key={c.id} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold text-slate-900">{c.patientName}</p>
+                  <p className="truncate text-[11px] text-slate-400">{c.createdBy}</p>
+                </div>
+                <span className={`rounded-full px-2.5 py-1 text-[11px] font-bold ${CHARGE_STATUS_STYLES[c.status] ?? "bg-slate-100 text-slate-500"}`}>
+                  {displayStatus(c.status)}
+                </span>
+              </div>
+              <div className="mt-3 space-y-1.5">
+                <MobileMeta label="Type" value={c.chargeType} />
+                <MobileMeta label="Amount" value={`₦${c.amount.toFixed(2)}`} />
+                <MobileMeta label="Time" value={fmtCreatedAt(c.createdAt)} />
+              </div>
+            </div>
+          ))}
+          {frontDeskCharges.length === 0 && (
+            <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm text-slate-400">
+              No charges recorded yet.
+            </div>
+          )}
+        </div>
+
+        <div className="hidden overflow-x-auto md:block">
           <table className="min-w-full text-sm text-left">
             <thead>
               <tr className="bg-slate-50 border-b border-slate-100">
@@ -264,7 +321,7 @@ export default function FrontDeskBillingPage() {
               <p className="mt-1 text-xs text-amber-600">No patients registered yet.</p>
             )}
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
               <label className="mb-1 block text-sm font-semibold text-slate-700">Charge Type *</label>
               <select value={newChargeType} onChange={(e) => {

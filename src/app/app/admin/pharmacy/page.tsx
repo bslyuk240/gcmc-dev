@@ -7,7 +7,6 @@ import { usePharmacyStore } from "@/lib/hooks/use-pharmacy-store";
 export default function AdminPharmacyMonitorPage() {
   const { metrics, prescriptions, restockRequests } = usePharmacyStore();
   const dispensedToday = prescriptions.filter((p) => p.status === "Dispensed");
-  const pendingRx = prescriptions.filter((p) => p.status === "Pending" || p.status === "Processing");
   const urgentDrugs = restockRequests.filter((r) => r.status === "Pending");
   const criticalDrugs = restockRequests.filter((r) => r.status === "Pending" && r.urgency === "Critical");
 
@@ -26,16 +25,16 @@ export default function AdminPharmacyMonitorPage() {
         </div>
       )}
 
-      <div className="flex gap-3">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {[
           { label: "Pending Rx", value: metrics.pendingPrescriptions, color: metrics.pendingPrescriptions > 5 ? "text-amber-600" : "text-slate-900" },
           { label: "Dispensed Today", value: dispensedToday.length, color: "text-emerald-700" },
           { label: "Unpaid Bills", value: metrics.pendingBills, color: metrics.pendingBills > 0 ? "text-violet-700" : "text-slate-900" },
           { label: "Stock Alerts", value: urgentDrugs.length, color: urgentDrugs.length > 0 ? "text-red-700" : "text-emerald-700" },
         ].map((s) => (
-          <Card key={s.label} className="flex flex-1 items-center gap-3 px-4 py-3">
-            <p className={`text-2xl font-bold shrink-0 ${s.color}`}>{s.value}</p>
-            <p className="text-xs font-semibold text-slate-500 leading-tight">{s.label}</p>
+          <Card key={s.label} className="flex items-center gap-3 px-4 py-3">
+            <p className={`shrink-0 text-2xl font-bold ${s.color}`}>{s.value}</p>
+            <p className="text-xs font-semibold leading-tight text-slate-500">{s.label}</p>
           </Card>
         ))}
       </div>
@@ -46,33 +45,59 @@ export default function AdminPharmacyMonitorPage() {
             <div className="border-b border-slate-100 px-5 py-4">
               <h3 className="font-bold text-slate-900">Recent Prescriptions</h3>
             </div>
-            <div className="overflow-x-auto">
-              <table className="min-w-full text-sm">
-                <thead>
-                  <tr className="bg-slate-50 border-b border-slate-100">
-                    {["Patient", "Prescribed By", "Drugs", "Urgency", "Status"].map((h) => (
-                      <th key={h} className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {prescriptions.slice(0, 8).map((rx) => (
-                    <tr key={rx.id} className="hover:bg-slate-50">
-                      <td className="px-4 py-3 font-medium text-slate-900">{rx.patientName}</td>
-                      <td className="px-4 py-3 text-xs text-slate-500">{rx.doctorName}</td>
-                      <td className="px-4 py-3 text-xs text-slate-600">{rx.drugs.map((d) => d.name).join(", ")}</td>
-                      <td className="px-4 py-3">
-                        <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${rx.urgency === "Urgent" ? "bg-red-50 text-red-700" : "bg-slate-100 text-slate-600"}`}>{rx.urgency}</span>
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${rx.status === "Dispensed" ? "bg-emerald-50 text-emerald-700" : rx.status === "Pending" ? "bg-amber-50 text-amber-700" : "bg-violet-50 text-violet-700"}`}>{rx.status}</span>
-                      </td>
+            <>
+              <div className="grid gap-3 p-3 md:hidden">
+                {prescriptions.slice(0, 8).map((rx) => (
+                  <Card key={rx.id} className="p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold text-slate-900">{rx.patientName}</p>
+                        <p className="mt-0.5 text-xs text-slate-500">{rx.doctorName}</p>
+                      </div>
+                      <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${rx.status === "Dispensed" ? "bg-emerald-50 text-emerald-700" : rx.status === "Pending" ? "bg-amber-50 text-amber-700" : "bg-violet-50 text-violet-700"}`}>{rx.status}</span>
+                    </div>
+                    <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                      <div className="rounded-lg bg-slate-50 px-3 py-2">
+                        <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Drugs</p>
+                        <p className="mt-0.5 text-sm font-medium text-slate-800">{rx.drugs.map((d) => d.name).join(", ")}</p>
+                      </div>
+                      <div className="rounded-lg bg-slate-50 px-3 py-2">
+                        <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Urgency</p>
+                        <p className="mt-0.5 text-sm font-medium text-slate-800">{rx.urgency}</p>
+                      </div>
+                    </div>
+                  </Card>
+                ))}
+                {prescriptions.length === 0 && <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-6 py-8 text-center text-sm text-slate-400">No prescriptions.</div>}
+              </div>
+              <div className="hidden overflow-x-auto md:block">
+                <table className="min-w-full text-sm">
+                  <thead>
+                    <tr className="bg-slate-50 border-b border-slate-100">
+                      {["Patient", "Prescribed By", "Drugs", "Urgency", "Status"].map((h) => (
+                        <th key={h} className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">{h}</th>
+                      ))}
                     </tr>
-                  ))}
-                  {prescriptions.length === 0 && <tr><td colSpan={5} className="px-6 py-8 text-center text-sm text-slate-400">No prescriptions.</td></tr>}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {prescriptions.slice(0, 8).map((rx) => (
+                      <tr key={rx.id} className="hover:bg-slate-50">
+                        <td className="px-4 py-3 font-medium text-slate-900">{rx.patientName}</td>
+                        <td className="px-4 py-3 text-xs text-slate-500">{rx.doctorName}</td>
+                        <td className="px-4 py-3 text-xs text-slate-600">{rx.drugs.map((d) => d.name).join(", ")}</td>
+                        <td className="px-4 py-3">
+                          <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${rx.urgency === "Urgent" ? "bg-red-50 text-red-700" : "bg-slate-100 text-slate-600"}`}>{rx.urgency}</span>
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${rx.status === "Dispensed" ? "bg-emerald-50 text-emerald-700" : rx.status === "Pending" ? "bg-amber-50 text-amber-700" : "bg-violet-50 text-violet-700"}`}>{rx.status}</span>
+                        </td>
+                      </tr>
+                    ))}
+                    {prescriptions.length === 0 && <tr><td colSpan={5} className="px-6 py-8 text-center text-sm text-slate-400">No prescriptions.</td></tr>}
+                  </tbody>
+                </table>
+              </div>
+            </>
           </Card>
 
           {urgentDrugs.length > 0 && (

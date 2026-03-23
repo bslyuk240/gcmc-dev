@@ -30,13 +30,28 @@ const STATUS_STYLES: Record<string, string> = {
 const CATEGORIES = ["PPE", "Medical", "Wound Care", "Sterilization", "Respiratory", "Admin", "Pharmaceutical", "Furniture", "Other"];
 const UNITS = ["Box", "Pack", "Roll", "Piece", "Bottle", "Set", "Pair", "Litre", "Sheet", "Bag", "Units"];
 
-const CSV_HEADERS = ["id", "name", "category", "form", "unit", "qty", "reorder", "unit_cost", "supplier"];
-
 function deriveStatus(qty: number, reorder: number): string {
   if (qty === 0) return "Out of Stock";
   if (qty <= reorder * 0.3) return "Critical";
   if (qty <= reorder) return "Low Stock";
   return "In Stock";
+}
+
+function nextInventoryId(items: StoreInventoryItem[]): string {
+  const nums = items
+    .map((item) => parseInt(item.id.replace(/\D/g, ""), 10))
+    .filter((n) => !isNaN(n));
+  const next = nums.length > 0 ? Math.max(...nums) + 1 : 1000;
+  return `STR-${next}`;
+}
+
+function MobileMeta({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-start justify-between gap-3 rounded-lg bg-slate-50 px-3 py-2">
+      <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{label}</span>
+      <span className="text-right text-sm font-medium text-slate-700">{value}</span>
+    </div>
+  );
 }
 
 // ─── CSV helpers ──────────────────────────────────────────────────────────────
@@ -80,7 +95,7 @@ function parseCSV(text: string): StoreInventoryItem[] {
     const qtyN = parseInt(qty) || 0;
     const reorderN = parseInt(reorder) || 10;
     results.push({
-      id: id?.trim() || `STR-${Date.now()}-${results.length}`,
+      id: id?.trim() || `STR-CSV-${results.length + 1}`,
       name: name.trim(),
       category: category?.trim() || "Other",
       form: form?.trim() || undefined,
@@ -150,7 +165,7 @@ export default function StoreInventoryPage() {
     e.preventDefault();
     const qty = parseInt(aQty) || 0; const reorder = parseInt(aReorder) || 10;
     const newItem: StoreInventoryItem = {
-      id: `STR-${Date.now()}`,
+      id: nextInventoryId(items),
       name: aName, category: aCat, form: aForm !== "—" ? aForm : undefined, unit: aUnit, qty, reorder,
       unitCost: parseFloat(aCost) || 0, supplier: aSupplier,
       status: deriveStatus(qty, reorder),
@@ -258,18 +273,18 @@ export default function StoreInventoryPage() {
       />
 
       {/* KPI cards */}
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <Card className="p-5">
           <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Total SKUs</p>
-          <p className="mt-1 text-3xl font-bold text-slate-900">{loading ? "—" : items.length}</p>
+          <p className="mt-1 text-2xl font-bold text-slate-900 sm:text-3xl">{loading ? "—" : items.length}</p>
         </Card>
         <Card className="p-5">
           <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Needs Attention</p>
-          <p className="mt-1 text-3xl font-bold text-red-600">{loading ? "—" : lowStock}</p>
+          <p className="mt-1 text-2xl font-bold text-red-600 sm:text-3xl">{loading ? "—" : lowStock}</p>
         </Card>
         <Card className="p-5">
           <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Total Stock Value</p>
-          <p className="mt-1 text-3xl font-bold text-slate-900">{loading ? "—" : `₦${totalValue.toLocaleString()}`}</p>
+          <p className="mt-1 text-2xl font-bold text-slate-900 sm:text-3xl">{loading ? "—" : `₦${totalValue.toLocaleString()}`}</p>
         </Card>
       </div>
 
@@ -288,7 +303,46 @@ export default function StoreInventoryPage() {
             ))}
           </div>
         </div>
-        <div className="overflow-x-auto">
+        <div className="space-y-3 p-3 md:hidden">
+          {!loading && filtered.map((item) => (
+            <Card key={item.id} className={`p-4 ${item.status !== "In Stock" ? "bg-amber-50/30" : "bg-white"}`}>
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-xs font-mono font-bold text-slate-500">{item.id}</p>
+                  <p className="mt-1 text-sm font-semibold text-slate-900">{item.name}</p>
+                  <p className="text-xs text-slate-400">{item.category}</p>
+                </div>
+                <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${STATUS_STYLES[item.status] ?? "bg-slate-100 text-slate-500"}`}>{item.status}</span>
+              </div>
+              <div className="mt-3 grid grid-cols-1 gap-2">
+                <MobileMeta label="Qty" value={String(item.qty)} />
+                <MobileMeta label="Reorder" value={String(item.reorder)} />
+                <MobileMeta label="Unit Cost" value={`NGN ${item.unitCost.toFixed(2)}`} />
+                <MobileMeta label="Supplier" value={item.supplier || "-"} />
+              </div>
+              <div className="mt-3 flex justify-end">
+                <Button size="sm" variant="outline" onClick={() => openEdit(item)}>Edit</Button>
+              </div>
+            </Card>
+          ))}
+          {loading && (
+            <div className="px-5 py-10 text-center text-sm text-slate-400">Loading...</div>
+          )}
+          {!loading && filtered.length === 0 && (
+            <div className="px-5 py-12 text-center">
+              <p className="text-sm text-slate-400">No items found.</p>
+              {items.length === 0 && (
+                <div className="mt-3 space-y-2">
+                  <p className="text-xs text-slate-400">Get started by adding items manually or importing a CSV.</p>
+                  <button type="button" onClick={handleDownloadTemplate} className="text-xs font-medium text-[var(--accent)] hover:underline">
+                    Download CSV template
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+        <div className="hidden overflow-x-auto md:block">
           <table className="min-w-full text-sm">
             <thead>
               <tr className="border-b border-slate-100 bg-slate-50 text-left">
@@ -351,7 +405,7 @@ export default function StoreInventoryPage() {
             <label className="block text-sm font-medium text-slate-700 mb-1">Item Name <span className="text-red-500">*</span></label>
             <input required value={aName} onChange={(e) => setAName(e.target.value)} placeholder="e.g. Surgical Gloves (Medium)" className={inputCls} />
           </div>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Category</label>
               <select value={aCat} onChange={(e) => setACat(e.target.value)} className={inputCls}>

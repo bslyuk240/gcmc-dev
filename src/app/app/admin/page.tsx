@@ -23,7 +23,7 @@ export default function AdminDashboardPage() {
       </div>
 
       {/* KPI row — sourced from live stores */}
-      <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 xl:grid-cols-4">
         {[
           { label: "REVENUE TODAY", value: `₦${accMetrics.revenueToday.toLocaleString()}`, sub: "Collected across all depts", color: "text-emerald-700" },
           { label: "ACTIVE PATIENTS", value: nurseMetrics.totalActive, sub: "Across all nursing units", color: "text-slate-900" },
@@ -43,7 +43,7 @@ export default function AdminDashboardPage() {
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-sm font-bold text-slate-900 sm:text-base">All Departments — Live Status</h2>
         </div>
-        <div className="grid grid-cols-3 gap-2 sm:grid-cols-5 lg:grid-cols-9">
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-5 xl:grid-cols-9">
           {[
             { label: "Front Desk", dot: "bg-emerald-500", status: "OK" },
             { label: "Doctors", dot: "bg-emerald-500", status: "OK" },

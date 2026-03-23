@@ -107,6 +107,21 @@ function getCurrentShift() {
   return "Night";
 }
 
+function MobileMeta({
+  label,
+  value,
+}: {
+  label: string;
+  value: string | number;
+}) {
+  return (
+    <div className="flex items-start justify-between gap-3 border-b border-slate-100 py-2 last:border-b-0 last:pb-0">
+      <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{label}</span>
+      <span className="text-right text-sm font-medium text-slate-700">{value}</span>
+    </div>
+  );
+}
+
 export default function NursesEmergencyPage() {
   const { getByUnit, procedures, allPatients } = useNursesStore();
   const session = useHMSSession();
@@ -368,7 +383,7 @@ export default function NursesEmergencyPage() {
         </div>
       )}
 
-      <div className="grid gap-4 lg:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {[
           {
             label: "Active ER Patients",
@@ -402,7 +417,7 @@ export default function NursesEmergencyPage() {
           <Link key={card.label} href={card.href} className="block">
             <Card className="h-full border-slate-200 transition hover:border-[var(--accent)]/30 hover:shadow-md">
               <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{card.label}</p>
-              <p className={`mt-2 text-3xl font-bold ${card.color}`}>{card.value}</p>
+              <p className={`mt-2 text-2xl font-bold sm:text-3xl ${card.color}`}>{card.value}</p>
               <p className="mt-1 text-sm text-slate-500">{card.sub}</p>
             </Card>
           </Link>
@@ -424,7 +439,60 @@ export default function NursesEmergencyPage() {
             </Link>
           </div>
         </div>
-        <div className="overflow-x-auto">
+        <div className="space-y-3 p-3 md:hidden">
+          {erPatients.map((patient) => (
+            <div key={patient.id} className={`rounded-xl border border-slate-200 bg-white p-4 shadow-sm ${patient.priority === "Critical" ? "ring-1 ring-red-100" : ""}`}>
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <Link
+                    href={`${INTERNAL_PREFIX}/nurses/patients/${encodeURIComponent(patient.patientId)}`}
+                    className="truncate text-sm font-semibold text-slate-900 hover:text-[var(--accent)] hover:underline"
+                  >
+                    {patient.patientName}
+                  </Link>
+                  <p className="mt-0.5 text-[11px] text-slate-400">
+                    {patient.patientId} / Arrived {fmtDateTime(patient.admittedAt)}
+                  </p>
+                </div>
+                <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${PRIORITY_STYLES[patient.priority]}`}>
+                  {patient.priority}
+                </span>
+              </div>
+                <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <MobileMeta label="Bed" value={patient.bed} />
+                <MobileMeta label="Doctor Route" value={describeDoctorRoute(patient)} />
+                <MobileMeta label="BP" value={patient.vitals?.bp || "-"} />
+                <MobileMeta label="Pulse" value={patient.vitals?.pulse || "-"} />
+                <MobileMeta label="Temp" value={patient.vitals?.temp || "-"} />
+                <MobileMeta label="SpO2" value={patient.vitals?.spo2 || "-"} />
+              </div>
+              <p className="mt-3 line-clamp-2 text-xs text-slate-500">{patient.diagnosis || "--"}</p>
+              <p className="mt-1 line-clamp-2 text-xs text-slate-400">{patient.notes || "No emergency note yet"}</p>
+              <div className="mt-4 flex flex-wrap gap-2">
+                <Button size="sm" className="flex-1" onClick={() => openVitals(patient)}>Vitals</Button>
+                <Button size="sm" variant="outline" className="flex-1" onClick={() => openProcedure(patient)}>Procedure</Button>
+              </div>
+              <div className="mt-2 flex flex-wrap gap-2">
+                <Button size="sm" variant="outline" className="flex-1" onClick={() => setTransferTarget(patient)}>Transfer</Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="flex-1"
+                  href={`${INTERNAL_PREFIX}/nurses/patients/${encodeURIComponent(patient.patientId)}`}
+                >
+                  Open record
+                </Button>
+              </div>
+            </div>
+          ))}
+          {erPatients.length === 0 && (
+            <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm text-slate-400">
+              No active emergency patients right now.
+            </div>
+          )}
+        </div>
+
+        <div className="hidden overflow-x-auto md:block">
           <table className="min-w-full text-sm text-left">
             <thead>
               <tr className="border-b border-slate-100 bg-slate-50">
@@ -632,7 +700,7 @@ export default function NursesEmergencyPage() {
             <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
               Emergency patient - record vitals immediately and use the nurse patient record for lab, meds, and doctor context.
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div>
                 <label className="mb-1 block text-xs font-semibold text-slate-600">Blood Pressure *</label>
                 <input value={bp} onChange={(event) => setBp(event.target.value)} placeholder="145/95" className={inputCls} />
@@ -698,7 +766,7 @@ export default function NursesEmergencyPage() {
         {transferTarget && (
           <div className="space-y-3 text-sm">
             <p className="text-slate-700">Transfer <strong>{transferTarget.patientName}</strong> from Emergency to:</p>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               {(["Ward", "ICU"] as const).map((unit) => (
                 <button
                   key={unit}

@@ -53,6 +53,15 @@ function isSameCalendarDay(value?: string) {
   );
 }
 
+function MobileMeta({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-start justify-between gap-3 border-b border-slate-100 py-2 last:border-b-0 last:pb-0">
+      <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{label}</span>
+      <span className="text-right text-sm font-medium text-slate-700">{value}</span>
+    </div>
+  );
+}
+
 export default function AccountsConsultationFeesPage() {
   const { consultationFees, metrics } = useAccountsStore();
 
@@ -147,7 +156,63 @@ export default function AccountsConsultationFeesPage() {
         </div>
       </Card>
 
-      <Card className="overflow-hidden p-0">
+      <div className="space-y-3 md:hidden">
+        {filtered.map((f) => {
+          const status = effectiveStatus(f);
+          return (
+            <Card key={f.id} className={`p-4 ${status === "Pending" ? "bg-amber-50/20" : ""}`}>
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="truncate font-semibold text-slate-900">{f.patientName}</p>
+                  <p className="text-xs text-slate-500">{f.patientId}</p>
+                </div>
+                <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${STATUS_STYLES[status] ?? STATUS_STYLES[f.status]}`}>{status}</span>
+              </div>
+
+              <div className="mt-4 space-y-2">
+                <MobileMeta label="Doctor" value={f.doctorName} />
+                <MobileMeta label="Type" value={f.consultationType} />
+                <MobileMeta label="Fee" value={`â‚¦${f.fee.toLocaleString()}`} />
+                <MobileMeta label="Time" value={formatConsultationTimestamp(f.paidAt ?? f.consultedAt)} />
+              </div>
+
+              <div className="mt-4 flex flex-wrap gap-2">
+                {status === "Pending" && (
+                  <>
+                    <Button size="sm" disabled={processing} onClick={() => openReceiveModal(f)}>Receive Payment</Button>
+                    <Button size="sm" variant="ghost" disabled={processing} onClick={() => setWaiverTarget(f)}>Waive</Button>
+                  </>
+                )}
+                {status === "Paid" && (
+                  <Button size="sm" variant="ghost" className="text-slate-500" onClick={() => printReceipt({
+                    title: "Consultation Fee Receipt",
+                    subtitle: `${f.consultationType} Consultation`,
+                    refNumber: f.id,
+                    lines: [
+                      { label: "Patient", value: f.patientName },
+                      { label: "Patient ID", value: f.patientId },
+                      { label: "Doctor", value: f.doctorName },
+                      { label: "Type", value: f.consultationType },
+                      { label: "Date", value: formatConsultationTimestamp(f.paidAt ?? f.consultedAt) },
+                      { label: "Status", value: "PAID", bold: true },
+                    ],
+                    total: { label: "Amount Paid", value: `â‚¦${f.fee.toLocaleString()}` },
+                    copyLabel: "PATIENT COPY",
+                  })}>
+                    Receipt
+                  </Button>
+                )}
+                {status === "Waived" && <span className="text-xs text-slate-400">Waived</span>}
+              </div>
+            </Card>
+          );
+        })}
+        {filtered.length === 0 && (
+          <Card className="p-6 text-center text-sm text-slate-400">No consultation fees found.</Card>
+        )}
+      </div>
+
+      <Card className="hidden overflow-hidden p-0 md:block">
         <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
           <h3 className="font-bold text-slate-900">Consultation Fee Records</h3>
           <div className="flex gap-2">
@@ -249,7 +314,7 @@ export default function AccountsConsultationFeesPage() {
 
             <div>
               <label className="mb-2 block text-sm font-semibold text-slate-700">Payment Method</label>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                 {(["Cash", "POS / Card", "Mobile Money", "Insurance"] as PayMethod[]).map((value) => (
                   <button
                     key={value}

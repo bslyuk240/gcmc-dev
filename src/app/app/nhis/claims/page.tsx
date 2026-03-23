@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card } from "@/components/ui/card";
@@ -50,8 +50,23 @@ function fmt(n: number) {
   return `₦${n.toLocaleString("en-NG", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
+function MobileMeta({
+  label,
+  value,
+}: {
+  label: string;
+  value: ReactNode;
+}) {
+  return (
+    <div className="rounded-lg bg-slate-50 px-3 py-2">
+      <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">{label}</p>
+      <div className="mt-0.5 text-xs font-medium text-slate-700">{value}</div>
+    </div>
+  );
+}
+
 export default function NhisClaimsPage() {
-  const { schemes, enrollments, claims, hydrated } = useNhisStore();
+  const { enrollments, claims, hydrated } = useNhisStore();
   const [toast, setToast] = useState<ToastData | null>(null);
   const [activeTab, setActiveTab] = useState<ClaimTab>("draft");
 
@@ -63,8 +78,6 @@ export default function NhisClaimsPage() {
 
   // Derived from selected enrollment
   const selectedEnrollment = enrollments.find((e) => e.id === selectedEnrollmentId) ?? null;
-  const newClaimSchemeId = selectedEnrollment?.schemeId ?? "";
-  const newClaimPatientId = selectedEnrollment?.patientId ?? ""; // UUID
   const [services, setServices] = useState<ServiceRow[]>([{ ...EMPTY_SERVICE }]);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
@@ -291,7 +304,59 @@ export default function NhisClaimsPage() {
         {!hydrated ? (
           <div className="px-5 py-8 text-center text-sm text-slate-400">Loading…</div>
         ) : (
-          <div className="overflow-x-auto">
+          <>
+          <div className="grid gap-3 p-3 md:hidden">
+            {tabClaims.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm text-slate-400">
+                No {activeTab} claims.
+              </div>
+            ) : (
+              tabClaims.map((c) => (
+                <Card key={c.id} className="p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold text-slate-900">{c.patientName || c.patientId}</p>
+                      <p className="mt-0.5 font-mono text-[11px] text-slate-500">{c.claimNumber || "—"}</p>
+                    </div>
+                    <span className={`rounded-full px-2.5 py-1 text-[10px] font-semibold ${STATUS_STYLES[c.status] ?? "bg-slate-100 text-slate-500"}`}>
+                      {c.status}
+                    </span>
+                  </div>
+                  <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    <MobileMeta label="Scheme" value={c.schemeName} />
+                    <MobileMeta label="Services" value={String(c.services.length)} />
+                    <MobileMeta label="Total Cost" value={fmt(c.totalCost)} />
+                    <MobileMeta label="HMO Amount" value={fmt(c.hmoAmount)} />
+                    <MobileMeta label="Copay" value={fmt(c.copayAmount)} />
+                    <MobileMeta label="Date" value={formatDate(c.createdAt)} />
+                  </div>
+                  <div className="mt-3 flex flex-wrap justify-end gap-2">
+                    {c.status === "draft" && (
+                      <Button size="sm" disabled={actionSaving} onClick={() => handleSubmit(c)}>
+                        Submit to HMO
+                      </Button>
+                    )}
+                    {c.status === "submitted" && (
+                      <>
+                        <Button size="sm" disabled={actionSaving} onClick={() => handleApprove(c)}>
+                          Mark Approved
+                        </Button>
+                        <Button size="sm" variant="ghost" disabled={actionSaving} onClick={() => { setRejectTarget(c); setRejectionReason(""); }}>
+                          Mark Rejected
+                        </Button>
+                      </>
+                    )}
+                    {(c.status === "approved" || c.status === "partial") && (
+                      <Button size="sm" disabled={actionSaving} onClick={() => { setPayTarget(c); setAmountPaid(String(c.hmoAmount)); }}>
+                        Record Payment
+                      </Button>
+                    )}
+                  </div>
+                </Card>
+              ))
+            )}
+          </div>
+          <div className="hidden overflow-x-auto md:block">
             <table className="min-w-full text-sm text-left">
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-100">
@@ -354,6 +419,7 @@ export default function NhisClaimsPage() {
               </tbody>
             </table>
           </div>
+          </>
         )}
       </Card>
 

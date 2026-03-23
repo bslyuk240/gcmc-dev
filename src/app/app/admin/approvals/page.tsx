@@ -69,24 +69,24 @@ export default function AdminApprovalsPage() {
         description="Admin approval centre — financial requests, HR actions, procurement, clinical overrides, and IT authorisations."
       />
 
-      <div className="flex gap-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {[
           { label: "Pending Approvals", value: metrics.pendingApprovals, color: metrics.pendingApprovals > 0 ? "text-amber-600" : "text-slate-500" },
           { label: "Escalated", value: metrics.escalatedApprovals, color: metrics.escalatedApprovals > 0 ? "text-orange-700" : "text-slate-500" },
           { label: "Approved (total)", value: approvals.filter((a) => a.status === "Approved").length, color: "text-emerald-700" },
           { label: "Rejected", value: approvals.filter((a) => a.status === "Rejected").length, color: "text-slate-500" },
         ].map((s) => (
-          <Card key={s.label} className="flex flex-1 items-center gap-3 px-4 py-3">
-            <p className={`text-2xl font-bold shrink-0 ${s.color}`}>{s.value}</p>
-            <p className="text-xs font-semibold text-slate-500 leading-tight">{s.label}</p>
-          </Card>
-        ))}
+            <Card key={s.label} className="flex items-center gap-3 px-4 py-3">
+              <p className={`text-2xl font-bold shrink-0 ${s.color}`}>{s.value}</p>
+              <p className="text-xs font-semibold text-slate-500 leading-tight">{s.label}</p>
+            </Card>
+          ))}
       </div>
 
       <Card className="overflow-hidden p-0">
         <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
           <h3 className="font-bold text-slate-900">All Approval Requests</h3>
-          <div className="flex gap-1.5">
+          <div className="flex flex-wrap gap-1.5">
             {(["All", "Pending", "Escalated", "Approved", "Rejected"] as const).map((f) => (
               <button key={f} onClick={() => setFilter(f)}
                 className={`rounded-full px-3 py-1 text-xs font-semibold transition ${filter === f ? "bg-accent text-white" : "border border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
@@ -98,7 +98,7 @@ export default function AdminApprovalsPage() {
         <div className="divide-y divide-slate-100">
           {filtered.map((a) => (
             <div key={a.id} className={`px-5 py-4 ${a.status === "Escalated" ? "bg-orange-50/30" : a.priority === "Critical" ? "bg-red-50/20" : ""}`}>
-              <div className="flex items-start gap-4">
+              <div className="flex flex-col gap-4 sm:flex-row">
                 <div className="flex-1 space-y-1">
                   <div className="flex items-center gap-2 flex-wrap">
                     <p className="font-semibold text-slate-900">{a.title}</p>
@@ -117,7 +117,7 @@ export default function AdminApprovalsPage() {
                     <p className="text-xs text-slate-400">Reviewed by {a.reviewedBy} · {a.reviewedAt}{a.notes ? ` · ${a.notes}` : ""}</p>
                   )}
                 </div>
-                <div className="flex items-center gap-3 shrink-0">
+                <div className="flex flex-wrap items-center gap-3 shrink-0">
                   <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${STATUS_STYLES[a.status]}`}>{a.status}</span>
                   {(a.status === "Pending" || a.status === "Escalated") && (
                     <div className="flex gap-1.5">

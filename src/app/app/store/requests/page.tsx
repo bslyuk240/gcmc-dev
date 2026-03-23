@@ -36,6 +36,15 @@ const URGENCY_STYLES: Record<Urgency, string> = {
   Critical: "bg-red-50 text-red-700",
 };
 
+function MobileMeta({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-start justify-between gap-3 rounded-lg bg-slate-50 px-3 py-2">
+      <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{label}</span>
+      <span className="text-right text-sm font-medium text-slate-700">{value}</span>
+    </div>
+  );
+}
+
 function fmtDate(iso: string) {
   if (!iso) return "—";
   const d = new Date(iso);
@@ -205,7 +214,48 @@ export default function StoreRequestsPage() {
                 <p className="text-xs text-slate-500 mt-0.5">Requests raised by Pharmacy when drug stock falls below reorder levels. Approve → Fulfill to update Pharmacy inventory.</p>
               </div>
             </div>
-            <div className="overflow-x-auto">
+            <div className="space-y-3 p-3 md:hidden">
+              {displayRestockRequests.map((req) => (
+                <Card key={req.id} className={`p-4 ${req.status === "Pending" ? "bg-orange-50/30" : "bg-white"}`}>
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-xs font-mono font-bold text-slate-500">{req.id}</p>
+                      <p className="mt-1 text-sm font-semibold text-slate-900">{req.drug}</p>
+                      <p className="text-xs text-slate-400">{req.requestedBy}</p>
+                    </div>
+                    <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-bold ${req.urgency === "Critical" ? "bg-red-100 text-red-700" : req.urgency === "Urgent" ? "bg-orange-100 text-orange-700" : "bg-slate-100 text-slate-600"}`}>
+                      {req.urgency}
+                    </span>
+                  </div>
+                  <div className="mt-3 grid grid-cols-1 gap-2">
+                    <MobileMeta label="Current Stock" value={String(req.currentStock)} />
+                    <MobileMeta label="Reorder Level" value={String(req.reorderLevel)} />
+                    <MobileMeta label="Qty Requested" value={`${req.qtyRequested} ${req.unit}`} />
+                    <MobileMeta label="Date" value={req.requestedAt} />
+                    <MobileMeta label="Status" value={req.status} />
+                  </div>
+                  <div className="mt-3 flex justify-end">
+                    {req.status === "Pending" && (
+                      <div className="flex gap-2">
+                        <Button size="sm" onClick={() => setPharmActionTarget({ id: req.id, drug: req.drug, qty: req.qtyRequested ?? 0, action: "approve", storeInventoryId: req.storeInventoryId, inventoryItemId: req.inventoryItemId })}>Approve</Button>
+                        <Button size="sm" variant="outline" onClick={() => setPharmActionTarget({ id: req.id, drug: req.drug, qty: req.qtyRequested ?? 0, action: "reject", storeInventoryId: req.storeInventoryId, inventoryItemId: req.inventoryItemId })}>Reject</Button>
+                      </div>
+                    )}
+                    {req.status === "Approved" && (
+                      <Button size="sm" variant="secondary" onClick={() => setPharmActionTarget({ id: req.id, drug: req.drug, qty: req.qtyRequested ?? 0, action: "fulfill", storeInventoryId: req.storeInventoryId, inventoryItemId: req.inventoryItemId })}>
+                        Mark Fulfilled
+                      </Button>
+                    )}
+                    {req.status === "Fulfilled" && <span className="text-xs font-semibold text-emerald-600">Done</span>}
+                    {req.status === "Rejected" && <span className="text-xs text-slate-400">Rejected</span>}
+                  </div>
+                </Card>
+              ))}
+              {displayRestockRequests.length === 0 && (
+                <p className="px-2 py-8 text-center text-sm text-slate-400">No pharmacy resupply requests yet.</p>
+              )}
+            </div>
+            <div className="hidden overflow-x-auto md:block">
               <table className="min-w-full text-sm text-left">
                 <thead>
                   <tr className="bg-slate-50 border-b border-slate-100">
@@ -273,7 +323,7 @@ export default function StoreRequestsPage() {
       {activeSection === "general" && (
         <>
           {/* Summary cards */}
-          <div className="grid gap-4 sm:grid-cols-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
             {(["Pending", "Approved", "Fulfilled", "Rejected"] as RequestStatus[]).map((s) => (
               <Card
                 key={s}
@@ -281,9 +331,46 @@ export default function StoreRequestsPage() {
                 onClick={() => setFilter(filter === s ? "All" : s)}
               >
                 <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{s}</p>
-                <p className="mt-1 text-3xl font-bold text-slate-900">{loading ? "—" : counts[s]}</p>
+                <p className="mt-1 text-2xl font-bold text-slate-900 sm:text-3xl">{loading ? "—" : counts[s]}</p>
               </Card>
             ))}
+          </div>
+
+          <div className="space-y-3 md:hidden">
+            {loading ? (
+              <div className="px-2 py-8 text-center text-sm text-slate-400">Loading requests...</div>
+            ) : (
+              filtered.map((req) => (
+                <Card key={req.id} className="p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-xs font-mono font-bold text-slate-500">{req.id}</p>
+                      <p className="mt-1 text-sm font-semibold text-slate-900">{req.item}</p>
+                      <p className="text-xs text-slate-400">{req.requestedBy}</p>
+                    </div>
+                    <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${URGENCY_STYLES[req.urgency]}`}>{req.urgency}</span>
+                  </div>
+                  <div className="mt-3 grid grid-cols-1 gap-2">
+                    <MobileMeta label="Quantity" value={`${req.qty} ${req.unit}`} />
+                    <MobileMeta label="Department" value={req.dept} />
+                    <MobileMeta label="Date" value={fmtDate(req.createdAt)} />
+                    <MobileMeta label="Status" value={req.status} />
+                    <MobileMeta label="Notes" value={req.notes ?? "-"} />
+                  </div>
+                  <div className="mt-3 flex justify-end">
+                    {req.status === "Pending" && (
+                      <div className="flex gap-2">
+                        <Button size="sm" onClick={() => setActionTarget({ req, action: "approve" })}>Approve</Button>
+                        <Button size="sm" variant="outline" onClick={() => { setActionTarget({ req, action: "reject" }); setRejectNotes(""); }}>Reject</Button>
+                      </div>
+                    )}
+                    {req.status === "Approved" && (
+                      <Button size="sm" variant="secondary" onClick={() => setActionTarget({ req, action: "fulfill" })}>Mark Fulfilled</Button>
+                    )}
+                  </div>
+                </Card>
+              ))
+            )}
           </div>
 
           {/* Table */}
@@ -301,7 +388,7 @@ export default function StoreRequestsPage() {
             {loading ? (
               <div className="px-5 py-10 text-center text-sm text-slate-400">Loading requests…</div>
             ) : (
-              <div className="overflow-x-auto">
+              <div className="hidden overflow-x-auto md:block">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-slate-100 bg-slate-50 text-left">
@@ -422,7 +509,7 @@ export default function StoreRequestsPage() {
             <label className="block text-sm font-medium text-slate-700 mb-1">Item Name <span className="text-red-500">*</span></label>
             <input required value={newItem} onChange={(e) => setNewItem(e.target.value)} placeholder="e.g. N95 Respirators" className={inputCls} />
           </div>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Quantity <span className="text-red-500">*</span></label>
               <input required type="number" min="1" value={newQty} onChange={(e) => setNewQty(e.target.value)} placeholder="e.g. 50" className={inputCls} />
@@ -434,7 +521,7 @@ export default function StoreRequestsPage() {
               </select>
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Department <span className="text-red-500">*</span></label>
               <select required value={newDept} onChange={(e) => setNewDept(e.target.value)} className={inputCls}>

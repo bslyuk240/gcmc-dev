@@ -44,7 +44,12 @@ export function LiveSupportChat({
   const [sending, setSending] = useState(false);
 
   const loadThread = useCallback(async () => {
-    if (!session) return;
+    if (!session) {
+      setThread(null);
+      setMessages([]);
+      setLoading(false);
+      return;
+    }
 
     setLoading(true);
     try {

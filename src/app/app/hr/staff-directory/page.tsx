@@ -61,6 +61,15 @@ const STATUS_STYLES: Record<string, string> = {
   Probation: "bg-violet-50 text-violet-700",
 };
 
+function MobileMeta({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-start justify-between gap-3 border-b border-slate-100 py-2 last:border-b-0 last:pb-0">
+      <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{label}</span>
+      <span className="text-right text-sm font-medium text-slate-700">{value}</span>
+    </div>
+  );
+}
+
 function createLocalStaffId() {
   return globalThis.crypto.randomUUID();
 }
@@ -252,8 +261,56 @@ export default function StaffDirectoryPage() {
         </select>
       </div>
 
+      {/* Mobile cards */}
+      <div className="space-y-3 md:hidden">
+        {filtered.map((s) => (
+          <Card
+            key={s.id}
+            className={`p-4 ${s.status === "Suspended" ? "border-red-200 bg-red-50/20" : s.status === "Terminated" ? "opacity-60" : ""}`}
+          >
+            <div className="flex items-start gap-3">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-violet-100 text-sm font-bold text-violet-700">
+                {getInitials(s.name)}
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="truncate font-semibold text-slate-900">{s.name}</p>
+                    <p className="truncate text-xs text-slate-500">{s.email}</p>
+                  </div>
+                  <Button size="sm" variant="ghost" onClick={() => openView(s)}>
+                    View
+                  </Button>
+                </div>
+                {s.roleKey === "hod" && (
+                  <span className="mt-1 inline-block rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-violet-700">
+                    HOD
+                  </span>
+                )}
+              </div>
+            </div>
+
+            <div className="mt-4 space-y-2">
+              <MobileMeta label="Staff ID" value={formatStaffDisplayId({ id: s.id, name: s.name, department: s.department })} />
+              <MobileMeta label="Department" value={s.department} />
+              <MobileMeta label="Role" value={s.roleKey ? `${ROLE_KEY_LABELS[s.roleKey]} · ${s.role}` : s.role} />
+              <MobileMeta label="Unit" value={s.unit ?? "-"} />
+              <MobileMeta label="Contract" value={s.contractType} />
+              <MobileMeta label="Access" value={s.systemAccessCreated ? "Active" : "Pending IT"} />
+              <div className="flex items-center justify-between gap-3 border-b border-slate-100 py-2 last:border-b-0">
+                <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Status</span>
+                <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${STATUS_STYLES[s.status]}`}>{s.status}</span>
+              </div>
+            </div>
+          </Card>
+        ))}
+        {filtered.length === 0 && (
+          <Card className="p-6 text-center text-sm text-slate-400">No staff found matching your filters.</Card>
+        )}
+      </div>
+
       {/* Table */}
-      <Card className="overflow-hidden p-0">
+      <Card className="hidden overflow-hidden p-0 md:block">
         <div className="overflow-x-auto">
           <table className="min-w-full text-sm">
             <thead>
@@ -375,7 +432,7 @@ export default function StaffDirectoryPage() {
             </div>
 
             {/* Detail grid */}
-              <div className="grid grid-cols-2 gap-2 text-xs">
+              <div className="grid grid-cols-1 gap-2 text-xs sm:grid-cols-2">
                 {[
                   { label: "Staff ID",       value: viewStaff.id },
                   { label: "Department",     value: viewStaff.department },
@@ -398,7 +455,7 @@ export default function StaffDirectoryPage() {
                 ))}
               </div>
 
-              <div className="grid grid-cols-2 gap-2 text-xs">
+              <div className="grid grid-cols-1 gap-2 text-xs sm:grid-cols-2">
                 {[
                   { label: "Bank", value: viewStaff.bankName || "—" },
                   { label: "Account", value: viewStaff.bankAccount || "—" },
@@ -487,7 +544,7 @@ export default function StaffDirectoryPage() {
                 </div>
               )}
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div>
                   <label className="mb-1 block text-xs font-semibold text-slate-600">Phone</label>
                   <input value={editPhone} onChange={(e) => setEditPhone(e.target.value)} className={inputCls} />
@@ -532,7 +589,7 @@ export default function StaffDirectoryPage() {
       {/* ── Add Staff Modal ───────────────────────────────────────────────── */}
       <Modal open={showAdd} onClose={() => setShowAdd(false)} title="Add New Staff Member">
         <div className="space-y-3">
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             {/* Name */}
             <div className="col-span-2">
               <label className="mb-1 block text-xs font-semibold text-slate-600">Full Name *</label>

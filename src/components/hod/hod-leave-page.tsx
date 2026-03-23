@@ -83,6 +83,15 @@ export function HodLeavePage({ department }: { department: DBDepartmentKey }) {
     return cn("inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold", map[status] ?? "bg-slate-100 text-slate-600");
   };
 
+  function MobileMeta({ label, value }: { label: string; value: string | number }) {
+    return (
+      <div className="rounded-lg bg-slate-50 px-3 py-2">
+        <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">{label}</p>
+        <div className="mt-0.5 text-xs font-medium text-slate-700">{value}</div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       {toast && <Toast toast={toast} onDismiss={() => setToast(null)} />}
@@ -127,7 +136,57 @@ export function HodLeavePage({ department }: { department: DBDepartmentKey }) {
             No {tab.toLowerCase()} leave requests.
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <>
+            <div className="space-y-3 md:hidden">
+              {filtered.map((r) => (
+                <div key={r.id} className="space-y-3 border-b border-slate-100 px-4 py-4 last:border-b-0">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-semibold text-slate-900">{r.staffName}</p>
+                      <p className="text-xs text-slate-400">{r.role}</p>
+                    </div>
+                    <span className={statusChip(r.status)}>{r.status}</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <MobileMeta label="Leave Type" value={r.leaveType} />
+                    <MobileMeta label="Days" value={`${r.days}d`} />
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <MobileMeta
+                      label="Dates"
+                      value={`${new Date(r.startDate + "T00:00:00").toLocaleDateString("en-GB", { day: "numeric", month: "short" })} – ${new Date(
+                        r.endDate + "T00:00:00",
+                      ).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}`}
+                    />
+                    <MobileMeta
+                      label="Submitted"
+                      value={r.submittedAt ? new Date(r.submittedAt).toLocaleDateString("en-GB", { day: "numeric", month: "short" }) : "—"}
+                    />
+                  </div>
+                  <div className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600">{r.reason}</div>
+                  {r.status !== "Pending" && r.hrNotes && <p className="text-xs italic text-slate-400">{r.hrNotes}</p>}
+                  {r.status === "Pending" && (
+                    <div className="flex gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => { setReviewing(r); setReviewAction("Approved"); setReviewNote(""); }}
+                        className="rounded-lg bg-green-50 px-2.5 py-1 text-xs font-semibold text-green-700 transition hover:bg-green-100"
+                      >
+                        Approve
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { setReviewing(r); setReviewAction("Rejected"); setReviewNote(""); }}
+                        className="rounded-lg bg-red-50 px-2.5 py-1 text-xs font-semibold text-red-700 transition hover:bg-red-100"
+                      >
+                        Reject
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+            <div className="hidden overflow-x-auto md:block">
             <table className="min-w-full divide-y divide-slate-100">
               <thead>
                 <tr className="bg-slate-50">
@@ -178,7 +237,8 @@ export function HodLeavePage({ department }: { department: DBDepartmentKey }) {
                 ))}
               </tbody>
             </table>
-          </div>
+            </div>
+          </>
         )}
       </Card>
 

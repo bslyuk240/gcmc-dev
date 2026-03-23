@@ -40,7 +40,7 @@ const maxCount = Math.max(...HOURLY.map((h) => h.count));
 
 export default function AdminFrontdeskMonitorPage() {
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6">
       <div className="flex items-center justify-between">
         <PageHeader
           title="Front Desk Monitor"
@@ -49,59 +49,92 @@ export default function AdminFrontdeskMonitorPage() {
       </div>
 
       {/* KPIs */}
-      <div className="flex gap-3">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {[
           { label: "Currently Active Visits", value: checkedIn, color: "text-violet-700" },
           { label: "Completed Today", value: completedToday, color: "text-emerald-700" },
           { label: "Total Registered Today", value: VISITS.length, color: "text-slate-900" },
           { label: "Peak Hour", value: peakHour.hour, color: "text-amber-600" },
         ].map((s) => (
-          <Card key={s.label} className="flex flex-1 items-center gap-3 px-4 py-3">
-            <p className={`text-2xl font-bold shrink-0 ${s.color}`}>{s.value}</p>
-            <p className="text-xs font-semibold text-slate-500 leading-tight">{s.label}</p>
+          <Card key={s.label} className="flex items-center gap-3 px-4 py-3">
+            <p className={`shrink-0 text-2xl font-bold ${s.color}`}>{s.value}</p>
+            <p className="text-xs font-semibold leading-tight text-slate-500">{s.label}</p>
           </Card>
         ))}
       </div>
 
       <div className="grid gap-6 lg:grid-cols-3">
-        <div className="lg:col-span-2 space-y-6">
+        <div className="space-y-4 lg:col-span-2 sm:space-y-6">
           {/* Visit queue */}
           <Card className="overflow-hidden p-0">
-            <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+            <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3 sm:px-5 sm:py-4">
               <h3 className="font-bold text-slate-900">Today&apos;s Visit Queue</h3>
               <p className="text-xs text-slate-400">Live data from Front Desk</p>
             </div>
-            <div className="overflow-x-auto">
-              <table className="min-w-full text-sm">
-                <thead>
-                  <tr className="bg-slate-50 border-b border-slate-100">
-                    {["ID", "Patient", "Visit Type", "Assigned Doctor", "Time", "Status"].map((h) => (
-                      <th key={h} className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {VISITS.map((v) => (
-                    <tr key={v.id} className="hover:bg-slate-50">
-                      <td className="px-4 py-3 font-mono text-xs font-semibold text-slate-500">{v.id}</td>
-                      <td className="px-4 py-3 font-medium text-slate-900">{v.patient}</td>
-                      <td className="px-4 py-3">
-                        <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${TYPE_COLORS[v.type] ?? "bg-slate-100 text-slate-600"}`}>{v.type}</span>
-                      </td>
-                      <td className="px-4 py-3 text-xs text-slate-500">{v.doctor}</td>
-                      <td className="px-4 py-3 font-mono text-xs text-slate-400">{v.time}</td>
-                      <td className="px-4 py-3">
-                        <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${STATUS_STYLES[v.status] ?? "bg-slate-100 text-slate-600"}`}>{v.status}</span>
-                      </td>
+            <>
+              <div className="grid gap-3 p-3 md:hidden">
+                {VISITS.map((v) => (
+                  <Card key={v.id} className="p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold text-slate-900">{v.patient}</p>
+                        <p className="mt-0.5 text-[11px] font-mono text-slate-400">{v.id}</p>
+                      </div>
+                      <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${STATUS_STYLES[v.status] ?? "bg-slate-100 text-slate-600"}`}>{v.status}</span>
+                    </div>
+                    <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                      <div className="rounded-lg bg-slate-50 px-3 py-2">
+                        <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Visit Type</p>
+                        <p className="mt-0.5 text-sm font-medium text-slate-800">{v.type}</p>
+                      </div>
+                      <div className="rounded-lg bg-slate-50 px-3 py-2">
+                        <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Doctor</p>
+                        <p className="mt-0.5 text-sm font-medium text-slate-800">{v.doctor}</p>
+                      </div>
+                      <div className="rounded-lg bg-slate-50 px-3 py-2">
+                        <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Time</p>
+                        <p className="mt-0.5 text-sm font-medium text-slate-800">{v.time}</p>
+                      </div>
+                      <div className="rounded-lg bg-slate-50 px-3 py-2">
+                        <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Status</p>
+                        <p className="mt-0.5 text-sm font-medium text-slate-800">{v.status}</p>
+                      </div>
+                    </div>
+                  </Card>
+                ))}
+              </div>
+              <div className="hidden overflow-x-auto md:block">
+                <table className="min-w-full text-sm">
+                  <thead>
+                    <tr className="bg-slate-50 border-b border-slate-100">
+                      {["ID", "Patient", "Visit Type", "Assigned Doctor", "Time", "Status"].map((h) => (
+                        <th key={h} className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">{h}</th>
+                      ))}
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {VISITS.map((v) => (
+                      <tr key={v.id} className="hover:bg-slate-50">
+                        <td className="px-4 py-3 font-mono text-xs font-semibold text-slate-500">{v.id}</td>
+                        <td className="px-4 py-3 font-medium text-slate-900">{v.patient}</td>
+                        <td className="px-4 py-3">
+                          <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${TYPE_COLORS[v.type] ?? "bg-slate-100 text-slate-600"}`}>{v.type}</span>
+                        </td>
+                        <td className="px-4 py-3 text-xs text-slate-500">{v.doctor}</td>
+                        <td className="px-4 py-3 font-mono text-xs text-slate-400">{v.time}</td>
+                        <td className="px-4 py-3">
+                          <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${STATUS_STYLES[v.status] ?? "bg-slate-100 text-slate-600"}`}>{v.status}</span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
           </Card>
 
           {/* Hourly flow chart */}
-          <Card className="p-5">
+          <Card className="p-4 sm:p-5">
             <h3 className="font-bold text-slate-900 mb-1">Hourly Registration Flow</h3>
             <p className="text-xs text-slate-400 mb-4">Patient registrations and check-ins by hour</p>
             <div className="flex items-end gap-2 h-28">
@@ -120,8 +153,8 @@ export default function AdminFrontdeskMonitorPage() {
         </div>
 
         {/* Right */}
-        <div className="space-y-4">
-          <Card className="p-5">
+        <div className="space-y-3 sm:space-y-4">
+          <Card className="p-4 sm:p-5">
             <h3 className="font-bold text-slate-900 mb-3">Visit Breakdown</h3>
             <div className="space-y-2">
               {Object.entries(
@@ -139,7 +172,7 @@ export default function AdminFrontdeskMonitorPage() {
               ))}
             </div>
           </Card>
-          <Card className="p-5">
+          <Card className="p-4 sm:p-5">
             <h3 className="font-bold text-slate-900 mb-3">Admin Insight</h3>
             <ul className="space-y-2 text-xs text-slate-600">
               <li className="flex items-start gap-2"><span className="mt-0.5 h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" />Registration throughput is normal. {completedToday} visits completed.</li>

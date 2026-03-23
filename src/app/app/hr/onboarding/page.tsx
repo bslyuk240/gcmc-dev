@@ -251,29 +251,31 @@ export default function OnboardingPage() {
   const inputCls = "w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-200";
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between flex-wrap gap-3">
+    <div className="space-y-4 sm:space-y-6">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <PageHeader title="Onboarding & Exit" description="Manage new hire onboarding (IT access, credentials, orientation) and staff exit workflows (IT revocation, clearance)." />
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Button size="sm" onClick={() => setShowNewHire(true)}>+ New Hire</Button>
           <Button size="sm" variant="outline" onClick={() => setShowExit(true)}>Initiate Exit</Button>
         </div>
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 border-b border-slate-200">
-        {(["onboarding", "offboarding"] as const).map((t) => (
-          <button key={t} onClick={() => setTab(t)}
-            className={`px-5 py-2 text-sm font-semibold capitalize border-b-2 transition ${tab === t ? "border-violet-500 text-violet-700" : "border-transparent text-slate-500 hover:text-slate-800"}`}>
-            {t === "onboarding" ? "New Hire Onboarding" : "Exit / Offboarding"}
-          </button>
-        ))}
+      <div className="overflow-x-auto border-b border-slate-200">
+        <div className="flex min-w-max gap-1">
+          {(["onboarding", "offboarding"] as const).map((t) => (
+            <button key={t} onClick={() => setTab(t)}
+              className={`whitespace-nowrap px-3 py-2 text-sm font-semibold capitalize border-b-2 transition sm:px-5 ${tab === t ? "border-violet-500 text-violet-700" : "border-transparent text-slate-500 hover:text-slate-800"}`}>
+              {t === "onboarding" ? "New Hire Onboarding" : "Exit / Offboarding"}
+            </button>
+          ))}
+        </div>
       </div>
 
       {tab === "onboarding" && (
-        <div className="space-y-4">
+        <div className="space-y-3 sm:space-y-4">
           {onboarding.map((o) => (
-            <Card key={o.id} className={`p-5 ${o.status === "IT Pending" ? "border-sky-200 border-2" : ""}`}>
+            <Card key={o.id} className={`p-4 sm:p-5 ${o.status === "IT Pending" ? "border-sky-200 border-2" : ""}`}>
               <div className="flex items-start justify-between gap-4">
                 <div className="flex-1">
                   <div className="flex items-center gap-2 flex-wrap mb-1">
@@ -310,7 +312,7 @@ export default function OnboardingPage() {
             </Card>
           ))}
           {onboarding.length === 0 && (
-            <div className="rounded-xl border border-dashed border-slate-200 py-12 text-center text-slate-400">
+            <div className="rounded-xl border border-dashed border-slate-200 py-10 text-center text-slate-400 sm:py-12">
               No active onboarding records. Click <strong>+ New Hire</strong> to begin.
             </div>
           )}
@@ -318,9 +320,9 @@ export default function OnboardingPage() {
       )}
 
       {tab === "offboarding" && (
-        <div className="space-y-4">
+        <div className="space-y-3 sm:space-y-4">
           {offboarding.map((o) => (
-            <Card key={o.id} className={`p-5 ${o.status === "IT Revoke Pending" ? "border-red-200 border-2" : ""}`}>
+            <Card key={o.id} className={`p-4 sm:p-5 ${o.status === "IT Revoke Pending" ? "border-red-200 border-2" : ""}`}>
               <div className="flex items-start justify-between gap-4">
                 <div className="flex-1">
                   <div className="flex items-center gap-2 flex-wrap mb-1">
@@ -356,7 +358,7 @@ export default function OnboardingPage() {
             </Card>
           ))}
           {offboarding.length === 0 && (
-            <div className="rounded-xl border border-dashed border-slate-200 py-12 text-center text-slate-400">
+            <div className="rounded-xl border border-dashed border-slate-200 py-10 text-center text-slate-400 sm:py-12">
               No exit workflows in progress.
             </div>
           )}
@@ -366,7 +368,7 @@ export default function OnboardingPage() {
       {/* New Hire Modal */}
       <Modal open={showNewHire} onClose={() => setShowNewHire(false)} title="New Hire Onboarding">
         <div className="space-y-3">
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="col-span-2">
               <label className="block text-xs font-semibold text-slate-600 mb-1">Full Name *</label>
               <input value={nhName} onChange={(e) => setNhName(e.target.value)} placeholder="e.g. Dr. Amara Osei" className={inputCls} />
@@ -495,7 +497,7 @@ export default function OnboardingPage() {
               ))}
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
               <label className="block text-xs font-semibold text-slate-600 mb-1">Exit Date</label>
               <input type="date" value={exitDate} onChange={(e) => setExitDate(e.target.value)} className={inputCls} />

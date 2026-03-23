@@ -36,7 +36,7 @@ const UPCOMING = [
 ];
 
 export default function AdminHRMonitorPage() {
-  const { hrStaff, hrLeaveRequests, metrics } = useAdminStore();
+  const { hrLeaveRequests, metrics } = useAdminStore();
   const [leaveAction, setLeaveAction] = useState<{ id: string; action: "Approved" | "Rejected" } | null>(null);
   const [toast, setToast] = useState<ToastData | null>(null);
 
@@ -57,16 +57,16 @@ export default function AdminHRMonitorPage() {
         <PageHeader title="HR Monitor" description="Staffing oversight — staff count by department, leave management, onboarding, and workforce compliance." />
       </div>
 
-      <div className="flex gap-3">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {[
           { label: "Total Staff", value: totalStaff, color: "text-slate-900" },
           { label: "Active Today", value: activeStaff, color: "text-emerald-700" },
           { label: "On Leave", value: metrics.staffOnLeave, color: metrics.staffOnLeave > 5 ? "text-amber-600" : "text-slate-500" },
           { label: "Leave Requests Pending", value: metrics.pendingLeave, color: metrics.pendingLeave > 0 ? "text-violet-700" : "text-slate-500" },
         ].map((s) => (
-          <Card key={s.label} className="flex flex-1 items-center gap-3 px-4 py-3">
-            <p className={`text-2xl font-bold shrink-0 ${s.color}`}>{s.value}</p>
-            <p className="text-xs font-semibold text-slate-500 leading-tight">{s.label}</p>
+          <Card key={s.label} className="flex items-center gap-3 px-4 py-3">
+            <p className={`shrink-0 text-2xl font-bold ${s.color}`}>{s.value}</p>
+            <p className="text-xs font-semibold leading-tight text-slate-500">{s.label}</p>
           </Card>
         ))}
       </div>
@@ -78,7 +78,50 @@ export default function AdminHRMonitorPage() {
             <div className="border-b border-slate-100 px-5 py-4">
               <h3 className="font-bold text-slate-900">Leave Requests</h3>
             </div>
-            <div className="overflow-x-auto">
+            <div className="space-y-3 p-3 md:hidden">
+              {hrLeaveRequests.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm text-slate-400">
+                  No leave requests yet.
+                </div>
+              ) : (
+                hrLeaveRequests.map((l) => (
+                  <Card key={l.id} className="overflow-hidden p-0">
+                    <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-4 py-3">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold text-slate-900">{l.staffName}</p>
+                        <p className="mt-0.5 text-[11px] text-slate-500">{l.department}</p>
+                      </div>
+                      <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${LEAVE_STYLES[l.status]}`}>{l.status}</span>
+                    </div>
+                    <div className="grid grid-cols-1 gap-2 p-4 sm:grid-cols-2">
+                      <div className="rounded-lg bg-slate-50 px-3 py-2">
+                        <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Leave Type</p>
+                        <p className={`mt-0.5 inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ${LEAVE_TYPE_STYLES[l.leaveType] ?? "bg-slate-100 text-slate-600"}`}>{l.leaveType}</p>
+                      </div>
+                      <div className="rounded-lg bg-slate-50 px-3 py-2">
+                        <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Dates</p>
+                        <p className="mt-0.5 text-sm font-medium text-slate-800">{l.startDate} – {l.endDate}</p>
+                      </div>
+                      <div className="rounded-lg bg-slate-50 px-3 py-2">
+                        <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Days</p>
+                        <p className="mt-0.5 text-sm font-medium text-slate-800">{l.days}d</p>
+                      </div>
+                      <div className="rounded-lg bg-slate-50 px-3 py-2">
+                        <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Status</p>
+                        <p className="mt-0.5 text-sm font-medium text-slate-800">{l.status}</p>
+                      </div>
+                    </div>
+                    {l.status === "Pending" ? (
+                      <div className="flex gap-2 border-t border-slate-100 px-4 py-3">
+                        <Button size="sm" onClick={() => setLeaveAction({ id: l.id, action: "Approved" })} className="flex-1">Approve</Button>
+                        <Button size="sm" variant="ghost" onClick={() => setLeaveAction({ id: l.id, action: "Rejected" })} className="flex-1">Reject</Button>
+                      </div>
+                    ) : null}
+                  </Card>
+                ))
+              )}
+            </div>
+            <div className="hidden overflow-x-auto md:block">
               <table className="min-w-full text-sm">
                 <thead>
                   <tr className="bg-slate-50 border-b border-slate-100">
@@ -120,7 +163,29 @@ export default function AdminHRMonitorPage() {
             <div className="border-b border-slate-100 px-5 py-4">
               <h3 className="font-bold text-slate-900">Staffing by Department</h3>
             </div>
-            <div className="divide-y divide-slate-100">
+            <div className="grid gap-3 p-3 md:hidden">
+              {Object.entries(DEPT_STAFF).map(([dept, data]) => (
+                <Card key={dept} className="p-4">
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-slate-900">{dept}</p>
+                      <p className="mt-1 text-xs text-slate-500">
+                        Total: <strong className="text-slate-800">{data.count}</strong> · Active: <strong className="text-emerald-700">{data.active}</strong>
+                      </p>
+                    </div>
+                    {data.count - data.active > 0 ? (
+                      <span className="shrink-0 rounded-full bg-amber-50 px-2.5 py-0.5 text-[10px] font-semibold text-amber-700">
+                        {data.count - data.active} on leave
+                      </span>
+                    ) : null}
+                  </div>
+                  <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-slate-100">
+                    <div className="h-full rounded-full bg-emerald-400" style={{ width: `${(data.active / data.count) * 100}%` }} />
+                  </div>
+                </Card>
+              ))}
+            </div>
+            <div className="hidden divide-y divide-slate-100 md:block">
               {Object.entries(DEPT_STAFF).map(([dept, data]) => (
                 <div key={dept} className="flex items-center gap-4 px-5 py-3">
                   <p className="flex-1 text-sm font-medium text-slate-900">{dept}</p>

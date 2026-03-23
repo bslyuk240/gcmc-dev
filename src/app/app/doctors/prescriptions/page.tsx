@@ -32,6 +32,15 @@ const QTY_PRESETS = ["6 tabs", "10 tabs", "14 tabs", "21 caps", "30 tabs", "42 t
 const BLANK_DRUG: DrugLine = { name: "", dosage: "", frequency: "Once daily", duration: "7 days", qty: "" };
 const INPUT_CLASS = "w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-400/20";
 
+function MobileMeta({ label, value }: { label: string; value: string | number }) {
+  return (
+    <div className="rounded-lg bg-slate-50 px-3 py-2">
+      <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">{label}</p>
+      <div className="mt-0.5 text-xs font-medium text-slate-700">{value}</div>
+    </div>
+  );
+}
+
 export default function DoctorPrescriptionsPage() {
   const { prescriptions, metrics } = usePharmacyStore();
   const { consultations, doctors } = useDoctorsStore();
@@ -171,7 +180,7 @@ export default function DoctorPrescriptionsPage() {
         <Button onClick={() => openWrite()}>+ Write Prescription</Button>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-4">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {[
           { label: "Total Prescriptions", value: myPrescriptions.length, color: "text-slate-900" },
           { label: "Pending / Processing", value: pending.length, color: pending.length > 0 ? "text-amber-600" : "text-slate-400" },
@@ -214,7 +223,42 @@ export default function DoctorPrescriptionsPage() {
             ))}
           </div>
         </div>
-        <div className="overflow-x-auto">
+        <div className="space-y-3 md:hidden">
+          {filtered.map((entry) => (
+            <div key={entry.id} className="space-y-3 border-b border-slate-100 px-4 py-4 last:border-b-0">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="font-semibold text-slate-900">{entry.patientName}</p>
+                  <p className="text-[10px] text-slate-400">{entry.patientId}</p>
+                </div>
+                <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${STATUS_STYLES[entry.status]}`}>{entry.status}</span>
+              </div>
+              <div className="grid grid-cols-1 gap-2 text-xs sm:grid-cols-2">
+                <MobileMeta label="Rx ID" value={entry.id} />
+                <MobileMeta label="Urgency" value={entry.urgency} />
+              </div>
+              <div className="rounded-lg bg-slate-50 px-3 py-2">
+                <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400">Medications</p>
+                <div className="flex flex-wrap gap-1">
+                  {entry.drugs.slice(0, 2).map((drug) => (
+                    <span key={drug.name} className="rounded-full bg-violet-50 px-2 py-0.5 text-xs font-medium text-violet-700">
+                      {drug.name}
+                    </span>
+                  ))}
+                  {entry.drugs.length > 2 ? <span className="text-xs text-slate-400">+{entry.drugs.length - 2} more</span> : null}
+                </div>
+              </div>
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-bold text-slate-800">N{entry.totalCost?.toFixed(0) ?? "--"}</span>
+                <span className={`rounded-full px-2 py-0.5 text-xs ${URGENCY_STYLES[entry.urgency]}`}>{entry.urgency}</span>
+              </div>
+            </div>
+          ))}
+          {filtered.length === 0 ? (
+            <p className="px-6 py-10 text-center text-sm text-slate-400">No prescriptions in this category.</p>
+          ) : null}
+        </div>
+        <div className="hidden overflow-x-auto md:block">
           <table className="min-w-full text-sm">
             <thead>
               <tr className="border-b border-slate-100 bg-slate-50">
@@ -272,7 +316,7 @@ export default function DoctorPrescriptionsPage() {
             {drugs.map((drug, index) => (
               <div key={`${drug.name}-${index}`} className="space-y-2.5 rounded-xl border border-slate-200 bg-white p-3">
                 <SearchableSelect options={drugOptions} value={drug.name} onChange={(value) => autoFillDosage(index, value)} placeholder="Search pharmacy drug catalog..." />
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                   <input value={drug.dosage} onChange={(event) => updateDrug(index, "dosage", event.target.value)} placeholder="Dosage" className={INPUT_CLASS} />
                   <input list={`qty-${index}`} value={drug.qty} onChange={(event) => updateDrug(index, "qty", event.target.value)} placeholder="Quantity" className={INPUT_CLASS} />
                   <datalist id={`qty-${index}`}>{QTY_PRESETS.map((preset) => <option key={preset} value={preset} />)}</datalist>

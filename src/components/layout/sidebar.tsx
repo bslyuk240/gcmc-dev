@@ -4,7 +4,6 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { appConfig } from "@/lib/config/app";
 import {
-  findNavigationItem,
   getDepartmentFromPath,
   getSidebarSections,
 } from "@/lib/constants/navigation";
@@ -20,12 +19,13 @@ const HOD_ALLOWED_ROLES = new Set(["hod", "hr_manager", "hr_staff", "admin"]);
 function SidebarInner({
   pathname,
   onNavigate,
+  showBrandHeader = true,
 }: {
   pathname: string;
   onNavigate?: () => void;
+  showBrandHeader?: boolean;
 }) {
   const session = useHMSSession();
-  const current = findNavigationItem(pathname);
   const department = getDepartmentFromPath(pathname);
   const rawSections = getSidebarSections(department);
   const billingBadges = useAccountsBillingBadges(department);
@@ -39,21 +39,23 @@ function SidebarInner({
 
   return (
     <>
-      <div className="shrink-0 bg-white px-5 py-5">
-        <div className="flex items-center gap-3">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent text-white">
-            <Icon name="hospital" className="h-4 w-4" />
-          </div>
-          <div className="min-w-0">
-            <h1 className="truncate text-sm font-bold leading-tight text-slate-900">
-              {appConfig.appName}
-            </h1>
-            <p className="mt-0.5 text-[9px] font-bold uppercase tracking-[0.28em] text-slate-400">
-              Internal Portal
-            </p>
+      {showBrandHeader ? (
+        <div className="shrink-0 bg-white px-5 py-5">
+          <div className="flex items-center gap-3">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent text-white">
+              <Icon name="hospital" className="h-4 w-4" />
+            </div>
+            <div className="min-w-0">
+              <h1 className="truncate text-sm font-bold leading-tight text-slate-900">
+                {appConfig.appName}
+              </h1>
+              <p className="mt-0.5 text-[9px] font-bold uppercase tracking-[0.28em] text-slate-400">
+                Internal Portal
+              </p>
+            </div>
           </div>
         </div>
-      </div>
+      ) : null}
 
       <nav className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 pb-4">
         {sections.map((section, sectionIndex) => (
@@ -139,18 +141,17 @@ function SidebarInner({
         ))}
       </nav>
 
-      <div className="shrink-0 border-t border-slate-200 bg-white p-3">
-        <div className="rounded-lg border border-slate-100 bg-slate-50 p-2.5">
-          <div className="flex items-center gap-2">
-            <span className="h-2 w-2 rounded-full bg-emerald-500" />
-            <span className="text-xs font-semibold text-slate-700">
-              All systems online
-            </span>
-          </div>
-          <p className="mt-1 text-[10px] text-slate-400">
-            {current?.label ?? "Workspace"} active
-          </p>
-        </div>
+      <div className="shrink-0 border-t border-slate-200 bg-white p-3 pb-24 xl:pb-3">
+        <Link
+          href="/staff/dashboard"
+          className="mt-2.5 flex w-full items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white py-2 text-xs font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900"
+          onClick={onNavigate}
+        >
+          <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+          </svg>
+          Go to Staff Portal
+        </Link>
         <button
           type="button"
           className="mt-2.5 flex w-full items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white py-2 text-xs font-semibold text-slate-700 transition hover:border-red-200 hover:bg-red-50 hover:text-red-700"
@@ -224,7 +225,7 @@ export function MobileSidebar({
         </div>
 
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-          <SidebarInner pathname={pathname} onNavigate={onClose} />
+          <SidebarInner pathname={pathname} onNavigate={onClose} showBrandHeader={false} />
         </div>
       </aside>
     </div>

@@ -32,6 +32,15 @@ const STATUS_STYLES: Record<string, string> = {
   Closed: "bg-slate-100 text-slate-500",
 };
 
+function MobileMeta({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-start justify-between gap-3 border-b border-slate-100 py-2 last:border-b-0 last:pb-0">
+      <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{label}</span>
+      <span className="text-right text-sm font-medium text-slate-700">{value}</span>
+    </div>
+  );
+}
+
 export default function AdminITMonitorPage() {
   const { itTickets, metrics } = useAdminStore();
   const [escalateTarget, setEscalateTarget] = useState<string | null>(null);
@@ -45,7 +54,6 @@ export default function AdminITMonitorPage() {
 
   function handleEscalate() {
     if (!escalateTarget) return;
-    const t = itTickets.find((t) => t.id === escalateTarget);
     updateITTicket(escalateTarget, { priority: "Critical" });
     setToast({ message: `Ticket ${escalateTarget} escalated to Critical.`, type: "info" });
     setEscalateTarget(null);
@@ -81,16 +89,16 @@ export default function AdminITMonitorPage() {
         </div>
       )}
 
-      <div className="flex gap-3">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {[
           { label: "Open Tickets", value: openTickets.length, color: openTickets.length > 3 ? "text-amber-600" : "text-slate-900" },
           { label: "Critical / Urgent", value: metrics.criticalITTickets, color: metrics.criticalITTickets > 0 ? "text-red-700" : "text-slate-500" },
           { label: "Resolved Today", value: resolved.length, color: "text-emerald-700" },
           { label: "System Health", value: `${SYSTEMS.filter((s) => s.status === "Operational").length}/${SYSTEMS.length}`, color: degradedSystems.length > 0 ? "text-amber-600" : "text-emerald-700" },
         ].map((s) => (
-          <Card key={s.label} className="flex flex-1 items-center gap-3 px-4 py-3">
-            <p className={`text-2xl font-bold shrink-0 ${s.color}`}>{s.value}</p>
-            <p className="text-xs font-semibold text-slate-500 leading-tight">{s.label}</p>
+          <Card key={s.label} className="flex items-center gap-3 px-4 py-3">
+            <p className={`shrink-0 text-2xl font-bold ${s.color}`}>{s.value}</p>
+            <p className="text-xs font-semibold leading-tight text-slate-500">{s.label}</p>
           </Card>
         ))}
       </div>
@@ -101,7 +109,33 @@ export default function AdminITMonitorPage() {
             <div className="border-b border-slate-100 px-5 py-4">
               <h3 className="font-bold text-slate-900">Active IT Tickets</h3>
             </div>
-            <div className="overflow-x-auto">
+            <div className="space-y-3 p-4 md:hidden">
+              {itTickets.map((t) => (
+                <Card key={t.id} className={`p-4 ${t.priority === "Critical" ? "border-red-200 bg-red-50/30" : ""}`}>
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate font-semibold text-slate-900">{t.title}</p>
+                      <p className="text-xs font-mono text-slate-500">{t.id}</p>
+                    </div>
+                    <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${STATUS_STYLES[t.status]}`}>{t.status}</span>
+                  </div>
+                  <div className="mt-3 space-y-2">
+                    <MobileMeta label="Department" value={t.department} />
+                    <MobileMeta label="Priority" value={t.priority} />
+                    <MobileMeta label="Assigned To" value={t.assignedTo} />
+                  </div>
+                  <div className="mt-4 flex gap-2">
+                    {(t.status === "Open" || t.status === "In Progress") && t.priority !== "Critical" && (
+                      <Button size="sm" variant="outline" onClick={() => setEscalateTarget(t.id)}>Escalate</Button>
+                    )}
+                    {t.status === "Resolved" && (
+                      <Button size="sm" variant="ghost" onClick={() => setCloseTarget(t.id)}>Close</Button>
+                    )}
+                  </div>
+                </Card>
+              ))}
+            </div>
+            <div className="hidden overflow-x-auto md:block">
               <table className="min-w-full text-sm">
                 <thead>
                   <tr className="bg-slate-50 border-b border-slate-100">

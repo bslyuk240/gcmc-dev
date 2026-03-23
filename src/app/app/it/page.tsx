@@ -21,6 +21,15 @@ const STATUS_STYLES: Record<string, string> = {
   Resolved: "bg-emerald-50 text-emerald-700",
 };
 
+function MobileMeta({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-start justify-between gap-3 rounded-lg bg-slate-50 px-3 py-2">
+      <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{label}</span>
+      <span className="text-right text-sm font-medium text-slate-700">{value}</span>
+    </div>
+  );
+}
+
 export default function ITDashboardPage() {
   const { itTickets } = useAdminStore();
   const [systemStatus, setSystemStatus] = useState<ITSystemStatus[]>([]);
@@ -53,7 +62,7 @@ export default function ITDashboardPage() {
         {kpi.map((k) => (
           <Card key={k.label} className="p-5">
             <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{k.label}</p>
-            <p className={`mt-1 text-3xl font-bold ${k.color}`}>{k.value}</p>
+            <p className={`mt-1 text-2xl font-bold sm:text-3xl ${k.color}`}>{k.value}</p>
             <p className={`mt-1 flex items-center gap-1 text-sm ${k.up ? "text-emerald-600" : "text-slate-500"}`}>
               {k.up && (
                 <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -82,7 +91,27 @@ export default function ITDashboardPage() {
                 <p className="mt-1 text-xs text-slate-400">Tickets will appear here once created.</p>
               </div>
             ) : (
-              <div className="overflow-x-auto">
+              <>
+              <div className="space-y-3 p-3 md:hidden">
+                {recentTickets.map((t) => (
+                  <Card key={t.id} className="p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold text-slate-900">{t.title}</p>
+                        <p className="mt-0.5 font-mono text-[11px] text-slate-500">{t.id}</p>
+                      </div>
+                      <span className={`rounded-full px-2.5 py-1 text-[10px] font-semibold ${STATUS_STYLES[t.status] ?? "bg-slate-100 text-slate-500"}`}>{t.status}</span>
+                    </div>
+                    <div className="mt-3 grid grid-cols-1 gap-2">
+                      <MobileMeta label="Department" value={t.department} />
+                      <MobileMeta label="Priority" value={t.priority} />
+                      <MobileMeta label="Assigned" value={t.assignedTo || "—"} />
+                      <MobileMeta label="Opened" value={t.openedAt} />
+                    </div>
+                  </Card>
+                ))}
+              </div>
+              <div className="hidden overflow-x-auto md:block">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-slate-100 bg-slate-50 text-left">
@@ -110,6 +139,7 @@ export default function ITDashboardPage() {
                   </tbody>
                 </table>
               </div>
+              </>
             )}
           </Card>
 
@@ -153,7 +183,7 @@ export default function ITDashboardPage() {
           {/* Quick actions */}
           <Card className="p-5">
             <h3 className="font-bold text-slate-900">Quick Actions</h3>
-            <div className="mt-4 grid grid-cols-2 gap-3">
+            <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
               {[
                 { label: "Chat Inbox", href: `${INTERNAL_PREFIX}/it/chat` },
                 { label: "Tickets", href: `${INTERNAL_PREFIX}/it/tickets` },

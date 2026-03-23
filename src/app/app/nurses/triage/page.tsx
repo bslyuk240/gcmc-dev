@@ -100,6 +100,21 @@ function getTriageStatus(
   return "Incomplete triage";
 }
 
+function MobileMeta({
+  label,
+  value,
+}: {
+  label: string;
+  value: string | number;
+}) {
+  return (
+    <div className="flex items-start justify-between gap-3 border-b border-slate-100 py-2 last:border-b-0 last:pb-0">
+      <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{label}</span>
+      <span className="text-right text-sm font-medium text-slate-700">{value}</span>
+    </div>
+  );
+}
+
 function buildOutpatientBed(patients: WardPatient[]) {
   const usedBeds = patients
     .filter((patient) => patient.status === "Active")
@@ -328,7 +343,7 @@ export default function NursesTriagePage() {
         action={<Button onClick={() => setShowNewModal(true)}>+ New Triage Entry</Button>}
       />
 
-      <div className="grid gap-4 lg:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {[
           {
             label: "Active queue",
@@ -362,7 +377,7 @@ export default function NursesTriagePage() {
           <Link key={card.label} href={card.href} className="block">
             <Card className="h-full border-slate-200 transition hover:border-[var(--accent)]/30 hover:shadow-md">
               <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{card.label}</p>
-              <p className={`mt-3 text-3xl font-bold ${card.color}`}>{card.value}</p>
+              <p className={`mt-3 text-2xl font-bold sm:text-3xl ${card.color}`}>{card.value}</p>
               <p className="mt-1 text-sm text-slate-500">{card.sub}</p>
             </Card>
           </Link>
@@ -410,7 +425,73 @@ export default function NursesTriagePage() {
             Medication Administration {"->"}
           </Link>
         </div>
-        <div className="overflow-x-auto">
+        <div className="space-y-3 p-3 lg:hidden">
+          {displayedPatients.map((patient) => {
+            const triageStatus = getTriageStatus(patient, activeDoctorNames, activeDoctorSpecialties);
+            return (
+              <div key={patient.id} className={`rounded-xl border border-slate-200 bg-white p-4 shadow-sm ${patient.priority === "Critical" ? "ring-1 ring-red-100" : ""}`}>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <Link
+                      href={`${INTERNAL_PREFIX}/nurses/patients/${encodeURIComponent(patient.patientId)}`}
+                      className="truncate text-sm font-semibold text-slate-900 hover:text-[var(--accent)] hover:underline"
+                    >
+                      {patient.patientName}
+                    </Link>
+                    <p className="mt-0.5 text-[11px] text-slate-400">{patient.patientId}</p>
+                  </div>
+                  <span className={`rounded-full px-2.5 py-0.5 text-xs ${PRIORITY_STYLES[patient.priority]}`}>
+                    {mapPriorityToUrgency(patient.priority)}
+                  </span>
+                </div>
+                <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  <MobileMeta label="Bed" value={patient.bed} />
+                  <MobileMeta label="Doctor Route" value={describeDoctorRoute(patient)} />
+                  <MobileMeta label="BP" value={patient.vitals?.bp ?? "-"} />
+                  <MobileMeta label="Pulse" value={patient.vitals?.pulse ?? "-"} />
+                  <MobileMeta label="Temp" value={patient.vitals?.temp ?? "-"} />
+                  <MobileMeta label="SpO2" value={patient.vitals?.spo2 ?? "-"} />
+                </div>
+                <p className="mt-3 line-clamp-2 text-xs text-slate-500">{patient.diagnosis || "-"}</p>
+                <p className="mt-1 line-clamp-2 text-xs text-slate-400">{patient.notes || "No triage notes yet"}</p>
+                <div className="mt-3 flex items-center justify-between gap-2">
+                  <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
+                    triageStatus === "Ready for doctor"
+                      ? "bg-emerald-50 text-emerald-700"
+                      : triageStatus === "Awaiting doctor"
+                        ? "bg-sky-50 text-sky-700"
+                        : triageStatus === "Awaiting vitals"
+                          ? "bg-amber-50 text-amber-700"
+                          : "bg-slate-100 text-slate-600"
+                  }`}>
+                    {triageStatus}
+                  </span>
+                  <span className="text-[11px] text-slate-400">{fmtClock(patient.lastVitalsAt || patient.admittedAt)}</span>
+                </div>
+                <div className="mt-4 flex gap-2">
+                  <Button size="sm" className="flex-1" onClick={() => openTriage(patient)}>
+                    Record triage
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="flex-1"
+                    href={`${INTERNAL_PREFIX}/nurses/patients/${encodeURIComponent(patient.patientId)}`}
+                  >
+                    Open record
+                  </Button>
+                </div>
+              </div>
+            );
+          })}
+          {displayedPatients.length === 0 && (
+            <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm text-slate-400">
+              No outpatient triage patients match this filter.
+            </div>
+          )}
+        </div>
+
+        <div className="hidden overflow-x-auto lg:block">
           <table className="min-w-full text-sm">
             <thead>
               <tr className="border-b border-slate-100 bg-slate-50 text-left">
@@ -672,7 +753,7 @@ export default function NursesTriagePage() {
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
             {[
               { label: "BP", value: newBP, setValue: setNewBP, placeholder: "120/80" },
               { label: "Pulse", value: newPulse, setValue: setNewPulse, placeholder: "72" },
@@ -766,7 +847,7 @@ export default function NursesTriagePage() {
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
               {[
                 { label: "BP", value: editBP, setValue: setEditBP, placeholder: "120/80" },
                 { label: "Pulse", value: editPulse, setValue: setEditPulse, placeholder: "72" },

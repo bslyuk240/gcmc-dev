@@ -210,7 +210,7 @@ export default function NursesPatientRecordPage() {
               ) : null}
             </div>
 
-            <div className="grid grid-cols-2 gap-4 text-sm sm:grid-cols-4">
+            <div className="grid grid-cols-1 gap-4 text-sm sm:grid-cols-2 lg:grid-cols-4">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Patient ID</p>
                 <p className="mt-1 font-semibold text-slate-900">{patientId}</p>
@@ -334,29 +334,49 @@ export default function NursesPatientRecordPage() {
               {visits.length === 0 ? (
                 <p className="text-sm text-slate-400">No visit history found.</p>
               ) : (
-                <div className="overflow-x-auto">
-                  <table className="min-w-full text-sm">
-                    <thead>
-                      <tr className="border-b border-slate-100 bg-slate-50">
-                        {["Date", "Visit Type", "Assigned To", "Status"].map((heading) => (
-                          <th key={heading} className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                            {heading}
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {visits.map((visit) => (
-                        <tr key={visit.id}>
-                          <td className="px-4 py-3 text-slate-700">{fmtDateTime(visit.visitDate)}</td>
-                          <td className="px-4 py-3 font-medium text-slate-900">{visit.visitType || "--"}</td>
-                          <td className="px-4 py-3 text-slate-600">{visit.assignedTo || "--"}</td>
-                          <td className="px-4 py-3 text-slate-600">{visit.status || "--"}</td>
+                <>
+                  <div className="space-y-3 md:hidden">
+                    {visits.map((visit) => (
+                      <div key={visit.id} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="font-semibold text-slate-900">{visit.visitType || "--"}</p>
+                            <p className="text-xs text-slate-500">{fmtDateTime(visit.visitDate)}</p>
+                          </div>
+                          <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${STATUS_STYLES[visit.status || ""] ?? "bg-slate-100 text-slate-600"}`}>
+                            {visit.status || "--"}
+                          </span>
+                        </div>
+                        <p className="mt-2 text-xs text-slate-600">
+                          <span className="font-semibold text-slate-500">Assigned To:</span> {visit.assignedTo || "--"}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="hidden overflow-x-auto md:block">
+                    <table className="min-w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-slate-100 bg-slate-50">
+                          {["Date", "Visit Type", "Assigned To", "Status"].map((heading) => (
+                            <th key={heading} className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                              {heading}
+                            </th>
+                          ))}
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {visits.map((visit) => (
+                          <tr key={visit.id}>
+                            <td className="px-4 py-3 text-slate-700">{fmtDateTime(visit.visitDate)}</td>
+                            <td className="px-4 py-3 font-medium text-slate-900">{visit.visitType || "--"}</td>
+                            <td className="px-4 py-3 text-slate-600">{visit.assignedTo || "--"}</td>
+                            <td className="px-4 py-3 text-slate-600">{visit.status || "--"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
               )}
             </div>
           </Card>
@@ -450,7 +470,7 @@ export default function NursesPatientRecordPage() {
               <p className="text-sm text-slate-500">No ICU-specific monitoring entries have been recorded for this patient.</p>
             ) : (
               <div className="space-y-4 text-sm">
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   {[
                     ["BP", latestIcuVitals?.bp || "--"],
                     ["Pulse", latestIcuVitals?.pulse ? `${latestIcuVitals.pulse} bpm` : "--"],

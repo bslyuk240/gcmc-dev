@@ -238,7 +238,7 @@ export default function NursesHandoverNotesPage() {
 
       <Modal open={showAdd} onClose={() => !submitting && setShowAdd(false)} title="Add Handover Note" className="max-w-xl">
         <form id="handover-form" onSubmit={handleAdd} className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
               <label className="mb-1 block text-sm font-medium text-slate-700">Ward</label>
               <select value={formWard} onChange={(event) => setFormWard(event.target.value as WardFilter)} className={inputCls} disabled={submitting}>

@@ -54,11 +54,12 @@ export default function StaffDashboardPage() {
   const session = useHMSSession();
   const avatarUrl = session?.avatar_url?.trim() ?? null;
   const initials = session?.full_name
-    .split(" ")
+    ?.split(" ")
     .map((word) => word[0])
     .slice(0, 2)
     .join("")
     .toUpperCase() ?? "?";
+  const workPortalHref = `/login?next=${encodeURIComponent(`/app/${session?.department ?? "dashboard"}`)}`;
 
   // Attendance
   const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>([]);
@@ -274,7 +275,7 @@ export default function StaffDashboardPage() {
               )}
             </div>
             <Link
-              href={`/app/${session.department}`}
+              href={workPortalHref}
               className="mt-4 inline-flex items-center gap-1.5 rounded-xl border border-white/20 bg-white/10 px-3 py-2 text-xs font-bold text-white transition hover:bg-white/20"
             >
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M9 18l6-6-6-6"/></svg>
@@ -371,7 +372,7 @@ export default function StaffDashboardPage() {
       )}
 
       {/* ── Summary stats row ────────────────────────────────────────────── */}
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
         <div className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-center">
           <p className="text-xl font-black text-indigo-700">{upcoming.length}</p>
           <p className="text-[10px] font-semibold text-slate-400">Upcoming Shifts</p>
@@ -410,7 +411,7 @@ export default function StaffDashboardPage() {
       {/* ── Quick access tiles ────────────────────────────────────────────── */}
       <div>
         <p className="mb-3 text-xs font-bold uppercase tracking-wider text-slate-400">Quick Access</p>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           {QUICK_TILES.map((tile) => (
             <Link
               key={tile.href}

@@ -40,6 +40,15 @@ function formatExpenseTimestamp(value?: string) {
   });
 }
 
+function MobileMeta({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-start justify-between gap-3 border-b border-slate-100 py-2 last:border-b-0 last:pb-0">
+      <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{label}</span>
+      <span className="text-right text-sm font-medium text-slate-700">{value}</span>
+    </div>
+  );
+}
+
 export default function AccountsExpensesPage() {
   const { supplierPayments, payrollBatches, metrics } = useAccountsStore();
   const [filter, setFilter] = useState<"All" | "Pending" | "Paid">("All");
@@ -113,7 +122,38 @@ export default function AccountsExpensesPage() {
         ))}
       </div>
 
-      <Card className="overflow-hidden p-0">
+      <div className="space-y-3 md:hidden">
+        {filteredRows.map((row) => (
+          <Card key={row.id} className="p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="truncate font-semibold text-slate-900">{row.kind}</p>
+                <p className="text-xs text-slate-500">{row.beneficiary}</p>
+              </div>
+              <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${STATUS_STYLES[row.status] ?? STATUS_STYLES.Draft}`}>
+                {row.status}
+              </span>
+            </div>
+
+            <div className="mt-4 space-y-2">
+              <MobileMeta label="Reference" value={row.reference} />
+              <MobileMeta label="Amount" value={`â‚¦${row.amount.toLocaleString()}`} />
+              <MobileMeta label="Date" value={formatExpenseTimestamp(row.timestamp)} />
+            </div>
+
+            <div className="mt-4">
+              <Link href={row.href} className="text-xs font-semibold text-[var(--accent)] hover:underline">
+                Open source
+              </Link>
+            </div>
+          </Card>
+        ))}
+        {filteredRows.length === 0 && (
+          <Card className="p-6 text-center text-sm text-slate-400">No expense records found.</Card>
+        )}
+      </div>
+
+      <Card className="hidden overflow-hidden p-0 md:block">
         <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
           <div>
             <h3 className="font-bold text-slate-900">Expense Ledger</h3>

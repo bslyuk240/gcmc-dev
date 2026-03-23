@@ -20,6 +20,15 @@ const PRIORITY_STYLES: Record<string, string> = {
   STAT: "bg-red-100 text-red-700 font-bold",
 };
 
+function MobileMeta({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-start justify-between gap-3 rounded-lg bg-slate-50 px-3 py-2">
+      <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{label}</span>
+      <span className="text-right text-sm font-medium text-slate-700">{value}</span>
+    </div>
+  );
+}
+
 export default function LabResultsPage() {
   const { tests } = useLabStore();
   const [viewTest, setViewTest] = useState<LabTest | null>(null);
@@ -39,7 +48,7 @@ export default function LabResultsPage() {
       />
 
       {/* Summary */}
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {[
           { label: "Normal", value: completed.filter((t) => t.interpretation === "Normal").length, color: "text-emerald-700", bg: "bg-emerald-50" },
           { label: "Abnormal", value: abnormalCount, color: abnormalCount > 0 ? "text-amber-700" : "text-slate-600", bg: "bg-amber-50" },
@@ -47,7 +56,7 @@ export default function LabResultsPage() {
         ].map((s) => (
           <Card key={s.label} className={`p-5 ${s.bg} border-0`}>
             <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{s.label} Results</p>
-            <p className={`mt-1 text-3xl font-bold ${s.color}`}>{s.value}</p>
+            <p className={`mt-1 text-2xl font-bold sm:text-3xl ${s.color}`}>{s.value}</p>
           </Card>
         ))}
       </div>
@@ -71,7 +80,34 @@ export default function LabResultsPage() {
             ))}
           </div>
         </div>
-        <div className="overflow-x-auto">
+        <div className="space-y-3 p-3 md:hidden">
+          {filtered.map((t) => (
+            <Card key={t.id} className={`p-4 ${t.interpretation === "Critical" ? "border-red-200 bg-red-50/40" : "bg-white"}`}>
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold text-slate-900">{t.patientName}</p>
+                  <p className="text-xs text-slate-400">{t.patientId}</p>
+                </div>
+                <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${PRIORITY_STYLES[t.priority]}`}>{t.priority}</span>
+              </div>
+              <div className="mt-3 grid grid-cols-1 gap-2">
+                <MobileMeta label="Test" value={t.testName} />
+                <MobileMeta label="Category" value={t.category} />
+                <MobileMeta label="Result" value={t.resultValue ?? "—"} />
+                <MobileMeta label="Interpretation" value={t.interpretation ?? "-"} />
+                <MobileMeta label="Ordered By" value={t.orderedBy} />
+                <MobileMeta label="Completed" value={t.completedAt ?? "—"} />
+              </div>
+              <div className="mt-3 flex justify-end">
+                <Button size="sm" variant="outline" onClick={() => setViewTest(t)}>View</Button>
+              </div>
+            </Card>
+          ))}
+          {filtered.length === 0 && (
+            <p className="px-2 py-8 text-center text-sm text-slate-400">No results match this filter.</p>
+          )}
+        </div>
+        <div className="hidden overflow-x-auto md:block">
           <table className="min-w-full text-sm text-left">
             <thead>
               <tr className="bg-slate-50 border-b border-slate-100">
@@ -123,7 +159,7 @@ export default function LabResultsPage() {
       {viewTest && (
         <Modal open={true} onClose={() => setViewTest(null)} title={`Result — ${viewTest.testName}`}>
           <div className="space-y-4 text-sm">
-            <div className="grid grid-cols-2 gap-3 rounded-lg bg-slate-50 p-3">
+            <div className="grid grid-cols-1 gap-3 rounded-lg bg-slate-50 p-3 sm:grid-cols-2">
               <div><p className="text-xs text-slate-500">Patient</p><p className="font-semibold">{viewTest.patientName}</p></div>
               <div><p className="text-xs text-slate-500">Patient ID</p><p className="font-mono text-xs">{viewTest.patientId}</p></div>
               <div><p className="text-xs text-slate-500">Test</p><p className="font-semibold">{viewTest.testName}</p></div>

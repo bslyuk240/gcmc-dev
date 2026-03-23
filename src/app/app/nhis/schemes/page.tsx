@@ -33,6 +33,15 @@ const EMPTY_FORM: SchemeFormData = {
   isActive: true,
 };
 
+function MobileMeta({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg bg-slate-50 px-3 py-2">
+      <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">{label}</p>
+      <div className="mt-0.5 text-xs font-medium text-slate-700">{value}</div>
+    </div>
+  );
+}
+
 export default function NhisSchemesPage() {
   const { schemes, hydrated } = useNhisStore();
   const [toast, setToast] = useState<ToastData | null>(null);
@@ -152,7 +161,40 @@ export default function NhisSchemesPage() {
         {!hydrated ? (
           <div className="px-5 py-8 text-center text-sm text-slate-400">Loading…</div>
         ) : (
-          <div className="overflow-x-auto">
+          <>
+          <div className="grid gap-3 p-3 md:hidden">
+            {schemes.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm text-slate-400">
+                No HMO schemes configured yet. Click &quot;Add Scheme&quot; to get started.
+              </div>
+            ) : (
+              schemes.map((s) => (
+                <Card key={s.id} className="p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold text-slate-900">{s.name}</p>
+                      <p className="mt-0.5 font-mono text-[11px] text-slate-500">{s.code}</p>
+                    </div>
+                    <span className={`rounded-full px-2.5 py-1 text-[10px] font-semibold ${s.isActive ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>
+                      {s.isActive ? "Active" : "Inactive"}
+                    </span>
+                  </div>
+                  <div className="mt-3 grid gap-2">
+                    <MobileMeta label="Type" value={s.type === "fee_for_service" ? "Fee-for-Service" : "Capitation"} />
+                    <MobileMeta label="Contact" value={s.contactPerson || "—"} />
+                    <MobileMeta label="Phone" value={s.contactPhone || "—"} />
+                  </div>
+                  <div className="mt-3 flex flex-wrap justify-end gap-2">
+                    <Button size="sm" variant="ghost" onClick={() => openEdit(s)}>Edit</Button>
+                    <Button size="sm" variant="ghost" onClick={() => handleToggleActive(s)}>
+                      {s.isActive ? "Deactivate" : "Activate"}
+                    </Button>
+                  </div>
+                </Card>
+              ))
+            )}
+          </div>
+          <div className="hidden overflow-x-auto md:block">
             <table className="min-w-full text-sm text-left">
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-100">
@@ -199,6 +241,7 @@ export default function NhisSchemesPage() {
               </tbody>
             </table>
           </div>
+          </>
         )}
       </Card>
 

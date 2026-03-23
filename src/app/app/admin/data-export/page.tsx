@@ -261,12 +261,12 @@ export default function DataExportPage() {
 
       {/* Patient ZIP export */}
       <Card className="p-6">
-        <div className="flex items-start gap-4">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
           <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-indigo-100 text-2xl">📦</div>
           <div className="flex-1">
             <h2 className="text-base font-bold text-slate-900">Full Patient Visit Export (ZIP)</h2>
             <p className="mt-1 text-sm text-slate-500">
-              Bundles every patient's complete visit history across all departments into individual HTML files inside a ZIP archive.
+              Bundles every patient&apos;s complete visit history across all departments into individual HTML files inside a ZIP archive.
               Each HTML file is printable and can be saved as PDF. Includes a summary CSV.
             </p>
             <div className="mt-4 flex flex-wrap gap-3">
@@ -301,7 +301,7 @@ export default function DataExportPage() {
                   <span className="text-lg">📋</span>
                 </div>
               </div>
-              <div className="mt-4 flex gap-2">
+              <div className="mt-4 flex flex-col gap-2 sm:flex-row">
                 <Button size="sm" variant="outline" onClick={e.onCSV} className="flex-1">
                   ⬇ CSV
                 </Button>

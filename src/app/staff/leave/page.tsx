@@ -101,7 +101,7 @@ export default function LeavePage() {
         </p>
       </div>
 
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
         {[
           { label: `Annual Used (${currentYear})`, value: annual, unit: "days", color: "text-indigo-700" },
           { label: "Remaining", value: remaining, unit: "days", color: "text-emerald-700" },
@@ -131,7 +131,7 @@ export default function LeavePage() {
               {LEAVE_TYPES.map((item) => <option key={item}>{item}</option>)}
             </select>
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
               <label className="mb-1 block text-xs font-semibold text-slate-600">Start Date</label>
               <input type="date" value={startDate} onChange={(event) => setStart(event.target.value)} className={inputCls} />

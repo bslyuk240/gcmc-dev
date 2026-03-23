@@ -69,6 +69,21 @@ function sumConsultationFees(statuses: string[], fees: Array<{ fee: number; stat
   return fees.filter((entry) => statuses.includes(entry.status)).reduce((sum, entry) => sum + entry.fee, 0);
 }
 
+function MobileMeta({
+  label,
+  value,
+}: {
+  label: string;
+  value: string | number;
+}) {
+  return (
+    <div className="rounded-lg bg-slate-50 px-3 py-2">
+      <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">{label}</p>
+      <div className="mt-0.5 text-xs font-medium text-slate-700">{value}</div>
+    </div>
+  );
+}
+
 export default function DoctorsDashboardPage() {
   const { consultations, doctors, admissionOrders } = useDoctorsStore();
   const { prescriptions } = usePharmacyStore();
@@ -177,7 +192,7 @@ export default function DoctorsDashboardPage() {
         </div>
       ))}
 
-      <div className="grid grid-cols-2 gap-3 sm:flex sm:gap-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-3">
         {[
           { label: "Consultations Today", value: todayConsults.length, color: "text-slate-900", href: `${INTERNAL_PREFIX}/doctors/consultations`, sub: "Open consult list" },
           { label: "Active Now", value: activeConsults.length, color: "text-violet-700", href: `${INTERNAL_PREFIX}/doctors/queue`, sub: "Visible queue work" },
@@ -208,7 +223,38 @@ export default function DoctorsDashboardPage() {
                 Open all -&gt;
               </Link>
             </div>
-            <div className="divide-y divide-slate-100">
+            <div className="grid gap-3 p-4 md:hidden">
+              {todayConsults.slice(0, 5).map((entry) => (
+                <div key={entry.id} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold text-slate-900">{entry.patientName}</p>
+                      <p className="mt-0.5 text-[11px] text-slate-500">
+                        {entry.patientId} {"·"} {entry.time}
+                      </p>
+                    </div>
+                    <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${CONSULT_STATUS_STYLES[entry.status]}`}>
+                      {entry.status}
+                    </span>
+                  </div>
+                  <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    <MobileMeta label="Consult Type" value={entry.consultType} />
+                    <MobileMeta label="Doctor" value={entry.doctorName} />
+                    <MobileMeta label="Complaint" value={entry.chiefComplaint || "—"} />
+                    <MobileMeta label="Actions" value={entry.rxWritten ? "Rx" : "Open"} />
+                  </div>
+                  {entry.chiefComplaint ? (
+                    <p className="mt-3 line-clamp-2 text-xs text-slate-500">{entry.chiefComplaint}</p>
+                  ) : null}
+                </div>
+              ))}
+              {todayConsults.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm text-slate-400">
+                  No consultations for you today yet. Patients routed to you will appear in the waiting queue.
+                </div>
+              ) : null}
+            </div>
+            <div className="hidden divide-y divide-slate-100 md:block">
               {todayConsults.slice(0, 5).map((entry) => (
                 <div key={entry.id} className="flex items-center gap-4 px-5 py-3">
                   <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-xs font-bold text-indigo-700">
@@ -254,7 +300,44 @@ export default function DoctorsDashboardPage() {
               </Link>
             </div>
             {myPendingLabOrders.length > 0 ? (
-              <div className="overflow-x-auto">
+              <>
+                <div className="grid gap-3 p-4 md:hidden">
+                  {myPendingLabOrders.slice(0, 5).map((entry) => (
+                    <div key={entry.id} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-semibold text-slate-900">{entry.patientName}</p>
+                          <p className="mt-0.5 text-[11px] text-slate-500">{entry.testName}</p>
+                        </div>
+                        <span
+                          className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${
+                            entry.status === "In Progress"
+                              ? "bg-violet-50 text-violet-700"
+                              : entry.status === "Sample Collected"
+                                ? "bg-sky-50 text-sky-700"
+                                : "bg-amber-50 text-amber-700"
+                          }`}
+                        >
+                          {entry.status}
+                        </span>
+                      </div>
+                      <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                        <MobileMeta
+                          label="Priority"
+                          value={
+                            entry.priority === "STAT"
+                              ? "STAT"
+                              : entry.priority === "Urgent"
+                                ? "Urgent"
+                                : "Routine"
+                          }
+                        />
+                        <MobileMeta label="Status" value={entry.status} />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div className="hidden overflow-x-auto md:block">
                 <table className="min-w-full text-sm">
                   <thead>
                     <tr className="border-b border-slate-100 bg-slate-50">
@@ -301,6 +384,7 @@ export default function DoctorsDashboardPage() {
                   </tbody>
                 </table>
               </div>
+              </>
             ) : (
               <div className="px-5 py-6 text-center text-sm text-slate-400">
                 No pending lab orders are assigned to you right now.
@@ -312,7 +396,7 @@ export default function DoctorsDashboardPage() {
         <div className="space-y-5">
           <Card className="p-5">
             <h3 className="mb-3 font-bold text-slate-900">Quick Actions</h3>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               {[
                 { label: "Start Consult", href: `${INTERNAL_PREFIX}/doctors/consultations` },
                 { label: "Queue", href: `${INTERNAL_PREFIX}/doctors/queue` },

@@ -121,10 +121,19 @@ export default function PayslipsPage() {
 
       <div className="rounded-xl border border-slate-200 bg-white p-4">
         <p className="text-xs font-bold uppercase tracking-wider text-slate-400">Year to Date ({currentYear})</p>
-        <div className="mt-2 flex justify-between text-sm">
-          <div><p className="text-slate-500">Gross Paid</p><p className="font-bold text-slate-900">{money(ytdPayslips.reduce((sum, payslip) => sum + payslip.grossPay, 0))}</p></div>
-          <div><p className="text-slate-500">Total Deductions</p><p className="font-bold text-red-600">{money(ytdPayslips.reduce((sum, payslip) => sum + payslip.totalDeductions, 0))}</p></div>
-          <div><p className="text-slate-500">Net Received</p><p className="font-bold text-emerald-700">{money(ytdPayslips.reduce((sum, payslip) => sum + payslip.netPay, 0))}</p></div>
+        <div className="mt-2 grid grid-cols-1 gap-3 text-sm sm:grid-cols-3">
+          <div className="rounded-lg bg-slate-50 px-3 py-2">
+            <p className="text-slate-500">Gross Paid</p>
+            <p className="font-bold text-slate-900">{money(ytdPayslips.reduce((sum, payslip) => sum + payslip.grossPay, 0))}</p>
+          </div>
+          <div className="rounded-lg bg-slate-50 px-3 py-2">
+            <p className="text-slate-500">Total Deductions</p>
+            <p className="font-bold text-red-600">{money(ytdPayslips.reduce((sum, payslip) => sum + payslip.totalDeductions, 0))}</p>
+          </div>
+          <div className="rounded-lg bg-slate-50 px-3 py-2">
+            <p className="text-slate-500">Net Received</p>
+            <p className="font-bold text-emerald-700">{money(ytdPayslips.reduce((sum, payslip) => sum + payslip.netPay, 0))}</p>
+          </div>
         </div>
       </div>
 

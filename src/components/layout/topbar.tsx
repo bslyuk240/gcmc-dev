@@ -77,7 +77,7 @@ export function Topbar() {
     .slice(0, 2);
 
   return (
-    <header className="sticky top-0 z-10 flex h-14 shrink-0 items-center justify-between border-b border-slate-200 bg-white px-4 sm:h-16 sm:px-6">
+    <header className="sticky top-0 z-10 hidden h-14 shrink-0 items-center justify-between border-b border-slate-200 bg-white px-4 sm:h-16 sm:px-6 xl:flex">
       <div className="flex min-w-0 flex-1 items-center gap-3 sm:gap-5">
         <button
           type="button"

@@ -95,6 +95,21 @@ function buildPrescriptionKey(rxId: string, drugName: string) {
   return `From prescription ${rxId} / ${drugName}`.toLowerCase();
 }
 
+function MobileMeta({
+  label,
+  value,
+}: {
+  label: string;
+  value: string | number;
+}) {
+  return (
+    <div className="flex items-start justify-between gap-3 border-b border-slate-100 py-2 last:border-b-0 last:pb-0">
+      <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{label}</span>
+      <span className="text-right text-sm font-medium text-slate-700">{value}</span>
+    </div>
+  );
+}
+
 export default function NursesMedicationAdministrationPage() {
   const session = useHMSSession();
   const staffName = session?.full_name ?? "Nurse";
@@ -361,7 +376,7 @@ export default function NursesMedicationAdministrationPage() {
         }
       />
 
-      <div className="grid gap-4 lg:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {[
           {
             label: "Dispensed Prescriptions",
@@ -390,7 +405,7 @@ export default function NursesMedicationAdministrationPage() {
         ].map((item) => (
           <Card key={item.label} className="p-5">
             <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{item.label}</p>
-            <p className={`mt-2 text-3xl font-bold ${item.color}`}>{item.value}</p>
+            <p className={`mt-2 text-2xl font-bold sm:text-3xl ${item.color}`}>{item.value}</p>
             <p className="mt-1 text-xs text-slate-500">{item.sub}</p>
           </Card>
         ))}
@@ -431,7 +446,74 @@ export default function NursesMedicationAdministrationPage() {
                 Showing {doctorPrescriptions.length} prescription(s) for admitted patients. Only dispensed items can move into MAR.
               </div>
               <Card className="overflow-hidden p-0">
-                <div className="overflow-x-auto">
+                <div className="space-y-3 p-3 md:hidden">
+                  {doctorPrescriptions.map((rx) => {
+                    const patient = patientByDisplayId.get(rx.patientId);
+                    return (
+                      <div key={rx.id} className={`rounded-xl border border-slate-200 bg-white p-4 shadow-sm ${rx.urgency === "Urgent" ? "ring-1 ring-red-100" : ""}`}>
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <Link
+                              href={`${INTERNAL_PREFIX}/nurses/patients/${encodeURIComponent(rx.patientId)}`}
+                              className="truncate text-sm font-semibold text-slate-900 hover:text-accent hover:underline"
+                            >
+                              {rx.patientName}
+                            </Link>
+                            <p className="mt-0.5 text-[11px] text-slate-400">
+                              {patient ? `${patient.unit} / Bed ${patient.bed}` : rx.department || "--"}
+                            </p>
+                          </div>
+                          <span
+                            className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${
+                              rx.status === "Dispensed"
+                                ? "bg-emerald-100 text-emerald-700"
+                                : rx.status === "Pending"
+                                  ? "bg-amber-100 text-amber-700"
+                                  : rx.status === "Processing"
+                                    ? "bg-sky-100 text-sky-700"
+                                    : "bg-slate-100 text-slate-500"
+                            }`}
+                          >
+                            {rx.status}
+                          </span>
+                        </div>
+                        <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                          <MobileMeta label="Rx ID" value={rx.id} />
+                          <MobileMeta label="Doctor" value={rx.doctorName} />
+                          <MobileMeta label="Created" value={fmtDateTime(rx.createdAt)} />
+                          <MobileMeta label="Urgency" value={rx.urgency} />
+                        </div>
+                        <div className="mt-3 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                          {rx.drugs.map((drug) => (
+                            <div key={`${rx.id}-${drug.name}`} className="py-0.5">
+                              <span className="font-medium text-slate-800">{drug.name}</span>
+                              <span className="text-slate-400"> / {drug.dosage} / {drug.frequency} / {drug.duration}</span>
+                            </div>
+                          ))}
+                          {rx.notes ? <p className="mt-1 italic text-amber-700">{rx.notes}</p> : null}
+                        </div>
+                        <div className="mt-4 flex flex-wrap gap-2">
+                          <Link
+                            href={`${INTERNAL_PREFIX}/nurses/patients/${encodeURIComponent(rx.patientId)}`}
+                            className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+                          >
+                            Open record
+                          </Link>
+                          {rx.status === "Dispensed" ? (
+                            <Button size="sm" onClick={() => void handleAddToMAR(rx)}>
+                              + Add to MAR
+                            </Button>
+                          ) : (
+                            <span className="self-center text-xs text-slate-400">
+                              {rx.status === "Pending" ? "Awaiting Pharmacy" : rx.status}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="hidden overflow-x-auto md:block">
                   <table className="min-w-full text-left text-sm">
                     <thead>
                       <tr className="border-b border-slate-100 bg-slate-50">
@@ -530,14 +612,54 @@ export default function NursesMedicationAdministrationPage() {
           ) : null}
 
           {!loadingMar && scheduledEntries.length > 0 ? (
-            <Card className="overflow-hidden p-0">
+              <Card className="overflow-hidden p-0">
               <div className="flex items-center gap-3 border-b border-slate-100 px-5 py-4">
                 <h3 className="font-bold text-slate-900">Pending Administration</h3>
                 <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-bold text-red-700">
                   {scheduledEntries.length} scheduled
                 </span>
               </div>
-              <div className="overflow-x-auto">
+              <div className="space-y-3 p-3 md:hidden">
+                {scheduledEntries.map((entry) => (
+                  <div key={entry.id} className={`rounded-xl border border-slate-200 bg-white p-4 shadow-sm ${getDueState(entry) === "overdue" ? "ring-1 ring-red-100" : ""}`}>
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <Link
+                          href={`${INTERNAL_PREFIX}/nurses/patients/${encodeURIComponent(entry.patientId)}`}
+                          className="truncate text-sm font-semibold text-slate-900 hover:text-accent hover:underline"
+                        >
+                          {entry.patientName}
+                        </Link>
+                        <p className="mt-0.5 text-[11px] text-slate-400">{entry.unit}</p>
+                      </div>
+                      <StatusBadge variant={getDueVariant(entry)}>{getDueLabel(entry)}</StatusBadge>
+                    </div>
+                    <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                      <MobileMeta label="Drug" value={entry.drug} />
+                      <MobileMeta label="Dose" value={entry.dose} />
+                      <MobileMeta label="Route" value={entry.route} />
+                      <MobileMeta label="Due" value={fmtDateTime(entry.scheduledAt)} />
+                    </div>
+                    <div className="mt-4 flex gap-2">
+                      <Button size="sm" className="flex-1" onClick={() => setConfirmTarget(entry)}>
+                        Administer
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="flex-1"
+                        onClick={() => {
+                          setSkipTarget(entry);
+                          setSkipReason("");
+                        }}
+                      >
+                        Hold
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="hidden overflow-x-auto md:block">
                 <table className="min-w-full text-left text-sm">
                   <thead>
                     <tr className="border-b border-slate-100 bg-slate-50">
@@ -593,11 +715,30 @@ export default function NursesMedicationAdministrationPage() {
           ) : null}
 
           {!loadingMar && completedEntries.length > 0 ? (
-            <Card className="overflow-hidden p-0">
+              <Card className="overflow-hidden p-0">
               <div className="border-b border-slate-100 px-5 py-4">
                 <h3 className="font-bold text-slate-900">Completed / Held</h3>
               </div>
-              <div className="overflow-x-auto">
+              <div className="space-y-3 p-3 md:hidden">
+                {completedEntries.map((entry) => (
+                  <div key={entry.id} className="rounded-xl border border-slate-200 bg-slate-50/60 p-4 shadow-sm">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold text-slate-900">{entry.patientName}</p>
+                        <p className="mt-0.5 text-[11px] text-slate-400">{entry.drug}</p>
+                      </div>
+                      <StatusBadge variant={MAR_STATUS_BADGE[entry.status]}>{entry.status.toLowerCase()}</StatusBadge>
+                    </div>
+                    <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                      <MobileMeta label="Dose" value={entry.dose} />
+                      <MobileMeta label="Route" value={entry.route} />
+                      <MobileMeta label="Updated" value={fmtDateTime(entry.givenAt ?? entry.createdAt)} />
+                      <MobileMeta label="By" value={entry.givenBy ?? "--"} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="hidden overflow-x-auto md:block">
                 <table className="min-w-full text-left text-sm">
                   <thead>
                     <tr className="border-b border-slate-100 bg-slate-50">
@@ -647,7 +788,56 @@ export default function NursesMedicationAdministrationPage() {
             <div className="border-b border-slate-100 px-5 py-4">
               <h3 className="font-bold text-slate-900">Medication Requests to Pharmacy</h3>
             </div>
-            <div className="overflow-x-auto">
+            <div className="space-y-3 p-3 md:hidden">
+              {nurseRequests.map((request) => (
+                <div key={request.id} className={`rounded-xl border border-slate-200 bg-white p-4 shadow-sm ${request.status === "Ready" ? "ring-1 ring-violet-100" : ""}`}>
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <Link
+                        href={`${INTERNAL_PREFIX}/nurses/patients/${encodeURIComponent(request.patientId)}`}
+                        className="truncate text-sm font-semibold text-slate-900 hover:text-accent hover:underline"
+                      >
+                        {request.patientName}
+                      </Link>
+                      <p className="mt-0.5 text-[11px] text-slate-400">{request.ward}</p>
+                    </div>
+                    <span
+                      className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${
+                        NURSE_REQUEST_STATUS_COLOR[request.status] ?? "bg-slate-100 text-slate-500"
+                      }`}
+                    >
+                      {request.status}
+                    </span>
+                  </div>
+                  <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    <MobileMeta label="Drug" value={request.drug} />
+                    <MobileMeta label="Route" value={request.route} />
+                    <MobileMeta label="Urgency" value={request.urgency} />
+                    <MobileMeta label="Requested" value={fmtDateTime(request.requestedAt)} />
+                  </div>
+                  <p className="mt-3 text-xs text-slate-500">
+                    {request.dosage} / {request.qty}
+                  </p>
+                  <div className="mt-4">
+                    {request.status === "Ready" ? (
+                      <Button size="sm" className="w-full" onClick={() => void markCollected(request)}>
+                        Collect &amp; Add to MAR
+                      </Button>
+                    ) : request.status === "Collected" ? (
+                      <span className="text-xs font-semibold text-emerald-600">In MAR</span>
+                    ) : (
+                      <span className="text-xs text-slate-400">Awaiting pharmacy</span>
+                    )}
+                  </div>
+                </div>
+              ))}
+              {nurseRequests.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm text-slate-400">
+                  No medication requests sent yet.
+                </div>
+              ) : null}
+            </div>
+            <div className="hidden overflow-x-auto md:block">
               <table className="min-w-full text-left text-sm">
                 <thead>
                   <tr className="border-b border-slate-100 bg-slate-50">
@@ -788,7 +978,7 @@ export default function NursesMedicationAdministrationPage() {
             ) : null}
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
               <label className="mb-1 block text-sm font-semibold text-slate-700">Patient ID</label>
               <input
@@ -822,7 +1012,7 @@ export default function NursesMedicationAdministrationPage() {
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
               <label className="mb-1 block text-sm font-semibold text-slate-700">Dosage</label>
               <input

@@ -11,6 +11,15 @@ import { useHMSSession } from "@/modules/rbac/hooks";
 import { updateLabTest, type LabTest } from "@/lib/data/lab-store";
 import { fetchStaffMembers } from "@/lib/supabase/db";
 
+function MobileMeta({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-center justify-between gap-3 rounded-lg bg-slate-50 px-3 py-2.5">
+      <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{label}</span>
+      <span className="text-right text-sm font-medium text-slate-700">{value}</span>
+    </div>
+  );
+}
+
 const PRIORITY_STYLES: Record<string, string> = {
   Routine: "bg-slate-100 text-slate-600",
   Urgent: "bg-amber-100 text-amber-700",
@@ -87,12 +96,12 @@ export default function LabProcessingPage() {
       <div className="grid gap-4 sm:grid-cols-2">
         <Card className="p-5 bg-sky-50 border-0">
           <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Ready to Process</p>
-          <p className="mt-1 text-3xl font-bold text-sky-700">{readyToProcess.length}</p>
+          <p className="mt-1 text-2xl font-bold text-sky-700 sm:text-3xl">{readyToProcess.length}</p>
           <p className="mt-0.5 text-xs text-slate-500">Sample collected, awaiting analysis</p>
         </Card>
         <Card className="p-5 bg-violet-50 border-0">
           <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Currently In Progress</p>
-          <p className="mt-1 text-3xl font-bold text-violet-700">{inProgress.length}</p>
+          <p className="mt-1 text-2xl font-bold text-violet-700 sm:text-3xl">{inProgress.length}</p>
           <p className="mt-0.5 text-xs text-slate-500">Being processed right now</p>
         </Card>
       </div>
@@ -103,7 +112,49 @@ export default function LabProcessingPage() {
           <h3 className="font-bold text-slate-900">Samples Ready for Processing</h3>
           <p className="text-xs text-slate-400 mt-0.5">Sample has been collected — assign technician and start processing</p>
         </div>
-        <div className="overflow-x-auto">
+        <div className="space-y-3 px-4 py-4 md:hidden">
+          {readyToProcess.map((t) => (
+            <div
+              key={t.id}
+              className={`rounded-2xl border border-slate-200 bg-white p-4 shadow-sm ${
+                t.priority === "STAT" ? "ring-1 ring-red-100" : t.priority === "Urgent" ? "ring-1 ring-amber-100" : ""
+              }`}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold text-slate-900">{t.patientName}</p>
+                  <p className="text-xs text-slate-400">{t.patientId}</p>
+                </div>
+                <span className={`rounded-full px-2.5 py-0.5 text-xs ${PRIORITY_STYLES[t.priority]}`}>{t.priority}</span>
+              </div>
+              <div className="mt-3 space-y-2">
+                <MobileMeta label="Test" value={t.testName} />
+                <MobileMeta label="Sample" value={t.sampleType} />
+                <MobileMeta label="Collected by" value={t.sampleCollectedBy ?? "—"} />
+                <MobileMeta label="Time" value={t.sampleCollectedAt ?? "—"} />
+              </div>
+              <div className="mt-3">
+                <Button
+                  size="sm"
+                  className="w-full"
+                  onClick={() => {
+                    setProcessTarget(t);
+                    setTechName(techOptions.includes(staffName) ? staffName : (techOptions[0] ?? staffName));
+                    setEquipment(EQUIPMENT_OPTIONS[0]);
+                  }}
+                >
+                  Start Processing
+                </Button>
+              </div>
+            </div>
+          ))}
+          {readyToProcess.length === 0 && (
+            <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-10 text-center text-sm text-slate-400">
+              No samples ready for processing. Collect samples first.
+            </div>
+          )}
+        </div>
+        <div className="hidden overflow-x-auto md:block">
           <table className="min-w-full text-sm text-left">
             <thead>
               <tr className="bg-slate-50 border-b border-slate-100">
@@ -147,7 +198,26 @@ export default function LabProcessingPage() {
           <div className="border-b border-slate-100 px-5 py-4">
             <h3 className="font-bold text-slate-900">Currently In Progress</h3>
           </div>
-          <div className="divide-y divide-slate-100">
+          <div className="space-y-3 px-4 py-4 md:hidden">
+            {inProgress.map((t) => (
+              <div key={t.id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-semibold text-slate-900">
+                      {t.patientName} - {t.testName}
+                    </p>
+                    <p className="text-xs text-slate-400">Technician: {t.technicianName}</p>
+                  </div>
+                  <span className={`rounded-full px-2 py-0.5 text-xs ${PRIORITY_STYLES[t.priority]}`}>{t.priority}</span>
+                </div>
+                <div className="mt-3 space-y-2">
+                  <MobileMeta label="Equipment" value={t.equipmentUsed ?? "—"} />
+                  <MobileMeta label="Started" value={t.processingStartedAt ?? "—"} />
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="hidden divide-y divide-slate-100 md:block">
             {inProgress.map((t) => (
               <div key={t.id} className="flex items-center gap-4 px-5 py-3">
                 <div className="h-2 w-2 shrink-0 rounded-full bg-violet-400 animate-pulse" />

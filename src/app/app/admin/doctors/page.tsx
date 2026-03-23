@@ -16,6 +16,15 @@ const DR_STATUS: Record<string, string> = {
   Available: "bg-emerald-50 text-emerald-700",
 };
 
+function MobileMeta({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-start justify-between gap-3 border-b border-slate-100 py-2 last:border-b-0 last:pb-0">
+      <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{label}</span>
+      <span className="text-right text-sm font-medium text-slate-700">{value}</span>
+    </div>
+  );
+}
+
 export default function AdminDoctorsMonitorPage() {
   const activeConsults = CONSULTATIONS.filter((c) => c.status === "in_progress").length;
   const completed = CONSULTATIONS.filter((c) => c.status === "completed").length;
@@ -28,16 +37,16 @@ export default function AdminDoctorsMonitorPage() {
         <PageHeader title="Doctors Monitor" description="Clinical operations — consultations, doctor workload, prescriptions, and patient throughput." />
       </div>
 
-      <div className="flex gap-3">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {[
           { label: "Active Consultations", value: activeConsults, color: "text-violet-700" },
           { label: "Completed Today", value: completed, color: "text-emerald-700" },
           { label: "Prescriptions Written", value: rxCount, color: "text-sky-700" },
           { label: "Doctors Busy", value: `${busyDoctors}/${DOCTORS.length}`, color: busyDoctors === DOCTORS.length ? "text-red-600" : "text-amber-600" },
         ].map((s) => (
-          <Card key={s.label} className="flex flex-1 items-center gap-3 px-4 py-3">
-            <p className={`text-2xl font-bold shrink-0 ${s.color}`}>{s.value}</p>
-            <p className="text-xs font-semibold text-slate-500 leading-tight">{s.label}</p>
+          <Card key={s.label} className="flex items-center gap-3 px-4 py-3">
+            <p className={`shrink-0 text-2xl font-bold ${s.color}`}>{s.value}</p>
+            <p className="text-xs font-semibold leading-tight text-slate-500">{s.label}</p>
           </Card>
         ))}
       </div>
@@ -49,7 +58,25 @@ export default function AdminDoctorsMonitorPage() {
             <div className="border-b border-slate-100 px-5 py-4">
               <h3 className="font-bold text-slate-900">Doctor Workload Today</h3>
             </div>
-            <div className="overflow-x-auto">
+            <div className="space-y-3 p-4 md:hidden">
+              {DOCTORS.map((d) => (
+                <Card key={d.name} className="p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="font-semibold text-slate-900">{d.name}</p>
+                      <p className="text-xs text-slate-500">{d.specialty}</p>
+                    </div>
+                    <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${DR_STATUS[d.status]}`}>{d.status}</span>
+                  </div>
+                  <div className="mt-3 space-y-2">
+                    <MobileMeta label="Consultations" value={String(d.consultations)} />
+                    <MobileMeta label="Active Now" value={String(d.active)} />
+                    <MobileMeta label="Avg. Time" value={d.avgTime} />
+                  </div>
+                </Card>
+              ))}
+            </div>
+            <div className="hidden overflow-x-auto md:block">
               <table className="min-w-full text-sm">
                 <thead>
                   <tr className="bg-slate-50 border-b border-slate-100">
@@ -81,7 +108,27 @@ export default function AdminDoctorsMonitorPage() {
             <div className="border-b border-slate-100 px-5 py-4">
               <h3 className="font-bold text-slate-900">Recent Consultations</h3>
             </div>
-            <div className="divide-y divide-slate-100">
+            <div className="space-y-3 p-4 md:hidden">
+              {CONSULTATIONS.map((c) => (
+                <Card key={c.id} className="p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="font-medium text-sm text-slate-900">{c.patient}</p>
+                      <p className="text-xs text-slate-500">{c.doctor}</p>
+                    </div>
+                    <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${STATUS_STYLES[c.status]}`}>
+                      {c.status === "in_progress" ? "In Progress" : "Completed"}
+                    </span>
+                  </div>
+                  <div className="mt-3 space-y-2">
+                    <MobileMeta label="Type" value={c.type} />
+                    <MobileMeta label="Time" value={c.time} />
+                  </div>
+                  {c.rxWritten && <p className="mt-3 text-xs font-semibold text-sky-700">Rx written</p>}
+                </Card>
+              ))}
+            </div>
+            <div className="hidden divide-y divide-slate-100 md:block">
               {CONSULTATIONS.map((c) => (
                 <div key={c.id} className="flex items-center gap-4 px-5 py-3">
                   <div className="flex-1">

@@ -7,6 +7,15 @@ import { useAccountsStore } from "@/lib/hooks/use-accounts-store";
 import { useLabStore } from "@/lib/hooks/use-lab-store";
 import { useNursesStore } from "@/lib/hooks/use-nurses-store";
 
+function MobileMeta({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-center justify-between gap-3 rounded-lg bg-slate-50 px-3 py-2.5">
+      <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{label}</span>
+      <span className="text-right text-sm font-medium text-slate-700">{value}</span>
+    </div>
+  );
+}
+
 const PRIORITY_STYLES: Record<string, string> = {
   Critical: "bg-red-50 text-red-700 font-bold",
   High: "bg-amber-50 text-amber-700",
@@ -180,7 +189,7 @@ export default function NursesDashboardPage() {
         </div>
       )}
 
-      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-4">
         {stats.map((stat) => (
           <Link key={stat.label} href={stat.href} className="group block">
             <Card className="h-full p-4 transition group-hover:border-slate-300 group-hover:shadow-md sm:p-5">
@@ -206,7 +215,7 @@ export default function NursesDashboardPage() {
           </Link>
         </div>
 
-        <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-4">
           {units.map((unit) => {
             const color = UNIT_COLORS[unit.key];
             const unitPatients = activePatients.filter((patient) => patient.unit === unit.key);
@@ -287,7 +296,59 @@ export default function NursesDashboardPage() {
                 </div>
               </div>
             ) : (
-              <div className="overflow-x-auto">
+              <>
+                <div className="space-y-3 px-4 py-4 md:hidden">
+                  {activePatients.map((patient) => {
+                    const color = UNIT_COLORS[patient.unit];
+                    return (
+                      <div
+                        key={patient.id}
+                        className={`rounded-2xl border border-slate-200 bg-white p-4 shadow-sm ${
+                          patient.priority === "Critical" ? "ring-1 ring-red-100" : ""
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <Link
+                              href={getPatientHref(patient.patientId)}
+                              className="text-sm font-semibold text-slate-900 hover:text-accent hover:underline"
+                            >
+                              {patient.patientName}
+                            </Link>
+                            <p className="text-xs text-slate-400">{patient.patientId}</p>
+                          </div>
+                          <span className={`rounded-full px-2.5 py-1 text-[10px] font-semibold ${PRIORITY_STYLES[patient.priority]}`}>
+                            {patient.priority}
+                          </span>
+                        </div>
+                        <div className="mt-3 space-y-2">
+                          <MobileMeta label="Unit" value={patient.unit} />
+                          <MobileMeta label="Bed" value={patient.bed} />
+                          <MobileMeta label="Nurse" value={patient.assignedNurse} />
+                          <MobileMeta label="Vitals" value={fmtDateTime(patient.lastVitalsAt)} />
+                        </div>
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${color.bg} ${color.text}`}>
+                            {patient.unit}
+                          </span>
+                          <Link
+                            href={getPatientHref(patient.patientId)}
+                            className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
+                          >
+                            Open record
+                          </Link>
+                          <Link
+                            href={UNIT_ROUTES[patient.unit]}
+                            className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
+                          >
+                            Open unit
+                          </Link>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="hidden overflow-x-auto md:block">
                 <table className="min-w-full text-sm">
                   <thead>
                     <tr className="border-b border-slate-100 bg-slate-50">
@@ -347,7 +408,8 @@ export default function NursesDashboardPage() {
                     })}
                   </tbody>
                 </table>
-              </div>
+                </div>
+              </>
             )}
           </Card>
 
@@ -383,7 +445,54 @@ export default function NursesDashboardPage() {
                 </div>
               </div>
             ) : (
-              <div className="divide-y divide-slate-100">
+              <>
+                <div className="space-y-3 px-4 py-4 md:hidden">
+                  {recentProcedures.map((procedure) => (
+                    <div key={procedure.id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-semibold text-slate-900">
+                            {procedure.patientName} - {procedure.procedureType}
+                          </p>
+                          <p className="text-xs text-slate-400">{procedure.description}</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-sm font-bold text-slate-900">{money(procedure.amount)}</p>
+                          <span
+                            className={`text-xs font-semibold ${
+                              procedure.billStatus === "Paid"
+                                ? "text-emerald-700"
+                                : procedure.billStatus === "Pending"
+                                  ? "text-amber-600"
+                                  : "text-sky-700"
+                            }`}
+                          >
+                            {procedure.billStatus}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="mt-3 space-y-2">
+                        <MobileMeta label="Performed by" value={procedure.performedBy} />
+                        <MobileMeta label="Time" value={fmtDateTime(procedure.performedAt)} />
+                      </div>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <Link
+                          href={getPatientHref(procedure.patientId)}
+                          className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
+                        >
+                          Open record
+                        </Link>
+                        <Link
+                          href={`${INTERNAL_PREFIX}/nurses/procedure-charges`}
+                          className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
+                        >
+                          Charge queue
+                        </Link>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div className="hidden divide-y divide-slate-100 md:block">
                 {recentProcedures.map((procedure) => (
                   <div key={procedure.id} className="flex flex-wrap items-center gap-4 px-5 py-3">
                     <div
@@ -436,7 +545,8 @@ export default function NursesDashboardPage() {
                     </div>
                   </div>
                 ))}
-              </div>
+                </div>
+              </>
             )}
           </Card>
         </div>

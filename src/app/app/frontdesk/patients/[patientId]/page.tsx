@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams } from "next/navigation";
 import Link from "next/link";
 import {
   fetchPatientById,
@@ -81,7 +81,7 @@ function DobPickerInline({
   day, month, year, onDay, onMonth, onYear,
 }: { day: string; month: string; year: string; onDay:(v:string)=>void; onMonth:(v:string)=>void; onYear:(v:string)=>void }) {
   const sel = "flex-1 rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm text-slate-900 outline-none appearance-none transition focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/20";
-  const Chevron = () => <svg className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M6 9l6 6 6-6"/></svg>;
+  const ChevronIcon = <svg className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M6 9l6 6 6-6"/></svg>;
   const maxDays = daysInMonth(month, year);
   const days = Array.from({ length: maxDays }, (_, i) => String(i + 1));
   return (
@@ -90,19 +90,19 @@ function DobPickerInline({
         <select value={day} onChange={(e) => onDay(e.target.value)} className={sel} style={{backgroundImage:"none"}}>
           <option value="">DD</option>
           {days.map((d) => <option key={d} value={d}>{d.padStart(2,"0")}</option>)}
-        </select><Chevron />
+        </select>{ChevronIcon}
       </div>
       <div className="relative flex-[2]">
         <select value={month} onChange={(e) => { onMonth(e.target.value); if (day && parseInt(day) > daysInMonth(e.target.value, year)) onDay(""); }} className={sel} style={{backgroundImage:"none"}}>
           <option value="">Month</option>
           {MONTHS.map((m) => <option key={m} value={m}>{m}</option>)}
-        </select><Chevron />
+        </select>{ChevronIcon}
       </div>
       <div className="relative flex-[1.3]">
         <select value={year} onChange={(e) => { onYear(e.target.value); if (day && month && parseInt(day) > daysInMonth(month, e.target.value)) onDay(""); }} className={sel} style={{backgroundImage:"none"}}>
           <option value="">Year</option>
           {YEARS.map((y) => <option key={y} value={String(y)}>{y}</option>)}
-        </select><Chevron />
+        </select>{ChevronIcon}
       </div>
     </div>
   );
@@ -136,7 +136,6 @@ const TABS: Tab[] = ["Overview", "Visits", "Billing", "Prescriptions"];
 // ── page ──────────────────────────────────────────────────────────────────────
 export default function PatientDetailPage() {
   const params  = useParams<{ patientId: string }>();
-  const router  = useRouter();
   const id      = params?.patientId ?? "";
 
   const { frontDeskCharges, labCharges, nursingCharges } = useAccountsStore();
@@ -342,7 +341,7 @@ export default function PatientDetailPage() {
               </div>
             )}
 
-            <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-xs sm:grid-cols-4">
+	            <div className="grid grid-cols-1 gap-x-6 gap-y-2 text-xs sm:grid-cols-2 lg:grid-cols-4">
               {[
                 { label: "Patient ID",  value: patient.patientId || "—" },
                 { label: "Age / Sex",   value: `${age}${patient.gender ? ` / ${patient.gender}` : ""}` },
@@ -426,7 +425,7 @@ export default function PatientDetailPage() {
               {/* Demographics */}
               <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
                 <h3 className="mb-4 text-sm font-bold text-slate-900">Demographics</h3>
-                <dl className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm sm:grid-cols-3">
+	                <dl className="grid grid-cols-1 gap-x-6 gap-y-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
                   {[
                     { label: "Full Name",    value: patient.patientName },
                     { label: "Date of Birth",value: fmtDate(patient.dateOfBirth) },
@@ -464,7 +463,7 @@ export default function PatientDetailPage() {
               {(patient.nextOfKinName || patient.nextOfKinPhone) && (
                 <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
                   <h3 className="mb-4 text-sm font-bold text-slate-900">Next of Kin</h3>
-                  <dl className="grid grid-cols-2 gap-3 text-sm">
+	                  <dl className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
                     <div>
                       <dt className="text-xs font-semibold uppercase tracking-wide text-slate-400">Name</dt>
                       <dd className="mt-0.5 font-medium text-slate-900">{patient.nextOfKinName || "—"}</dd>
@@ -521,11 +520,31 @@ export default function PatientDetailPage() {
                   No visits recorded yet.
                 </div>
               ) : (
-                <div className="overflow-x-auto">
-                  <table className="min-w-full text-sm text-left">
-                    <thead className="bg-slate-50">
-                      <tr>
-                        {["Date", "Type", "Doctor", "Check-in", "Status"].map((h) => (
+                <>
+                  <div className="space-y-3 px-4 py-4 md:hidden">
+                    {visits.map((v) => (
+                      <div key={v.id} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="font-semibold text-slate-900">{v.visitType || "General"}</p>
+                            <p className="text-xs text-slate-500">{fmtDate(v.visitDate)}</p>
+                          </div>
+                          <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${VISIT_STATUS_STYLES[v.status] ?? "bg-slate-100 text-slate-600"}`}>
+                            {v.status}
+                          </span>
+                        </div>
+                        <div className="mt-2 space-y-1 text-xs text-slate-600">
+                          <p><span className="font-semibold text-slate-500">Doctor:</span> {v.assignedTo || "—"}</p>
+                          <p><span className="font-semibold text-slate-500">Check-in:</span> {fmtTime(v.checkedInAt) || "—"}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="hidden overflow-x-auto md:block">
+                    <table className="min-w-full text-sm text-left">
+                  <thead className="bg-slate-50">
+                    <tr>
+                      {["Date", "Type", "Doctor", "Check-in", "Status"].map((h) => (
                           <th key={h} className="px-5 py-3 text-xs font-bold uppercase tracking-wide text-slate-500 whitespace-nowrap">{h}</th>
                         ))}
                       </tr>
@@ -545,8 +564,9 @@ export default function PatientDetailPage() {
                         </tr>
                       ))}
                     </tbody>
-                  </table>
-                </div>
+                    </table>
+                  </div>
+                </>
               )}
             </section>
           )}
@@ -575,7 +595,33 @@ export default function PatientDetailPage() {
                 {allCharges.length === 0 ? (
                   <div className="px-6 py-12 text-center text-sm text-slate-400">No billing records for this patient yet.</div>
                 ) : (
-                  <div className="overflow-x-auto">
+                  <>
+                    <div className="space-y-3 px-4 py-4 md:hidden">
+                      {allCharges.map((c) => (
+                        <div key={c.id} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm">
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <p className="font-semibold text-slate-900">{c.type}</p>
+                              <p className="mt-0.5 text-xs text-slate-500">{c.desc || "—"}</p>
+                            </div>
+                            <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${BSTYLES[c.status] ?? "bg-slate-100 text-slate-600"}`}>
+                              {c.status}
+                            </span>
+                          </div>
+                          <div className="mt-2 grid grid-cols-1 gap-2 text-xs sm:grid-cols-2">
+                            <div className="rounded-lg bg-white px-2 py-2">
+                              <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Amount</p>
+                              <p className="mt-1 font-semibold text-slate-900">₦{c.amount.toFixed(2)}</p>
+                            </div>
+                            <div className="rounded-lg bg-white px-2 py-2">
+                              <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Date</p>
+                              <p className="mt-1 font-semibold text-slate-700">{c.date || "—"}</p>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="hidden overflow-x-auto md:block">
                     <table className="min-w-full text-sm text-left">
                       <thead className="bg-slate-50">
                         <tr>
@@ -600,7 +646,8 @@ export default function PatientDetailPage() {
                         ))}
                       </tbody>
                     </table>
-                  </div>
+                    </div>
+                  </>
                 )}
                 <div className="border-t border-slate-100 px-5 py-3 flex items-center justify-between text-xs text-slate-500">
                   <span>Total: <strong className="text-slate-900">₦{allCharges.reduce((s, c) => s + c.amount, 0).toFixed(2)}</strong></span>
@@ -711,7 +758,7 @@ export default function PatientDetailPage() {
           {/* Personal */}
           <div>
             <p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-slate-400">Personal Information</p>
-            <div className="grid grid-cols-2 gap-3">
+	            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div className="col-span-2">
                 <label className="block text-xs font-semibold text-slate-600 mb-1.5">Full Name</label>
                 <input value={editName} onChange={(e) => setEditName(e.target.value)} className={inputCls} placeholder="First Last" />
@@ -751,7 +798,7 @@ export default function PatientDetailPage() {
           {/* Contact */}
           <div>
             <p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-slate-400">Contact Details</p>
-            <div className="grid grid-cols-2 gap-3">
+	            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div>
                 <label className="block text-xs font-semibold text-slate-600 mb-1.5">Phone Number</label>
                 <input type="tel" value={editPhone} onChange={(e) => setEditPhone(e.target.value)} placeholder="e.g. 0801 234 5678" className={inputCls} />

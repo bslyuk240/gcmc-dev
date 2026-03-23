@@ -126,6 +126,12 @@ export function DeptRotaBuilder({
     (s) => s.department === deptDisplayName && s.status === "Active",
   );
   const weekDates = Array.from({ length: 7 }, (_, i) => toISO(addDays(weekStart, i)));
+  const weekCells = weekDates.map((date, i) => ({
+    date,
+    dayLabel: DAY_LABELS[i],
+    fullLabel: formatHeaderDate(addDays(weekStart, i)),
+    isToday: date === toISO(new Date()),
+  }));
 
   const loadShifts = useCallback(async () => {
     setLoading(true);
@@ -343,7 +349,7 @@ export function DeptRotaBuilder({
   return (
     <div className="space-y-4">
       {/* Week navigator */}
-      <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+      <div className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm md:flex-row md:items-center md:justify-between">
         <button type="button" onClick={() => setWeekStart((d) => addDays(d, -7))}
           className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-sm font-medium text-slate-600 transition hover:bg-slate-50">
           <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -351,11 +357,11 @@ export function DeptRotaBuilder({
           </svg>
           Prev week
         </button>
-        <div className="text-center">
+        <div className="text-left md:text-center">
           <p className="text-sm font-semibold text-slate-900">Week of {formatWeekRange(weekStart)}</p>
           <p className="text-xs text-slate-400">{deptDisplayName} Department</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 self-end md:self-auto">
           <button type="button" onClick={() => setShowSettings(true)}
             title="Shift preset settings"
             className="flex items-center justify-center h-8 w-8 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 transition">
@@ -428,7 +434,75 @@ export function DeptRotaBuilder({
             <div className="h-8 w-8 animate-spin rounded-full border-4 border-slate-200 border-t-[var(--accent)]" />
           </div>
         ) : (
-          <table className="min-w-full">
+          <>
+            <div className="space-y-3 p-3 md:hidden">
+              {deptStaff.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm text-slate-400">
+                  No active staff in <strong>{deptDisplayName}</strong> yet.
+                </div>
+              ) : (
+                deptStaff.map((s) => (
+                  <div key={s.id} className="rounded-xl border border-slate-200 bg-white shadow-sm">
+                    <div className="flex items-center gap-3 border-b border-slate-100 px-4 py-3">
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-violet-100 text-xs font-bold text-violet-700">
+                        {getInitials(s.name)}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold text-slate-900">{s.name}</p>
+                        <p className="truncate text-[11px] text-slate-400">{s.role}</p>
+                      </div>
+                    </div>
+                    <div className="divide-y divide-slate-100">
+                      {weekCells.map(({ date, dayLabel, fullLabel, isToday }) => {
+                        const shift = getShift(s.id, date);
+                        const lbl = shift ? shiftLabel(shift) : null;
+                        const isPaintMode = activeBrush || brushIsErase;
+                        return (
+                          <button
+                            key={date}
+                            type="button"
+                            title={isPaintMode ? "Tap to paint" : shift ? `${lbl?.name ?? "Shift"} (${lbl?.start ?? "00:00"}-${lbl?.end ?? "00:00"})` : "Tap to assign shift"}
+                            onClick={() => void handleCellClick(s.id, date)}
+                            onContextMenu={(e) => {
+                              if (!isPaintMode) {
+                                e.preventDefault();
+                                if (shift) setConfirmDelete(shift);
+                              }
+                            }}
+                            className={cn(
+                              "flex w-full items-center justify-between gap-3 px-4 py-3 text-left transition",
+                              isToday && "bg-[var(--accent)]/5",
+                              isPaintMode ? "active:bg-[var(--accent)]/10" : "hover:bg-slate-50",
+                            )}
+                          >
+                            <div className="min-w-0">
+                              <p className={cn("text-sm font-semibold", isToday ? "text-[var(--accent)]" : "text-slate-900")}>
+                                {dayLabel} {fullLabel}
+                              </p>
+                              <p className="text-[11px] text-slate-400">
+                                {isToday ? "Today" : "Tap to edit"}
+                              </p>
+                            </div>
+                            {shift && lbl ? (
+                              <div className={cn("flex shrink-0 flex-col items-end rounded-lg px-3 py-2 text-[11px] font-semibold", lbl.bg, lbl.color)}>
+                                <span>{lbl.name}</span>
+                                <span className="font-normal opacity-75">{lbl.start} - {lbl.end}</span>
+                              </div>
+                            ) : (
+                              <div className="flex h-9 shrink-0 items-center rounded-lg border border-dashed border-slate-200 px-3 text-[11px] font-semibold text-slate-400">
+                                Open
+                              </div>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <table className="hidden min-w-full md:table">
             <thead>
               <tr className="border-b border-slate-100 bg-slate-50">
                 <th className="sticky left-0 z-10 bg-slate-50 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 min-w-[160px]">
@@ -510,6 +584,7 @@ export function DeptRotaBuilder({
               )}
             </tbody>
           </table>
+          </>
         )}
       </div>
 
@@ -630,7 +705,7 @@ export function DeptRotaBuilder({
                 );
               })}
               {/* Custom time override */}
-              <div className="mt-3 grid grid-cols-2 gap-3">
+              <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div>
                   <label className="block text-xs font-semibold text-slate-500 mb-1">Start Time</label>
                   <input type="time" value={customStart} onChange={(e) => setCustomStart(e.target.value)}
@@ -726,7 +801,7 @@ export function DeptRotaBuilder({
             {/* Add preset form */}
             <div className="border-t border-slate-100 px-5 py-4 space-y-3">
               <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Add New Preset</p>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                 <div className="col-span-2">
                   <input type="text" value={newPresetName} onChange={(e) => setNewPresetName(e.target.value)}
                     placeholder="Preset name (e.g. Early Morning)"

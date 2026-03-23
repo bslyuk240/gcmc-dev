@@ -38,6 +38,15 @@ const SOURCE_STYLES: Record<string, string> = {
 
 type Filter = "All" | "Pending" | "Paid" | "Waived";
 
+function MobileMeta({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-start justify-between gap-3 border-b border-slate-100 py-2 last:border-b-0 last:pb-0">
+      <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{label}</span>
+      <span className="text-right text-sm font-medium text-slate-700">{value}</span>
+    </div>
+  );
+}
+
 export default function AccountsPharmacyBillingPage() {
   const { bills } = usePharmacyStore();
   const [filter, setFilter] = useState<Filter>("All");
@@ -82,7 +91,7 @@ export default function AccountsPharmacyBillingPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6">
       <PageHeader
         title="Pharmacy Billing"
         description="Medication charges from prescriptions, nurse requests, and walk-in dispensing."
@@ -95,7 +104,7 @@ export default function AccountsPharmacyBillingPage() {
           { label: "Collected Today", value: `₦${totalPaid.toLocaleString()}`, sub: `${bills.filter((b) => b.billStatus === "Paid").length} bills paid`, color: "text-emerald-700" },
           { label: "Total Bills", value: bills.length, sub: "All time across all sources", color: "text-slate-900" },
         ].map((s) => (
-          <Card key={s.label} className="p-5">
+          <Card key={s.label} className="p-4 sm:p-5">
             <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{s.label}</p>
             <p className={`mt-1 text-2xl font-bold ${s.color}`}>{s.value}</p>
             <p className="mt-0.5 text-xs text-slate-500">{s.sub}</p>
@@ -103,8 +112,66 @@ export default function AccountsPharmacyBillingPage() {
         ))}
       </div>
 
-      <Card className="overflow-hidden p-0">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-5 py-4">
+      <div className="space-y-3 md:hidden">
+        {filtered.map((b) => {
+          const status = effectiveStatus(b);
+          return (
+            <Card key={b.id} className={`p-4 ${status === "Pending" ? "bg-amber-50/20" : ""}`}>
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="truncate font-semibold text-slate-900">{b.patientName}</p>
+                  <p className="text-xs text-slate-500">{b.patientId}</p>
+                </div>
+                <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${STATUS_STYLES[status] ?? STATUS_STYLES.Pending}`}>
+                  {status}
+                </span>
+              </div>
+
+              <div className="mt-4 space-y-2">
+                <MobileMeta label="Drugs / Items" value={drugLabel(b.drugs)} />
+                <MobileMeta label="Source" value={SOURCE_LABELS[b.source]} />
+                <MobileMeta label="Amount" value={`NGN ${b.totalCost.toLocaleString()}`} />
+                <MobileMeta label="Dispensed At" value={b.dispensedAt} />
+              </div>
+
+              <div className="mt-4 flex flex-wrap gap-2">
+                {status === "Pending" && (
+                  <>
+                    <Button size="sm" onClick={() => { setPayTarget(b); setMethod("Cash"); setRefNote(""); }}>Receive Payment</Button>
+                    <Button size="sm" variant="ghost" onClick={() => setWaiverTarget(b)}>Waive</Button>
+                  </>
+                )}
+                {status === "Paid" && (
+                  <Button size="sm" variant="ghost" className="text-slate-500" onClick={() => printReceipt({
+                    title: "Pharmacy Receipt",
+                    subtitle: SOURCE_LABELS[b.source],
+                    refNumber: b.id,
+                    lines: [
+                      { label: "Patient", value: b.patientName },
+                      { label: "Patient ID", value: b.patientId },
+                      { label: "Items", value: drugLabel(b.drugs) },
+                      { label: "Source", value: SOURCE_LABELS[b.source] },
+                      { label: "Dispensed At", value: b.dispensedAt },
+                      { label: "Status", value: "PAID", bold: true },
+                    ],
+                    total: { label: "Amount Paid", value: `NGN ${b.totalCost.toLocaleString()}` },
+                    copyLabel: "PATIENT COPY",
+                  })}>
+                    Receipt
+                  </Button>
+                )}
+                {status === "Waived" && <span className="text-xs text-slate-400">Waived</span>}
+              </div>
+            </Card>
+          );
+        })}
+        {filtered.length === 0 && (
+          <Card className="p-6 text-center text-sm text-slate-400">No pharmacy bills found.</Card>
+        )}
+      </div>
+
+      <Card className="hidden overflow-hidden p-0 md:block">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-4 py-3 sm:px-5 sm:py-4">
           <h3 className="font-bold text-slate-900">Pharmacy Charge Records</h3>
           <div className="flex gap-2">
             {(["All", "Pending", "Paid", "Waived"] as Filter[]).map((f) => (
@@ -212,7 +279,7 @@ export default function AccountsPharmacyBillingPage() {
             </div>
             <div>
               <label className="mb-2 block text-sm font-semibold text-slate-700">Payment Method</label>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                 {(["Cash", "POS / Card", "Mobile Money", "Insurance"] as PayMethod[]).map((value) => (
                   <button
                     key={value}

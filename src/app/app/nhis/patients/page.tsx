@@ -47,6 +47,15 @@ function formatDate(s?: string) {
   return d.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
 }
 
+function MobileMeta({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg bg-slate-50 px-3 py-2">
+      <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">{label}</p>
+      <p className="mt-0.5 text-sm font-medium text-slate-800">{value}</p>
+    </div>
+  );
+}
+
 export default function NhisPatientsPage() {
   const { schemes, enrollments, hydrated } = useNhisStore();
   const [toast, setToast] = useState<ToastData | null>(null);
@@ -177,7 +186,7 @@ export default function NhisPatientsPage() {
   });
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6">
       <PageHeader
         title="Enrolled Patients"
         description="Manage patient HMO enrollments, member IDs, and plan details."
@@ -186,7 +195,7 @@ export default function NhisPatientsPage() {
       {<Toast toast={toast} onDismiss={() => setToast(null)} />}
 
       <Card className="overflow-hidden p-0">
-        <div className="flex flex-col gap-3 border-b border-slate-100 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-3 border-b border-slate-100 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5 sm:py-4">
           <h3 className="font-bold text-slate-900">
             Patient Enrollments ({filtered.length}{filtered.length !== enrollments.length ? ` of ${enrollments.length}` : ""})
           </h3>
@@ -212,53 +221,90 @@ export default function NhisPatientsPage() {
         </div>
 
         {!hydrated ? (
-          <div className="px-5 py-8 text-center text-sm text-slate-400">Loading…</div>
+          <div className="px-4 py-6 text-center text-sm text-slate-400 sm:px-5 sm:py-8">Loading…</div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="min-w-full text-sm text-left">
-              <thead>
-                <tr className="bg-slate-50 border-b border-slate-100">
-                  {["Patient", "Patient ID", "Member ID", "Scheme", "Plan", "Copay %", "Valid Until", "Status", "Actions"].map((h) => (
-                    <th key={h} className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {filtered.length === 0 ? (
-                  <tr>
-                    <td colSpan={9} className="px-5 py-8 text-center text-sm text-slate-400">
-                      {search ? "No enrollments match your search." : "No enrolled patients yet."}
-                    </td>
+          <>
+            <div className="grid gap-3 p-3 md:hidden">
+              {filtered.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-7 text-center text-sm text-slate-400">
+                  {search ? "No enrollments match your search." : "No enrolled patients yet."}
+                </div>
+              ) : (
+                filtered.map((e) => (
+                  <Card key={e.id} className="overflow-hidden p-0">
+                    <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-4 py-3 sm:px-5 sm:py-4">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold text-slate-900">{e.patientName || e.patientDisplayId || e.patientId}</p>
+                        <p className="mt-0.5 text-[11px] text-slate-500">{e.schemeName}</p>
+                      </div>
+                      <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${e.isActive ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>
+                        {e.isActive ? "Active" : "Inactive"}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-1 gap-2 p-4 sm:grid-cols-2 sm:p-5">
+                      <MobileMeta label="Patient ID" value={e.patientDisplayId || "—"} />
+                      <MobileMeta label="Member ID" value={e.memberId} />
+                      <MobileMeta label="Plan" value={e.planName || "—"} />
+                      <MobileMeta label="Copay" value={`${e.copayPercentage}%`} />
+                      <MobileMeta label="Valid Until" value={formatDate(e.validUntil)} />
+                      <MobileMeta label="Scheme" value={e.schemeName} />
+                    </div>
+                    <div className="flex gap-2 border-t border-slate-100 px-4 py-3">
+                      <Button size="sm" variant="ghost" onClick={() => openEdit(e)} className="flex-1">Edit</Button>
+                      {e.isActive ? (
+                        <Button size="sm" variant="ghost" onClick={() => handleDeactivate(e)} className="flex-1">Deactivate</Button>
+                      ) : null}
+                    </div>
+                  </Card>
+                ))
+              )}
+            </div>
+            <div className="hidden overflow-x-auto md:block">
+              <table className="min-w-full text-sm text-left">
+                <thead>
+                  <tr className="bg-slate-50 border-b border-slate-100">
+                    {["Patient", "Patient ID", "Member ID", "Scheme", "Plan", "Copay %", "Valid Until", "Status", "Actions"].map((h) => (
+                      <th key={h} className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">{h}</th>
+                    ))}
                   </tr>
-                ) : (
-                  filtered.map((e) => (
-                    <tr key={e.id} className="hover:bg-slate-50">
-                      <td className="px-5 py-3 font-medium text-slate-900">{e.patientName || e.patientDisplayId || e.patientId}</td>
-                      <td className="px-5 py-3 font-mono text-xs text-slate-500">{e.patientDisplayId || "—"}</td>
-                      <td className="px-5 py-3 font-mono text-xs font-semibold text-slate-700">{e.memberId}</td>
-                      <td className="px-5 py-3 text-slate-600">{e.schemeName}</td>
-                      <td className="px-5 py-3 text-slate-600">{e.planName || "—"}</td>
-                      <td className="px-5 py-3 font-bold text-slate-900">{e.copayPercentage}%</td>
-                      <td className="px-5 py-3 text-xs text-slate-500">{formatDate(e.validUntil)}</td>
-                      <td className="px-5 py-3">
-                        <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${e.isActive ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>
-                          {e.isActive ? "Active" : "Inactive"}
-                        </span>
-                      </td>
-                      <td className="px-5 py-3">
-                        <div className="flex gap-2">
-                          <Button size="sm" variant="ghost" onClick={() => openEdit(e)}>Edit</Button>
-                          {e.isActive && (
-                            <Button size="sm" variant="ghost" onClick={() => handleDeactivate(e)}>Deactivate</Button>
-                          )}
-                        </div>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {filtered.length === 0 ? (
+                    <tr>
+                      <td colSpan={9} className="px-5 py-8 text-center text-sm text-slate-400">
+                        {search ? "No enrollments match your search." : "No enrolled patients yet."}
                       </td>
                     </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
+                  ) : (
+                    filtered.map((e) => (
+                      <tr key={e.id} className="hover:bg-slate-50">
+                        <td className="px-5 py-3 font-medium text-slate-900">{e.patientName || e.patientDisplayId || e.patientId}</td>
+                        <td className="px-5 py-3 font-mono text-xs text-slate-500">{e.patientDisplayId || "—"}</td>
+                        <td className="px-5 py-3 font-mono text-xs font-semibold text-slate-700">{e.memberId}</td>
+                        <td className="px-5 py-3 text-slate-600">{e.schemeName}</td>
+                        <td className="px-5 py-3 text-slate-600">{e.planName || "—"}</td>
+                        <td className="px-5 py-3 font-bold text-slate-900">{e.copayPercentage}%</td>
+                        <td className="px-5 py-3 text-xs text-slate-500">{formatDate(e.validUntil)}</td>
+                        <td className="px-5 py-3">
+                          <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${e.isActive ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>
+                            {e.isActive ? "Active" : "Inactive"}
+                          </span>
+                        </td>
+                        <td className="px-5 py-3">
+                          <div className="flex gap-2">
+                            <Button size="sm" variant="ghost" onClick={() => openEdit(e)}>Edit</Button>
+                            {e.isActive && (
+                              <Button size="sm" variant="ghost" onClick={() => handleDeactivate(e)}>Deactivate</Button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </>
         )}
       </Card>
 
@@ -275,7 +321,7 @@ export default function NhisPatientsPage() {
               </div>
             )}
 
-            <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid gap-3 sm:grid-cols-2">
               <div>
                 <label className="mb-1 block text-xs font-semibold text-slate-600">Patient ID (Hospital No.) *</label>
                 <input

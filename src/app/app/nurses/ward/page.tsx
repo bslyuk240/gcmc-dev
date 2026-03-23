@@ -52,6 +52,15 @@ const PROCEDURE_PRICES: Record<(typeof PROCEDURE_TYPES)[number], number> = {
   Other: 20,
 };
 
+function MobileMeta({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-start justify-between gap-3 border-b border-slate-100 py-2 last:border-b-0 last:pb-0">
+      <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{label}</span>
+      <span className="text-right text-sm font-medium text-slate-700">{value}</span>
+    </div>
+  );
+}
+
 function fmtDateTime(value?: string | null) {
   if (!value) return "--";
   const date = new Date(value);
@@ -287,7 +296,7 @@ export default function NursesWardPage() {
         description="Admitted patient care, bed monitoring, medication administration, and nursing observations."
       />
 
-      <div className="grid gap-4 lg:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {[
           {
             label: "Admitted Patients",
@@ -321,7 +330,7 @@ export default function NursesWardPage() {
           <Link key={card.label} href={card.href} className="block">
             <Card className="h-full border-slate-200 transition hover:border-[var(--accent)]/30 hover:shadow-md">
               <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{card.label}</p>
-              <p className={`mt-2 text-3xl font-bold ${card.color}`}>{card.value}</p>
+              <p className={`mt-2 text-2xl font-bold sm:text-3xl ${card.color}`}>{card.value}</p>
               <p className="mt-1 text-sm text-slate-500">{card.sub}</p>
             </Card>
           </Link>
@@ -339,7 +348,37 @@ export default function NursesWardPage() {
               {pendingWardAdmissions.length} pending
             </span>
           </div>
-          <div className="divide-y divide-slate-100">
+          <div className="space-y-3 p-3 md:hidden">
+            {pendingWardAdmissions.map((order) => (
+              <div key={order.id} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold text-slate-900">{order.patientName}</p>
+                    <p className="truncate text-[11px] text-slate-400">{order.patientId} / {order.orderedBy}</p>
+                  </div>
+                  <span className="rounded-full bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-700">
+                    {order.status}
+                  </span>
+                </div>
+                <div className="mt-3 space-y-1.5">
+                  <MobileMeta label="Reason" value={order.reason || "No admission note provided"} />
+                  <MobileMeta label="Requested" value={fmtDateTime(order.orderedAt)} />
+                </div>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <Button size="sm" onClick={() => openAdmission(order)}>Admit to Ward</Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    href={`${INTERNAL_PREFIX}/nurses/patients/${encodeURIComponent(order.patientId)}`}
+                  >
+                    Open record
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="hidden divide-y divide-slate-100 md:block">
             {pendingWardAdmissions.map((order) => (
               <div key={order.id} className="flex flex-wrap items-center gap-4 px-5 py-4">
                 <div className="min-w-0 flex-1">
@@ -375,7 +414,7 @@ export default function NursesWardPage() {
             <h3 className="font-bold text-slate-900">Ward Patients</h3>
             <p className="text-xs text-slate-400">Work from nurse-safe patient records and ward actions only.</p>
           </div>
-          <div className="flex gap-3">
+          <div className="flex flex-col gap-2 sm:flex-row sm:gap-3">
             <Link href={`${INTERNAL_PREFIX}/nurses/medication-administration`} className="text-sm font-semibold text-accent hover:underline">
               Medication Administration {"->"}
             </Link>
@@ -384,7 +423,51 @@ export default function NursesWardPage() {
             </Link>
           </div>
         </div>
-        <div className="overflow-x-auto">
+        <div className="space-y-3 p-3 md:hidden">
+          {wardPatients.map((patient) => (
+            <div key={patient.id} className={patient.priority === "Critical" ? "rounded-xl border border-red-200 bg-red-50/40 p-4 shadow-sm" : "rounded-xl border border-slate-200 bg-white p-4 shadow-sm"}>
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <Link
+                    href={`${INTERNAL_PREFIX}/nurses/patients/${encodeURIComponent(patient.patientId)}`}
+                    className="truncate text-sm font-semibold text-slate-900 hover:text-[var(--accent)]"
+                  >
+                    {patient.patientName}
+                  </Link>
+                  <p className="truncate text-[11px] text-slate-400">{patient.patientId} / Bed {patient.bed}</p>
+                </div>
+                <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${PRIORITY_STYLES[patient.priority]}`}>
+                  {patient.priority}
+                </span>
+              </div>
+              <div className="mt-3 space-y-1.5">
+                <MobileMeta label="Diagnosis" value={patient.diagnosis || "—"} />
+                <MobileMeta label="Doctor" value={patient.doctorInCharge || "—"} />
+                <MobileMeta label="Nurse" value={patient.assignedNurse || "—"} />
+                <MobileMeta label="Vitals" value={patient.vitals?.bp || patient.vitals?.pulse ? `BP ${patient.vitals?.bp || "-"} / HR ${patient.vitals?.pulse || "-"}` : "Not recorded"} />
+              </div>
+              <div className="mt-4 flex flex-wrap gap-2">
+                <Button size="sm" onClick={() => openVitals(patient)}>Vitals</Button>
+                <Button size="sm" variant="outline" onClick={() => openProcedure(patient)}>Procedure</Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  href={`${INTERNAL_PREFIX}/nurses/patients/${encodeURIComponent(patient.patientId)}`}
+                >
+                  Open record
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => setDischargeTarget(patient)}>Discharge</Button>
+              </div>
+            </div>
+          ))}
+          {wardPatients.length === 0 && (
+            <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm text-slate-400">
+              No admitted patients in Ward yet.
+            </div>
+          )}
+        </div>
+
+        <div className="hidden overflow-x-auto md:block">
           <table className="min-w-full text-sm text-left">
             <thead>
               <tr className="border-b border-slate-100 bg-slate-50">
@@ -475,7 +558,31 @@ export default function NursesWardPage() {
               Billing Queue {"->"}
             </Link>
           </div>
-          <div className="divide-y divide-slate-100">
+          <div className="space-y-3 p-3 md:hidden">
+            {wardProcedures.slice(0, 6).map((procedure) => (
+              <div key={procedure.id} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold text-slate-900">{procedure.patientName}</p>
+                    <p className="truncate text-[11px] text-slate-400">{procedure.procedureType} / {procedure.performedBy}</p>
+                  </div>
+                  <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${procedure.billStatus === "Billed" || procedure.billStatus === "Paid" ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>
+                    {procedure.billStatus}
+                  </span>
+                </div>
+                <div className="mt-3 space-y-1.5">
+                  <MobileMeta label="Description" value={procedure.description} />
+                  <MobileMeta label="Amount" value={`NGN ${procedure.amount.toLocaleString()}`} />
+                  <MobileMeta label="Performed" value={fmtDateTime(procedure.performedAt)} />
+                </div>
+              </div>
+            ))}
+            {wardProcedures.length === 0 && (
+              <div className="px-5 py-10 text-center text-sm text-slate-400">No ward procedures recorded yet.</div>
+            )}
+          </div>
+
+          <div className="hidden divide-y divide-slate-100 md:block">
             {wardProcedures.slice(0, 6).map((procedure) => (
               <div key={procedure.id} className="flex items-center gap-4 px-5 py-4">
                 <div className={`h-2.5 w-2.5 rounded-full ${procedure.billStatus === "Billed" || procedure.billStatus === "Paid" ? "bg-emerald-500" : "bg-amber-400"}`} />
@@ -590,7 +697,7 @@ export default function NursesWardPage() {
             <div className="rounded-lg bg-slate-50 p-3 text-sm text-slate-600">
               <p><span className="font-medium text-slate-900">{vitalsTarget.bed}</span> / {vitalsTarget.diagnosis || "No diagnosis recorded"}</p>
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div>
                 <label className="mb-1 block text-xs font-semibold text-slate-600">Blood Pressure *</label>
                 <input value={bp} onChange={(event) => setBp(event.target.value)} placeholder="120/80" className={inputCls} />

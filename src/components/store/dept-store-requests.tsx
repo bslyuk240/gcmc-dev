@@ -57,6 +57,15 @@ function newReqId(requests: StockRequest[]): string {
   return `REQ-${nums.length > 0 ? Math.max(...nums) + 1 : 1000}`;
 }
 
+function MobileMeta({ label, value }: { label: string; value: string | number }) {
+  return (
+    <div className="rounded-lg bg-slate-50 px-3 py-2">
+      <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">{label}</p>
+      <div className="mt-0.5 text-xs font-medium text-slate-700">{value}</div>
+    </div>
+  );
+}
+
 export function DeptStoreRequests({ dept, deptLabel, suggestedItems = [], requestedBy = "Staff" }: Props) {
   const [requests, setRequests] = useState<StockRequest[]>([]);
   const [loading, setLoading] = useState(true);
@@ -169,7 +178,32 @@ export function DeptStoreRequests({ dept, deptLabel, suggestedItems = [], reques
             )}
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <>
+            <div className="space-y-3 md:hidden">
+              {filtered.map((req) => (
+                <div key={req.id} className="space-y-3 border-b border-slate-100 px-4 py-4 last:border-b-0">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="font-semibold text-slate-900">{req.item}</p>
+                      <p className="font-mono text-[10px] text-slate-400">{req.id}</p>
+                    </div>
+                    <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${STATUS_STYLES[req.status] ?? "bg-slate-100 text-slate-500"}`}>
+                      {req.status}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <MobileMeta label="Qty" value={`${req.qty} ${req.unit}`} />
+                    <MobileMeta label="Urgency" value={req.urgency} />
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <MobileMeta label="Date" value={fmtDate(req.createdAt)} />
+                    <MobileMeta label="Requested By" value={req.requestedBy} />
+                  </div>
+                  <div className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-500">{req.notes ?? "—"}</div>
+                </div>
+              ))}
+            </div>
+            <div className="hidden overflow-x-auto md:block">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-slate-100 bg-slate-50 text-left">
@@ -200,7 +234,8 @@ export function DeptStoreRequests({ dept, deptLabel, suggestedItems = [], reques
                 ))}
               </tbody>
             </table>
-          </div>
+            </div>
+          </>
         )}
       </Card>
 
@@ -223,7 +258,7 @@ export function DeptStoreRequests({ dept, deptLabel, suggestedItems = [], reques
               </datalist>
             )}
           </div>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Quantity <span className="text-red-500">*</span></label>
               <input required type="number" min="1" value={qty} onChange={(e) => setQty(e.target.value)} placeholder="e.g. 50" className={inputCls} />

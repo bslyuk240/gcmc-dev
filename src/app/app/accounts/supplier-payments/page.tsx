@@ -36,6 +36,15 @@ function formatSupplierTimestamp(value?: string) {
   });
 }
 
+function MobileMeta({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-start justify-between gap-3 border-b border-slate-100 py-2 last:border-b-0 last:pb-0">
+      <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{label}</span>
+      <span className="text-right text-sm font-medium text-slate-700">{value}</span>
+    </div>
+  );
+}
+
 export default function AccountsSupplierPaymentsPage() {
   const { supplierPayments, metrics } = useAccountsStore();
 
@@ -79,7 +88,7 @@ export default function AccountsSupplierPaymentsPage() {
   const inputCls = "w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/20";
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6">
       <PageHeader
         title="Supplier Payments"
         description="Payment requests from Store procurement. Approve and disburse supplier invoices."
@@ -92,7 +101,7 @@ export default function AccountsSupplierPaymentsPage() {
           { label: "Paid This Month", value: supplierPayments.filter((p) => p.status === "Paid").length, sub: `₦${metrics.supplierPaidMTD.toLocaleString()} disbursed`, color: "text-emerald-700" },
           { label: "Total Requests", value: supplierPayments.length, sub: "All time", color: "text-slate-900" },
         ].map((s) => (
-          <Card key={s.label} className="p-5">
+          <Card key={s.label} className="p-4 sm:p-5">
             <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{s.label}</p>
             <p className={`mt-1 text-2xl font-bold ${s.color}`}>{s.value}</p>
             <p className="mt-0.5 text-xs text-slate-500">{s.sub}</p>
@@ -100,8 +109,51 @@ export default function AccountsSupplierPaymentsPage() {
         ))}
       </div>
 
-      <Card className="overflow-hidden p-0">
-        <div className="border-b border-slate-100 px-5 py-4">
+      <div className="space-y-3 md:hidden">
+        {supplierPayments.map((p) => {
+          const status = effectiveStatus(p);
+          const isPending = status === "Pending";
+          return (
+            <Card key={p.id} className={`p-4 ${status === "Pending" ? "border-amber-200 bg-amber-50/20" : ""}`}>
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="truncate font-semibold text-slate-900">{p.supplier}</p>
+                  <p className="text-xs text-slate-500">{p.poId}</p>
+                </div>
+                <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${STATUS_STYLES[status]}`}>{status}</span>
+              </div>
+
+              <div className="mt-4 space-y-2">
+                <MobileMeta label="Items" value={toStr(p.items)} />
+                <MobileMeta label="Description" value={toStr(p.description)} />
+                <MobileMeta label="Amount" value={`â‚¦${p.amount.toLocaleString()}`} />
+                <MobileMeta label="Due Date" value={formatSupplierTimestamp(p.dueDate)} />
+                <MobileMeta label="Submitted" value={formatSupplierTimestamp(p.submittedAt)} />
+              </div>
+
+              <div className="mt-4 flex flex-wrap gap-2">
+                {isPending && (
+                  <>
+                    <Button size="sm" onClick={() => setActionTarget({ payment: p, action: "approve" })}>Approve</Button>
+                    <Button size="sm" variant="ghost" onClick={() => { setActionTarget({ payment: p, action: "reject" }); setRejectReason(""); }}>Reject</Button>
+                  </>
+                )}
+                {status === "Approved" && (
+                  <Button size="sm" onClick={() => setActionTarget({ payment: p, action: "pay" })}>Pay Supplier</Button>
+                )}
+                {status === "Paid" && <span className="text-xs font-semibold text-emerald-700">✓ Paid {formatSupplierTimestamp(p.paidAt)}</span>}
+                {status === "Rejected" && <span className="text-xs text-slate-400">Rejected</span>}
+              </div>
+            </Card>
+          );
+        })}
+        {supplierPayments.length === 0 && (
+          <Card className="p-6 text-center text-sm text-slate-400">No supplier payment requests yet. Store submits these when POs are received.</Card>
+        )}
+      </div>
+
+      <Card className="hidden overflow-hidden p-0 md:block">
+        <div className="border-b border-slate-100 px-4 py-3 sm:px-5 sm:py-4">
           <h3 className="font-bold text-slate-900">Supplier Payment Requests</h3>
           <p className="text-xs text-slate-500 mt-0.5">Submitted by Store after goods are received. Approve → then Pay to disburse funds to supplier.</p>
         </div>
@@ -158,7 +210,7 @@ export default function AccountsSupplierPaymentsPage() {
         </div>
       </Card>
 
-      <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-500">
+      <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-500 sm:px-5">
         <strong className="text-slate-700">Flow:</strong> Store creates purchase order → marks received → submits payment request → appears here → Accounts approves → Accounts pays supplier.
       </div>
 

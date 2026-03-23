@@ -30,6 +30,21 @@ const PRIORITY_STYLES: Record<string, string> = {
 type LabLine = { testCode: string; priority: TestPriority };
 const BLANK_LAB: LabLine = { testCode: "", priority: "Routine" };
 
+function MobileMeta({
+  label,
+  value,
+}: {
+  label: string;
+  value: string | number;
+}) {
+  return (
+    <div className="rounded-lg bg-slate-50 px-3 py-2">
+      <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">{label}</p>
+      <div className="mt-0.5 text-xs font-medium text-slate-700">{value}</div>
+    </div>
+  );
+}
+
 export default function DoctorLabOrdersPage() {
   const { tests, metrics } = useLabStore();
   const { consultations, doctors } = useDoctorsStore();
@@ -151,7 +166,7 @@ export default function DoctorLabOrdersPage() {
       </div>
 
       {/* KPI strip */}
-      <div className="flex gap-3">
+      <div className="grid grid-cols-1 gap-3 sm:flex">
         {[
           { label: "Total Orders", value: tests.length, color: "text-slate-900" },
           { label: "Active / Pending", value: pending.length, color: pending.length > 0 ? "text-amber-600" : "text-slate-400" },
@@ -200,7 +215,36 @@ export default function DoctorLabOrdersPage() {
             ))}
           </div>
         </div>
-        <div className="overflow-x-auto">
+        <div className="grid gap-3 p-4 md:hidden">
+          {filtered.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-6 py-10 text-center text-sm text-slate-400">
+              No lab orders in this category.
+            </div>
+          ) : (
+            filtered.map((t) => (
+              <div key={t.id} className={`rounded-xl border border-slate-200 bg-white p-4 shadow-sm ${t.priority === "STAT" ? "ring-1 ring-red-200" : ""}`}>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold text-slate-900">{t.patientName}</p>
+                    <p className="mt-0.5 text-[11px] text-slate-500">{t.patientId}</p>
+                  </div>
+                  <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${STATUS_STYLES[t.status]}`}>{t.status}</span>
+                </div>
+                <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  <MobileMeta label="Test" value={t.testName} />
+                  <MobileMeta label="Category" value={t.category} />
+                  <MobileMeta label="Ordered By" value={t.orderedBy || "--"} />
+                  <MobileMeta label="Priority" value={t.priority} />
+                </div>
+                <div className="mt-3 flex items-center justify-between gap-2">
+                  <span className={`rounded-full px-2 py-0.5 text-xs ${PRIORITY_STYLES[t.priority]}`}>{t.priority}</span>
+                  <span className="text-xs text-slate-400">{t.orderedAt}</span>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+        <div className="hidden overflow-x-auto md:block">
           <table className="min-w-full text-sm">
             <thead>
               <tr className="bg-slate-50 border-b border-slate-100">
@@ -288,7 +332,7 @@ export default function DoctorLabOrdersPage() {
                         className="text-xs text-red-500 hover:text-red-700">Remove</button>
                     )}
                   </div>
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                     <div className="col-span-2">
                       <label className="mb-1 block text-xs text-slate-500">Test *</label>
                       <SearchableSelect

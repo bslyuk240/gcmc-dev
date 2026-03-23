@@ -40,6 +40,15 @@ const STATUS_FILTERS = [
 
 const PAGE_SIZE = 8;
 
+function MobileMeta({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-start justify-between gap-3 border-b border-slate-100 py-2 last:border-b-0 last:pb-0">
+      <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{label}</span>
+      <span className="text-right text-sm font-medium text-slate-700">{value}</span>
+    </div>
+  );
+}
+
 export default function AccountsInvoicesPage() {
   const [invoices, setInvoices] = useState<InvoiceRecord[]>([]);
   const [patients, setPatients] = useState<PatientRegistration[]>([]);
@@ -180,7 +189,7 @@ export default function AccountsInvoicesPage() {
     "w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/20";
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6">
       <PageHeader
         title="Invoices"
         description="Patient invoices and payment tracking."
@@ -199,8 +208,72 @@ export default function AccountsInvoicesPage() {
 
       {loading && <p className="text-sm text-slate-400">Loading invoices...</p>}
 
-      <Card className="overflow-hidden p-0">
-        <div className="flex flex-wrap items-center gap-3 border-b border-slate-100 px-5 py-4">
+      <div className="space-y-3 md:hidden">
+        {paginated.map((row) => {
+          const balance = Math.max(0, row.amountDue - row.amountPaid);
+          const isSettled = row.status === "paid" || row.status === "cancelled";
+          return (
+            <Card key={row.id} className="p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="truncate font-semibold text-slate-900">{row.patient}</p>
+                  <p className="text-xs text-slate-500">{row.invoiceNumber}</p>
+                </div>
+                <StatusBadge variant={STATUS_BADGE[row.status]}>{row.status}</StatusBadge>
+              </div>
+
+              <div className="mt-4 space-y-2">
+                <MobileMeta label="Services" value={row.items} />
+                <MobileMeta label="Amount Due" value={`NGN ${row.amountDue.toLocaleString()}`} />
+                <MobileMeta label="Paid" value={`NGN ${row.amountPaid.toLocaleString()}`} />
+                <MobileMeta label="Balance" value={`NGN ${balance.toLocaleString()}`} />
+                <MobileMeta label="Due Date" value={row.dueDate} />
+              </div>
+
+              <div className="mt-4 flex items-center justify-between gap-3">
+                {isSettled ? (
+                  <button
+                    type="button"
+                    className="text-xs font-semibold text-slate-500 hover:text-[var(--accent)] transition"
+                    onClick={() =>
+                      printReceipt({
+                        title: "Payment Receipt",
+                        subtitle: `${row.invoiceNumber} | ${row.items}`,
+                        refNumber: row.invoiceNumber,
+                        lines: [
+                          { label: "Patient", value: row.patient },
+                          { label: "Invoice", value: row.invoiceNumber },
+                          { label: "Services", value: row.items },
+                          { label: "Due Date", value: row.dueDate },
+                          { label: "Amount Due", value: `NGN ${row.amountDue.toLocaleString()}` },
+                          { label: "Amount Paid", value: `NGN ${row.amountPaid.toLocaleString()}`, bold: true },
+                        ],
+                        total: { label: "Balance", value: `NGN ${balance.toLocaleString()}` },
+                        copyLabel: "PATIENT COPY",
+                      })
+                    }
+                  >
+                    Print Receipt
+                  </button>
+                ) : (
+                  <Link
+                    href={`${INTERNAL_PREFIX}/accounts/receive-payment?invoice=${encodeURIComponent(row.invoiceNumber)}`}
+                    className="text-xs font-semibold text-accent hover:underline"
+                  >
+                    Receive Payment
+                  </Link>
+                )}
+              </div>
+            </Card>
+          );
+        })}
+        {paginated.length === 0 ? (
+          <Card className="p-6 text-center text-sm text-slate-400">No invoices found.</Card>
+        ) : null}
+      </div>
+
+      <Card className="hidden overflow-hidden p-0 md:block">
+        <div className="flex flex-wrap items-center gap-3 border-b border-slate-100 px-4 py-3 sm:px-5 sm:py-4">
           <div className="relative min-w-[200px] flex-1">
             <svg
               className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"
@@ -338,7 +411,7 @@ export default function AccountsInvoicesPage() {
           </table>
         </div>
 
-        <div className="flex items-center justify-between border-t border-slate-100 px-5 py-4">
+        <div className="flex items-center justify-between border-t border-slate-100 px-4 py-3 sm:px-5 sm:py-4">
           <p className="text-xs text-slate-400">
             {filtered.length} invoices - Page {page + 1} of {totalPages}
           </p>
@@ -434,7 +507,7 @@ export default function AccountsInvoicesPage() {
               className={inputCls}
             />
           </div>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
               <label className="mb-1 block text-sm font-medium text-slate-700">
                 Amount (NGN) <span className="text-red-500">*</span>

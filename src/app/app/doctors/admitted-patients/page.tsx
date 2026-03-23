@@ -63,6 +63,15 @@ const BLANK_LAB: LabLine = { testCode: "", priority: "Routine" };
 const INPUT_CLASS =
   "w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-200";
 
+function MobileMeta({ label, value }: { label: string; value: string | number }) {
+  return (
+    <div className="rounded-lg bg-slate-50 px-3 py-2">
+      <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">{label}</p>
+      <div className="mt-0.5 text-xs font-medium text-slate-700">{value}</div>
+    </div>
+  );
+}
+
 function toErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : "Unknown error";
 }
@@ -456,7 +465,7 @@ export default function DoctorAdmittedPatientsPage() {
         </div>
       )}
 
-      <div className="grid gap-3 md:grid-cols-4">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-4">
         {[
           { label: "Total Admitted", value: admittedPatients.length, color: "text-slate-900" },
           { label: "ICU", value: byUnit.ICU.length, color: byUnit.ICU.length > 0 ? "text-red-700" : "text-slate-400" },
@@ -476,9 +485,34 @@ export default function DoctorAdmittedPatientsPage() {
             <div className="h-2 w-2 animate-pulse rounded-full bg-red-500" />
             <h3 className="font-bold text-red-900">ICU - Critical Care</h3>
           </div>
-          <div className="divide-y divide-slate-100">
+          <div className="divide-y divide-slate-100 md:hidden">
             {byUnit.ICU.map((patient) => (
-              <div key={patient.id} className="flex items-center gap-4 px-5 py-3">
+              <div key={patient.id} className="space-y-3 px-4 py-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="font-bold text-slate-900">{patient.patientName}</p>
+                    <p className="text-xs text-slate-400">{patient.patientId}</p>
+                  </div>
+                  <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${PRIORITY_STYLES[patient.priority]}`}>
+                    {patient.priority}
+                  </span>
+                </div>
+                <div className="grid grid-cols-1 gap-2 text-xs sm:grid-cols-2">
+                  <MobileMeta label="Bed" value={patient.bed} />
+                  <MobileMeta label="Nurse" value={patient.assignedNurse} />
+                </div>
+                <div className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-500">
+                  {patient.diagnosis}
+                </div>
+                <Button size="sm" variant="outline" className="w-full" onClick={() => openOrders(patient)} disabled={!doctorName}>
+                  Clinical Orders
+                </Button>
+              </div>
+            ))}
+          </div>
+          <div className="hidden divide-y divide-slate-100 md:block">
+	            {byUnit.ICU.map((patient) => (
+	              <div key={patient.id} className="flex items-center gap-4 px-5 py-3">
                 <div className="flex-1">
                   <div className="flex flex-wrap items-center gap-2">
                     <p className="font-bold text-slate-900">{patient.patientName}</p>
@@ -491,13 +525,13 @@ export default function DoctorAdmittedPatientsPage() {
                 <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${PRIORITY_STYLES[patient.priority]}`}>
                   {patient.priority}
                 </span>
-                <Button size="sm" variant="outline" onClick={() => openOrders(patient)} disabled={!doctorName}>
-                  Clinical Orders
-                </Button>
-              </div>
-            ))}
-          </div>
-        </Card>
+	                <Button size="sm" variant="outline" onClick={() => openOrders(patient)} disabled={!doctorName}>
+	                  Clinical Orders
+			                </Button>
+			              </div>
+			            ))}
+	          </div>
+	        </Card>
       )}
 
       <Card className="overflow-hidden p-0">
@@ -508,46 +542,71 @@ export default function DoctorAdmittedPatientsPage() {
           </span>
         </div>
         {byUnit.Ward.length > 0 ? (
-          <div className="overflow-x-auto">
-            <table className="min-w-full text-sm">
-              <thead>
-                <tr className="border-b border-slate-100 bg-slate-50">
-                  {["Patient", "Patient ID", "Bed", "Diagnosis", "Priority", "Assigned Nurse", "Actions"].map((heading) => (
-                    <th
-                      key={heading}
-                      className="whitespace-nowrap px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500"
-                    >
-                      {heading}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {byUnit.Ward.map((patient) => (
-                  <tr key={patient.id} className="hover:bg-slate-50">
-                    <td className="px-4 py-3 font-semibold text-slate-900">{patient.patientName}</td>
-                    <td className="px-4 py-3 font-mono text-xs text-slate-400">{patient.patientId}</td>
-                    <td className="px-4 py-3 font-mono text-xs font-bold text-slate-600">{patient.bed}</td>
-                    <td className="max-w-[220px] truncate px-4 py-3 text-xs text-slate-500">{patient.diagnosis}</td>
-                    <td className="px-4 py-3">
-                      <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${PRIORITY_STYLES[patient.priority]}`}>
-                        {patient.priority}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-xs text-slate-500">{patient.assignedNurse}</td>
-                    <td className="px-4 py-3">
-                      <Button size="sm" variant="outline" onClick={() => openOrders(patient)} disabled={!doctorName}>
-                        Clinical Orders
-                      </Button>
-                    </td>
+          <>
+            <div className="space-y-3 md:hidden">
+              {byUnit.Ward.map((patient) => (
+                <div key={patient.id} className="space-y-3 px-4 py-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="font-semibold text-slate-900">{patient.patientName}</p>
+                      <p className="text-xs text-slate-400">{patient.patientId}</p>
+                    </div>
+                    <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${PRIORITY_STYLES[patient.priority]}`}>
+                      {patient.priority}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-1 gap-2 text-xs sm:grid-cols-2">
+                    <MobileMeta label="Bed" value={patient.bed} />
+                    <MobileMeta label="Nurse" value={patient.assignedNurse} />
+                  </div>
+                  <div className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-500">{patient.diagnosis}</div>
+                  <Button size="sm" variant="outline" className="w-full" onClick={() => openOrders(patient)} disabled={!doctorName}>
+                    Clinical Orders
+                  </Button>
+                </div>
+              ))}
+            </div>
+            <div className="hidden overflow-x-auto md:block">
+              <table className="min-w-full text-sm">
+                <thead>
+                  <tr className="border-b border-slate-100 bg-slate-50">
+                    {["Patient", "Patient ID", "Bed", "Diagnosis", "Priority", "Assigned Nurse", "Actions"].map((heading) => (
+                      <th
+                        key={heading}
+                        className="whitespace-nowrap px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500"
+                      >
+                        {heading}
+                      </th>
+                    ))}
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <p className="px-5 py-8 text-center text-sm text-slate-400">No patients in Ward at this time.</p>
-        )}
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {byUnit.Ward.map((patient) => (
+                    <tr key={patient.id} className="hover:bg-slate-50">
+                      <td className="px-4 py-3 font-semibold text-slate-900">{patient.patientName}</td>
+                      <td className="px-4 py-3 font-mono text-xs text-slate-400">{patient.patientId}</td>
+                      <td className="px-4 py-3 font-mono text-xs font-bold text-slate-600">{patient.bed}</td>
+                      <td className="max-w-[220px] truncate px-4 py-3 text-xs text-slate-500">{patient.diagnosis}</td>
+                      <td className="px-4 py-3">
+                        <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${PRIORITY_STYLES[patient.priority]}`}>
+                          {patient.priority}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-xs text-slate-500">{patient.assignedNurse}</td>
+                      <td className="px-4 py-3">
+                        <Button size="sm" variant="outline" onClick={() => openOrders(patient)} disabled={!doctorName}>
+                          Clinical Orders
+                        </Button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
+          ) : (
+            <p className="px-5 py-8 text-center text-sm text-slate-400">No patients in Ward at this time.</p>
+          )}
       </Card>
 
       {byUnit.Emergency.length > 0 && (
@@ -555,7 +614,30 @@ export default function DoctorAdmittedPatientsPage() {
           <div className="border-b border-orange-100 bg-orange-50/50 px-5 py-4">
             <h3 className="font-bold text-orange-900">Emergency Unit</h3>
           </div>
-          <div className="divide-y divide-slate-100">
+          <div className="divide-y divide-slate-100 md:hidden">
+            {byUnit.Emergency.map((patient) => (
+              <div key={patient.id} className="space-y-3 px-4 py-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="font-bold text-slate-900">{patient.patientName}</p>
+                    <p className="text-xs text-slate-400">{patient.patientId}</p>
+                  </div>
+                  <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${PRIORITY_STYLES[patient.priority]}`}>
+                    {patient.priority}
+                  </span>
+                </div>
+                <div className="grid grid-cols-1 gap-2 text-xs sm:grid-cols-2">
+                  <MobileMeta label="Bed" value={patient.bed} />
+                  <MobileMeta label="Nurse" value={patient.assignedNurse} />
+                </div>
+                <div className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-500">{patient.diagnosis}</div>
+                <Button size="sm" variant="outline" className="w-full" onClick={() => openOrders(patient)} disabled={!doctorName}>
+                  Clinical Orders
+                </Button>
+              </div>
+            ))}
+          </div>
+          <div className="hidden divide-y divide-slate-100 md:block">
             {byUnit.Emergency.map((patient) => (
               <div key={patient.id} className="flex items-center gap-4 px-5 py-3">
                 <div className="flex-1">
@@ -574,15 +656,47 @@ export default function DoctorAdmittedPatientsPage() {
                 </Button>
               </div>
             ))}
-          </div>
-        </Card>
+	          </div>
+	        </Card>
       )}
 
       <Card className="overflow-hidden p-0">
         <div className="border-b border-slate-100 px-5 py-4">
           <h3 className="font-bold text-slate-900">My Admission Orders</h3>
         </div>
-        <div className="overflow-x-auto">
+        <div className="space-y-3 md:hidden">
+          {myAdmissionOrders.map((order) => (
+            <div key={order.id} className="space-y-3 border-b border-slate-100 px-4 py-4 last:border-b-0">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="font-semibold text-slate-900">{order.patientName}</p>
+                  <p className="font-mono text-[10px] text-slate-400">{order.id}</p>
+                </div>
+                <span
+                  className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${
+                    order.status === "Admitted"
+                      ? "bg-emerald-50 text-emerald-700"
+                      : order.status === "Discharged"
+                        ? "bg-slate-100 text-slate-500"
+                        : "bg-amber-50 text-amber-700"
+                  }`}
+                >
+                  {order.status}
+                </span>
+              </div>
+              <div className="grid grid-cols-1 gap-2 text-xs sm:grid-cols-2">
+                <MobileMeta label="Unit" value={order.unit} />
+                <MobileMeta label="Ordered By" value={order.orderedBy} />
+              </div>
+              <div className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-500">{order.reason}</div>
+              <div className="text-[10px] text-slate-400">{formatOrderTime(order.orderedAt)}</div>
+            </div>
+          ))}
+          {myAdmissionOrders.length === 0 && (
+            <p className="px-6 py-8 text-center text-sm text-slate-400">No admission orders sent by you yet.</p>
+          )}
+        </div>
+        <div className="hidden overflow-x-auto md:block">
           <table className="min-w-full text-sm">
             <thead>
               <tr className="border-b border-slate-100 bg-slate-50">

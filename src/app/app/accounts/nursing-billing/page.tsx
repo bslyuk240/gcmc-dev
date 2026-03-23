@@ -42,6 +42,15 @@ function formatNursingTimestamp(value?: string) {
   });
 }
 
+function MobileMeta({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-start justify-between gap-3 border-b border-slate-100 py-2 last:border-b-0 last:pb-0">
+      <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{label}</span>
+      <span className="text-right text-sm font-medium text-slate-700">{value}</span>
+    </div>
+  );
+}
+
 export default function NursingBillingPage() {
   const { nursingCharges, metrics } = useAccountsStore();
   const [filter, setFilter] = useState<"All" | "Pending" | "Billed" | "Paid">("All");
@@ -117,7 +126,7 @@ export default function NursingBillingPage() {
   const waiveCharge = nursingCharges.find((c) => c.id === waiveTarget);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6">
       <PageHeader
         title="Nursing Billing"
         description="Manage nursing procedure charges from Ward, Emergency, and ICU units. Receive payments or waive fees."
@@ -129,7 +138,7 @@ export default function NursingBillingPage() {
           { label: "Paid Today", value: metrics.nursingPaidToday, sub: "₦" + nursingCharges.filter((c) => c.status === "Paid").reduce((s, c) => s + c.amount, 0), color: "text-emerald-700" },
           { label: "Total Procedures", value: nursingCharges.length, sub: `${nursingCharges.filter((c) => c.status === "Waived").length} waived`, color: "text-slate-900" },
         ].map((s) => (
-          <Card key={s.label} className="p-5">
+          <Card key={s.label} className="p-4 sm:p-5">
             <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{s.label}</p>
             <p className={`mt-1 text-2xl font-bold ${s.color}`}>{s.value}</p>
             <p className="mt-0.5 text-xs text-slate-500">{s.sub}</p>
@@ -137,8 +146,72 @@ export default function NursingBillingPage() {
         ))}
       </div>
 
-      <Card className="overflow-hidden p-0">
-        <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+      <div className="space-y-3 md:hidden">
+        {filtered.map((c) => {
+          const status = effectiveStatus(c);
+          return (
+            <Card key={c.id} className={`p-4 ${status === "Pending" || status === "Billed" ? "bg-amber-50/20" : ""}`}>
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="truncate font-semibold text-slate-900">{c.patientName}</p>
+                  <p className="text-xs text-slate-500">{c.patientId}</p>
+                </div>
+                <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${STATUS_STYLES[status] ?? STATUS_STYLES[c.status]}`}>{status}</span>
+              </div>
+
+              <div className="mt-4 space-y-2">
+                <MobileMeta label="Unit" value={c.unit} />
+                <MobileMeta label="Procedure" value={c.procedureType} />
+                <MobileMeta label="Description" value={c.description} />
+                <MobileMeta label="Performed By" value={c.performedBy} />
+                <MobileMeta label="Time" value={formatNursingTimestamp(c.paidAt ?? c.performedAt)} />
+                <MobileMeta label="Amount" value={`NGN ${c.amount}`} />
+              </div>
+
+              <div className="mt-4 flex flex-wrap gap-2">
+                {(status === "Pending" || status === "Billed") && (
+                  <>
+                    <Button size="sm" onClick={() => openReceiveModal(c.id)}>Receive Payment</Button>
+                    <Button size="sm" variant="ghost" onClick={() => setWaiveTarget(c.id)}>Waive</Button>
+                  </>
+                )}
+                {status === "Paid" && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="text-slate-500"
+                    onClick={() => printReceipt({
+                      title: "Nursing Procedure Receipt",
+                      subtitle: c.procedureType,
+                      refNumber: c.id,
+                      lines: [
+                        { label: "Patient", value: c.patientName },
+                        { label: "Unit", value: c.unit },
+                        { label: "Procedure", value: c.description },
+                        { label: "Performed By", value: c.performedBy },
+                        { label: "Payment Method", value: c.paymentMethod ?? "Cash" },
+                        { label: "Date", value: formatNursingTimestamp(c.paidAt ?? c.performedAt) },
+                        { label: "Status", value: "PAID", bold: true },
+                      ],
+                      total: { label: "Amount Paid", value: `NGN ${c.amount.toLocaleString()}` },
+                      copyLabel: "PATIENT COPY",
+                    })}
+                  >
+                    Receipt
+                  </Button>
+                )}
+                {status === "Waived" && <span className="text-xs text-slate-400">Waived</span>}
+              </div>
+            </Card>
+          );
+        })}
+        {filtered.length === 0 && (
+          <Card className="p-6 text-center text-sm text-slate-400">No nursing charges found.</Card>
+        )}
+      </div>
+
+      <Card className="hidden overflow-hidden p-0 md:block">
+        <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3 sm:px-5 sm:py-4">
           <h3 className="font-bold text-slate-900">Nursing Procedure Charges</h3>
           <div className="flex gap-1.5">
             {(["All", "Pending", "Paid"] as const).map((f) => (
@@ -235,7 +308,7 @@ export default function NursingBillingPage() {
 
             <div>
               <label className="mb-2 block text-sm font-semibold text-slate-700">Payment Method</label>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                 {(["Cash", "POS / Card", "Mobile Money", "Insurance"] as PayMethod[]).map((value) => (
                   <button
                     key={value}

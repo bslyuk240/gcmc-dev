@@ -166,25 +166,25 @@ export default function NursesICUPage() {
         description="Critical care monitoring with nurse-safe medication, sample, and handover follow-up."
       />
 
-      <div className="grid gap-4 lg:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Card className="border border-red-200 bg-red-50 p-5">
           <p className="text-xs font-bold uppercase tracking-wide text-red-500">Critical Patients</p>
-          <p className="mt-1 text-4xl font-bold text-red-700">{icuPatients.length}</p>
+          <p className="mt-1 text-2xl font-bold text-red-700 sm:text-4xl">{icuPatients.length}</p>
           <p className="mt-1 text-xs text-slate-500">All require close monitoring</p>
         </Card>
         <Card className="p-5">
           <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Vitals Recorded</p>
-          <p className="mt-1 text-4xl font-bold text-slate-900">{patientsWithReadings.length}</p>
+          <p className="mt-1 text-2xl font-bold text-slate-900 sm:text-4xl">{patientsWithReadings.length}</p>
           <p className="mt-1 text-xs text-slate-500">Patients with saved ICU readings</p>
         </Card>
         <Card className="p-5">
           <p className="text-xs font-bold uppercase tracking-wide text-amber-600">Doctor Attention</p>
-          <p className="mt-1 text-4xl font-bold text-amber-600">{patientsWithAlerts.length}</p>
+          <p className="mt-1 text-2xl font-bold text-amber-600 sm:text-4xl">{patientsWithAlerts.length}</p>
           <p className="mt-1 text-xs text-slate-500">Critical or alert-triggered readings</p>
         </Card>
         <Card className="p-5">
           <p className="text-xs font-bold uppercase tracking-wide text-sky-600">Sample Follow-Up</p>
-          <p className="mt-1 text-4xl font-bold text-sky-700">{sampleFollowUp}</p>
+          <p className="mt-1 text-2xl font-bold text-sky-700 sm:text-4xl">{sampleFollowUp}</p>
           <p className="mt-1 text-xs text-slate-500">ICU patients with lab work pending</p>
         </Card>
       </div>
@@ -254,7 +254,7 @@ export default function NursesICUPage() {
         </Card>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className="grid gap-4 md:grid-cols-2">
         {icuPatients.map((patient) => {
           const patientVitals = icuVitals.filter((entry) => entry.patientId === patient.patientId);
           const latest = patientVitals[0];
@@ -281,7 +281,7 @@ export default function NursesICUPage() {
               {latest ? (
                 <div className="mb-3 rounded-lg border border-slate-200 bg-white p-3">
                   <p className="mb-2 text-xs font-bold uppercase text-slate-500">Latest ICU Reading</p>
-                  <div className="grid grid-cols-3 gap-2 text-xs">
+                  <div className="grid grid-cols-1 gap-2 text-xs sm:grid-cols-2 lg:grid-cols-3">
                     {[
                       { label: "BP", value: latest.bp, alert: false },
                       {
@@ -382,7 +382,7 @@ export default function NursesICUPage() {
             <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-xs font-semibold text-red-800">
               ICU patient - record comprehensive vitals every hour.
             </div>
-            <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div>
                 <label className="mb-1 block text-xs font-semibold text-slate-600">Blood Pressure (mmHg) *</label>
                 <input value={bp} onChange={(event) => setBp(event.target.value)} placeholder="e.g. 160/100" className={inputCls} />
@@ -449,7 +449,7 @@ export default function NursesICUPage() {
                     <span className="font-semibold text-slate-700">{fmtDateTime(entry.recordedAt)}</span>
                     <span className="text-slate-500">By: {entry.recordedBy}</span>
                   </div>
-                  <div className="grid grid-cols-3 gap-2">
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
                     {[
                       ["BP", entry.bp],
                       ["HR", `${entry.pulse} bpm`],

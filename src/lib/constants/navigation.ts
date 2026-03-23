@@ -121,16 +121,16 @@ export const dashboardNavigation: Array<{
     section: "Overview",
     items: [
       {
-        href: `${INTERNAL_PREFIX}/dashboard`,
-        label: "Global Dashboard",
-        description: "Operational snapshot across departments.",
-        department: "dashboard",
-      },
-      {
         href: `${INTERNAL_PREFIX}/notifications`,
         label: "Notifications",
         description: "Alerts, escalations, and reminders.",
         department: "notifications",
+      },
+      {
+        href: `${INTERNAL_PREFIX}/chat`,
+        label: "Chat to IT",
+        description: "Shared inbox for technical support.",
+        department: "support",
       },
     ],
   },
@@ -202,17 +202,6 @@ export const dashboardNavigation: Array<{
         label: "NHIS / HMO",
         description: "HMO schemes, patient enrollments, and claims processing.",
         department: "nhis",
-      },
-    ],
-  },
-  {
-    section: "Personal",
-    items: [
-      {
-        href: `${INTERNAL_PREFIX}/profile`,
-        label: "Profile",
-        description: "Personal profile, activity, and security controls.",
-        department: "profile",
       },
     ],
   },
@@ -541,7 +530,7 @@ export const sidebarNavigationByDepartment: Record<
         { label: "Settings", href: `${INTERNAL_PREFIX}/profile/settings`, icon: "settings" },
         { label: "Security", href: `${INTERNAL_PREFIX}/profile/security`, icon: "status" },
         { label: "Activity Log", href: `${INTERNAL_PREFIX}/profile/activity`, icon: "reports" },
-        { label: "Notifications", href: `${INTERNAL_PREFIX}/profile/notifications`, icon: "bell" },
+        { label: "Notifications", href: `${INTERNAL_PREFIX}/notifications`, icon: "bell" },
       ],
     },
     {
@@ -704,7 +693,7 @@ export const departmentHomePaths: Record<DepartmentKey, string> = {
 };
 
 export const sharedProtectedPrefixes = [
+  `${INTERNAL_PREFIX}/chat`,
   `${INTERNAL_PREFIX}/it/chat`,
   `${INTERNAL_PREFIX}/notifications`,
-  `${INTERNAL_PREFIX}/profile`,
 ] as const;

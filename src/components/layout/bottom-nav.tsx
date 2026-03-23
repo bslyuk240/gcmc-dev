@@ -11,13 +11,10 @@ import {
 } from "@/lib/constants/navigation";
 import type { DepartmentKey } from "@/lib/constants/navigation";
 import { useNotificationStore } from "@/lib/hooks/use-notification-store";
+import { useHMSSession } from "@/modules/rbac/hooks";
 
-function getHomeHref(dept: DepartmentKey): string {
-  if (dept === "profile" || dept === "notifications" || dept === "support") {
-    return departmentHomePaths.dashboard;
-  }
-
-  return departmentHomePaths[dept] ?? `${INTERNAL_PREFIX}/profile`;
+function getHomeHref(dept: DepartmentKey) {
+  return departmentHomePaths[dept] ?? INTERNAL_PREFIX;
 }
 
 function HomeIcon({ active }: { active: boolean }) {
@@ -56,6 +53,25 @@ function BellIcon({ active }: { active: boolean }) {
   );
 }
 
+function MenuIcon({ active }: { active: boolean }) {
+  return (
+    <svg
+      width="20"
+      height="20"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={active ? 2.5 : 2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <line x1="3" y1="6" x2="21" y2="6" />
+      <line x1="3" y1="12" x2="21" y2="12" />
+      <line x1="3" y1="18" x2="21" y2="18" />
+    </svg>
+  );
+}
+
 function ChatIcon({ active }: { active: boolean }) {
   return (
     <svg
@@ -73,41 +89,33 @@ function ChatIcon({ active }: { active: boolean }) {
   );
 }
 
-function UserIcon({ active }: { active: boolean }) {
-  return (
-    <svg
-      width="20"
-      height="20"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={active ? 2.5 : 2}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-      <circle cx="12" cy="7" r="4" />
-    </svg>
-  );
-}
-
 type NavItem = {
-  href: string;
   label: string;
   Icon: ComponentType<{ active: boolean }>;
-  activeTest: (pathname: string) => boolean;
+  activeTest?: (pathname: string) => boolean;
+  href?: string;
+  onClick?: () => void;
   badge?: number;
 };
 
 export function BottomNav() {
   const pathname = usePathname();
+  const session = useHMSSession();
   const dept = getDepartmentFromPath(pathname);
-  const homeHref = getHomeHref(dept);
+  const homeDept = session?.department ?? dept;
+  const homeHref = getHomeHref(homeDept);
   const notifHref = `${INTERNAL_PREFIX}/notifications`;
-  const chatHref = `${INTERNAL_PREFIX}/it/chat`;
+  const chatHref = `${INTERNAL_PREFIX}/chat`;
   const { unreadCount } = useNotificationStore(dept);
 
   const navItems: NavItem[] = [
+    {
+      label: "Menu",
+      Icon: MenuIcon,
+      onClick: () => {
+        window.dispatchEvent(new Event("hms:open-mobile-sidebar"));
+      },
+    },
     {
       href: homeHref,
       label: "Home",
@@ -117,22 +125,16 @@ export function BottomNav() {
     },
     {
       href: notifHref,
-      label: "Alerts",
+      label: "Notifications",
       Icon: BellIcon,
       activeTest: (p) => p === notifHref || p.startsWith(`${notifHref}/`),
       badge: unreadCount,
     },
     {
       href: chatHref,
-      label: "Chat",
+      label: "Chat to IT",
       Icon: ChatIcon,
       activeTest: (p) => p === chatHref || p.startsWith(`${chatHref}/`),
-    },
-    {
-      href: `${INTERNAL_PREFIX}/profile`,
-      label: "Profile",
-      Icon: UserIcon,
-      activeTest: (p) => p === `${INTERNAL_PREFIX}/profile` || p.startsWith(`${INTERNAL_PREFIX}/profile/`),
     },
   ];
 
@@ -145,21 +147,15 @@ export function BottomNav() {
       <div className="flex">
         {navItems.map((item) => {
           const NavIcon = item.Icon;
-          const isActive = item.activeTest(pathname);
+          const isActive = item.activeTest?.(pathname) ?? false;
           const className = cn(
             "flex flex-1 select-none flex-col items-center gap-0.5 py-2.5 text-center",
             "active:opacity-70",
             isActive ? "text-blue-600" : "text-slate-400",
           );
 
-          return (
-            <Link
-              key={item.label}
-              href={item.href}
-              prefetch={true}
-              className={className}
-              style={{ touchAction: "manipulation" }}
-            >
+          const content = (
+            <>
               <div className="relative">
                 <NavIcon active={isActive} />
                 {item.badge && item.badge > 0 ? (
@@ -171,6 +167,32 @@ export function BottomNav() {
               <span className={cn("text-[10px] font-semibold", isActive ? "text-blue-600" : "")}>
                 {item.label}
               </span>
+            </>
+          );
+
+          if (item.onClick) {
+            return (
+              <button
+                key={item.label}
+                type="button"
+                onClick={item.onClick}
+                className={className}
+                style={{ touchAction: "manipulation" }}
+              >
+                {content}
+              </button>
+            );
+          }
+
+          return (
+            <Link
+              key={item.label}
+              href={item.href ?? "#"}
+              prefetch={true}
+              className={className}
+              style={{ touchAction: "manipulation" }}
+            >
+              {content}
             </Link>
           );
         })}

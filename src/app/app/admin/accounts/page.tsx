@@ -7,6 +7,15 @@ import { ACCOUNTS_PAYMENT_UPDATED_EVENT } from "@/lib/constants/accounts-events"
 import { useAccountsStore } from "@/lib/hooks/use-accounts-store";
 import { fetchInvoices, fetchPayments, type InvoiceRecord, type PaymentRecord } from "@/lib/supabase/db";
 
+function MobileMeta({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-start justify-between gap-3 rounded-lg bg-slate-50 px-3 py-2">
+      <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{label}</span>
+      <span className="text-right text-sm font-medium text-slate-700">{value}</span>
+    </div>
+  );
+}
+
 export default function AdminAccountsMonitorPage() {
   const { metrics, frontDeskCharges, consultationFees, payrollBatches, supplierPayments, labCharges, nursingCharges } = useAccountsStore();
   const [invoiceRows, setInvoiceRows] = useState<InvoiceRecord[]>([]);
@@ -64,24 +73,49 @@ export default function AdminAccountsMonitorPage() {
         <PageHeader title="Accounts Monitor" description="Financial oversight — revenue, receivables, payroll, supplier payments, and department billing." />
       </div>
 
-      <div className="flex gap-3">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {[
           { label: "Revenue Today", value: `₦${(metrics.revenueToday + invoiceRevenueToday).toLocaleString()}`, color: "text-emerald-700" },
           { label: "Pending Collections", value: `₦${(metrics.frontDeskPendingValue + metrics.consultationPendingValue + metrics.labPendingValue + metrics.nursingPendingValue + invoicePendingBalance).toLocaleString()}`, color: "text-amber-600" },
           { label: "Payroll Pending", value: `₦${metrics.payrollPendingValue.toLocaleString()}`, color: "text-sky-700" },
           { label: "Supplier Payable", value: `₦${metrics.supplierPendingValue.toLocaleString()}`, color: metrics.supplierPendingCount > 0 ? "text-red-600" : "text-slate-500" },
         ].map((s) => (
-          <Card key={s.label} className="flex flex-1 items-center gap-3 px-4 py-3">
-            <p className={`text-lg font-bold shrink-0 ${s.color}`}>{s.value}</p>
-            <p className="text-xs font-semibold text-slate-500 leading-tight">{s.label}</p>
+          <Card key={s.label} className="flex items-center gap-3 px-4 py-3 sm:px-5 sm:py-4">
+            <p className={`shrink-0 text-base font-bold sm:text-lg ${s.color}`}>{s.value}</p>
+            <p className="text-xs font-semibold leading-tight text-slate-500">{s.label}</p>
           </Card>
         ))}
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-3">
+      <div className="grid gap-4 sm:gap-5 lg:grid-cols-3">
         <div className="lg:col-span-2 space-y-6">
-          <Card className="overflow-hidden p-0">
-            <div className="border-b border-slate-100 px-5 py-4">
+          <Card className="overflow-hidden p-0 md:hidden">
+            <div className="border-b border-slate-100 px-4 py-3 sm:px-5 sm:py-4">
+              <h3 className="font-bold text-slate-900">Pending Bills — All Departments</h3>
+            </div>
+            <div className="space-y-3 p-3">
+              {pendingBills.map((b, i) => (
+                <Card key={i} className="p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold text-slate-900">{b.name}</p>
+                      <p className="text-xs text-slate-400">{b.type} charge</p>
+                    </div>
+                    <span className={`shrink-0 rounded-full px-2.5 py-0.5 text-xs font-semibold ${b.type === "Lab" ? "bg-sky-50 text-sky-700" : b.type === "Nursing" ? "bg-violet-50 text-violet-700" : b.type === "Consultation" ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>
+                      ₦{b.amount.toLocaleString()}
+                    </span>
+                  </div>
+                  <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    <MobileMeta label="Department" value={b.type} />
+                    <MobileMeta label="Date" value={b.date} />
+                  </div>
+                </Card>
+              ))}
+            </div>
+          </Card>
+
+          <Card className="hidden overflow-hidden p-0 md:block">
+            <div className="border-b border-slate-100 px-4 py-3 sm:px-5 sm:py-4">
               <h3 className="font-bold text-slate-900">Pending Bills — All Departments</h3>
             </div>
             <div className="divide-y divide-slate-100">
@@ -101,7 +135,7 @@ export default function AdminAccountsMonitorPage() {
 
           <div className="grid gap-4 sm:grid-cols-2">
             <Card className="overflow-hidden p-0">
-              <div className="border-b border-slate-100 px-4 py-3">
+              <div className="border-b border-slate-100 px-4 py-3 sm:px-5 sm:py-4">
                 <h3 className="font-bold text-slate-900 text-sm">Payroll Batches</h3>
               </div>
               <div className="divide-y divide-slate-100">
@@ -118,7 +152,7 @@ export default function AdminAccountsMonitorPage() {
               </div>
             </Card>
             <Card className="overflow-hidden p-0">
-              <div className="border-b border-slate-100 px-4 py-3">
+              <div className="border-b border-slate-100 px-4 py-3 sm:px-5 sm:py-4">
                 <h3 className="font-bold text-slate-900 text-sm">Supplier Payments</h3>
               </div>
               <div className="divide-y divide-slate-100">
@@ -138,7 +172,7 @@ export default function AdminAccountsMonitorPage() {
         </div>
 
         <div className="space-y-4">
-          <Card className="p-5">
+          <Card className="p-4 sm:p-5">
             <h3 className="font-bold text-slate-900 mb-3">Revenue Sources Today</h3>
             <div className="space-y-2 text-sm">
               {[

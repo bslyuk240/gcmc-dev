@@ -16,6 +16,15 @@ const INTERP_STYLES: Record<string, string> = {
   Pending: "bg-slate-100 text-slate-500",
 };
 
+function MobileMeta({ label, value }: { label: string; value: string | number }) {
+  return (
+    <div className="rounded-lg bg-slate-50 px-3 py-2">
+      <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">{label}</p>
+      <div className="mt-0.5 text-xs font-medium text-slate-700">{value}</div>
+    </div>
+  );
+}
+
 export default function DoctorLabResultsPage() {
   const { tests } = useLabStore();
   const { consultations } = useDoctorsStore();
@@ -29,7 +38,7 @@ export default function DoctorLabResultsPage() {
     ? completedTests
     : completedTests.filter((t) => (t.interpretation ?? "Pending") === filterInterp);
 
-  function markReviewed(testId: string, patientName: string) {
+  function markReviewed(patientName: string) {
     // Mark the linked consultation as no longer awaiting
     const linked = consultations.find((c) =>
       c.patientName === patientName && c.status === "Awaiting Results"
@@ -53,7 +62,7 @@ export default function DoctorLabResultsPage() {
         </div>
       )}
 
-      <div className="flex gap-3">
+      <div className="grid grid-cols-1 gap-3 sm:flex">
         {[
           { label: "Completed Results", value: completedTests.length, color: "text-emerald-700" },
           { label: "Critical", value: criticalResults.length, color: criticalResults.length > 0 ? "text-red-700" : "text-slate-400" },
@@ -79,7 +88,39 @@ export default function DoctorLabResultsPage() {
             ))}
           </div>
         </div>
-        <div className="overflow-x-auto">
+        <div className="space-y-3 md:hidden">
+          {filtered.map((t) => (
+            <div key={t.id} className={`space-y-3 border-b border-slate-100 px-4 py-4 last:border-b-0 ${t.interpretation === "Critical" ? "bg-red-50/20" : ""}`}>
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="font-semibold text-slate-900">{t.patientName}</p>
+                  <p className="text-[10px] text-slate-400">{t.testName}</p>
+                </div>
+                <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${INTERP_STYLES[t.interpretation ?? "Pending"]}`}>
+                  {t.interpretation ?? "—"}
+                </span>
+              </div>
+              <div className="grid grid-cols-1 gap-2 text-xs sm:grid-cols-2">
+                <MobileMeta label="Lab ID" value={t.id} />
+                <MobileMeta label="Priority" value={t.priority} />
+              </div>
+              <div className="grid grid-cols-1 gap-2 text-xs sm:grid-cols-2">
+                <MobileMeta label="Ordered By" value={t.orderedBy} />
+                <MobileMeta label="Date" value={t.completedAt ?? t.orderedAt} />
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <div className="text-sm">
+                  {t.resultValue ? <strong>{t.resultValue} {t.resultUnit}</strong> : <span className="text-slate-400">—</span>}
+                </div>
+                <Button size="sm" variant="outline" onClick={() => setViewResult(t)}>View</Button>
+              </div>
+            </div>
+          ))}
+          {filtered.length === 0 && (
+            <p className="px-6 py-10 text-center text-sm text-slate-400">No completed results in this category.</p>
+          )}
+        </div>
+        <div className="hidden overflow-x-auto md:block">
           <table className="min-w-full text-sm">
             <thead>
               <tr className="bg-slate-50 border-b border-slate-100">
@@ -130,7 +171,7 @@ export default function DoctorLabResultsPage() {
                 {viewResult.priority}
               </span>
             </div>
-            <div className="grid grid-cols-2 gap-2 text-xs">
+            <div className="grid grid-cols-1 gap-2 text-xs sm:grid-cols-2">
               {[
                 { label: "Patient", value: viewResult.patientName },
                 { label: "Test", value: viewResult.testName },
@@ -161,7 +202,7 @@ export default function DoctorLabResultsPage() {
         )}
         <ModalFooter>
           <Button variant="ghost" size="md" onClick={() => setViewResult(null)}>Close</Button>
-          <Button size="md" onClick={() => viewResult && markReviewed(viewResult.id, viewResult.patientName)}>
+          <Button size="md" onClick={() => viewResult && markReviewed(viewResult.patientName)}>
             Mark Reviewed
           </Button>
         </ModalFooter>

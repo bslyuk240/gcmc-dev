@@ -24,6 +24,21 @@ function formatTime(iso: string) {
   return d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
 }
 
+function MobileMeta({
+  label,
+  value,
+}: {
+  label: string;
+  value: string | number;
+}) {
+  return (
+    <div className="rounded-lg bg-slate-50 px-3 py-2">
+      <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">{label}</p>
+      <div className="mt-0.5 text-xs font-medium text-slate-700">{value}</div>
+    </div>
+  );
+}
+
 const SHIFT_LABELS: Record<string, string> = {
   morning: "Morning shift",
   afternoon: "Afternoon shift",
@@ -105,7 +120,7 @@ export default function FrontdeskPage() {
       </div>
 
       {/* KPI cards */}
-      <section className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
+      <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 xl:grid-cols-4">
         {metrics.map((metric) => (
           <article
             key={metric.label}
@@ -154,7 +169,32 @@ export default function FrontdeskPage() {
                 </Link>
               </div>
             ) : (
-              <div className="overflow-x-auto">
+              <div>
+                <div className="grid gap-3 p-4 md:hidden">
+                  {recentRegs.map((patient) => (
+                    <div key={patient.id} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex min-w-0 items-center gap-3">
+                          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-violet-100 text-xs font-bold text-violet-700">
+                            {patient.initials || getInitials(patient.patientName)}
+                          </div>
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-semibold text-slate-900">{patient.patientName}</p>
+                            <p className="mt-0.5 text-[11px] font-medium text-slate-500">
+                              {patient.patientId || "â€”"} {"·"} {formatTime(patient.registeredAt)}
+                            </p>
+                          </div>
+                        </div>
+                        <StatusChip status={patient.status} />
+                      </div>
+                      <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                        <MobileMeta label="Contact" value={patient.contact || "â€”"} />
+                        <MobileMeta label="Status" value={patient.status} />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div className="hidden overflow-x-auto md:block">
                 <table className="min-w-full border-collapse text-left">
                   <thead>
                     <tr className="border-b border-slate-200 bg-slate-50">
@@ -195,6 +235,7 @@ export default function FrontdeskPage() {
                     ))}
                   </tbody>
                 </table>
+              </div>
               </div>
             )}
             {!loading && recentRegs.length > 0 && (

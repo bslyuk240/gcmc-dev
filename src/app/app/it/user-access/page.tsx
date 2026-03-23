@@ -21,6 +21,15 @@ const STATUS_STYLES: Record<UserStatus, string> = {
   Inactive: "bg-slate-100 text-slate-500",
 };
 
+function MobileMeta({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-start justify-between gap-3 rounded-lg bg-slate-50 px-3 py-2">
+      <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{label}</span>
+      <span className="text-right text-sm font-medium text-slate-700">{value}</span>
+    </div>
+  );
+}
+
 type UserRecord = {
   id: string;
   name: string;
@@ -108,7 +117,7 @@ export default function ITUserAccessPage() {
   const inputCls = "w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/20";
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6">
       <PageHeader
         title="User Access Management"
         description="Staff accounts, roles, and access control."
@@ -116,7 +125,7 @@ export default function ITUserAccessPage() {
       />
 
       <Card className="overflow-hidden p-0">
-        <div className="border-b border-slate-100 px-5 py-4">
+        <div className="border-b border-slate-100 px-4 py-3 sm:px-5 sm:py-4">
           <h3 className="font-bold text-slate-900">All Users <span className="text-sm font-normal text-slate-400">({users.length})</span></h3>
         </div>
         {loading ? (
@@ -124,12 +133,34 @@ export default function ITUserAccessPage() {
             <div className="h-7 w-7 animate-spin rounded-full border-4 border-slate-200 border-t-[var(--accent)]" />
           </div>
         ) : users.length === 0 ? (
-          <div className="px-5 py-10 text-center">
+          <div className="px-4 py-8 text-center sm:px-5 sm:py-10">
             <p className="text-sm font-medium text-slate-500">No records yet.</p>
             <p className="mt-1 text-xs text-slate-400">Data will appear here once entries are created.</p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <>
+          <div className="space-y-3 p-3 md:hidden">
+            {users.map((row) => (
+              <Card key={row.id} className="p-3 sm:p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold text-slate-900">{row.name}</p>
+                    <p className="mt-0.5 text-xs text-slate-500">{row.email}</p>
+                  </div>
+                  <span className={`rounded-full px-2.5 py-1 text-[10px] font-semibold ${STATUS_STYLES[row.status]}`}>{row.status}</span>
+                </div>
+                <div className="mt-3 grid grid-cols-1 gap-2">
+                  <MobileMeta label="Role" value={row.role} />
+                  <MobileMeta label="Department" value={row.department} />
+                  <MobileMeta label="Last Login" value={row.lastLogin} />
+                </div>
+                <div className="mt-3 flex justify-end">
+                  <Button size="sm" variant="outline" onClick={() => openManage(row)}>Manage</Button>
+                </div>
+              </Card>
+            ))}
+          </div>
+          <div className="hidden overflow-x-auto md:block">
             <table className="min-w-full text-left text-sm">
               <thead>
                 <tr className="border-b border-slate-100 bg-slate-50">
@@ -155,6 +186,7 @@ export default function ITUserAccessPage() {
               </tbody>
             </table>
           </div>
+          </>
         )}
       </Card>
 
@@ -169,7 +201,7 @@ export default function ITUserAccessPage() {
             <label className="block text-sm font-medium text-slate-700 mb-1">Email Address <span className="text-red-500">*</span></label>
             <input required type="email" value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} placeholder="name@gcmc.local" className={inputCls} />
           </div>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Role <span className="text-red-500">*</span></label>
               <select required value={inviteRole} onChange={(e) => setInviteRole(e.target.value)} className={inputCls}>
@@ -195,7 +227,7 @@ export default function ITUserAccessPage() {
       {/* Manage user modal */}
       {manageUser && (
         <Modal open={true} onClose={() => setManageUser(null)} title={`Manage — ${manageUser.name}`}>
-          <div className="space-y-4 text-sm">
+            <div className="space-y-3 text-sm sm:space-y-4">
             <p className="text-slate-500">{manageUser.email} · {manageUser.department}</p>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Role</label>

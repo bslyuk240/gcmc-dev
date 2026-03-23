@@ -58,6 +58,15 @@ const within = (value: DateLike, start?: Date, end?: Date) => {
 const filterRange = <T,>(items: T[], getTs: (item: T) => DateLike, start?: Date, end?: Date) => items.filter((item) => within(getTs(item), start, end));
 const sumBy = <T,>(items: T[], pick: (item: T) => number) => items.reduce((sum, item) => sum + pick(item), 0);
 
+function MobileMeta({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-start justify-between gap-3 border-b border-slate-100 py-2 last:border-b-0 last:pb-0">
+      <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{label}</span>
+      <span className="text-right text-sm font-medium text-slate-700">{value}</span>
+    </div>
+  );
+}
+
 export default function AccountsDailyReportsPage() {
   const { frontDeskCharges, consultationFees, labCharges, nursingCharges, supplierPayments, payrollBatches, kioskSales } = useAccountsStore();
   const { bills: pharmacyBills } = usePharmacyStore();
@@ -306,7 +315,39 @@ export default function AccountsDailyReportsPage() {
         </Card>
       </div>
 
-      <Card className="overflow-hidden p-0">
+      <div className="space-y-3 lg:hidden">
+        {activityRows.map((item, index) => (
+          <Card key={`${item.source}-${index}`} className="p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="truncate font-semibold text-slate-900">{item.source}</p>
+                <p className="text-xs text-slate-500">{item.name}</p>
+              </div>
+              <span
+                className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${
+                  item.status === "Paid" || item.status === "Confirmed"
+                    ? "bg-emerald-50 text-emerald-700"
+                    : item.status === "Pending" || item.status === "Billed"
+                      ? "bg-amber-50 text-amber-700"
+                      : "bg-slate-100 text-slate-500"
+                }`}
+              >
+                {item.status}
+              </span>
+            </div>
+            <div className="mt-4 space-y-2">
+              <MobileMeta label="Details" value={item.detail} />
+              <MobileMeta label="Amount" value={money(item.amount)} />
+              <MobileMeta label="Time" value={formatDateTime(item.time)} />
+            </div>
+          </Card>
+        ))}
+        {activityRows.length === 0 && (
+          <Card className="p-6 text-center text-sm text-slate-400">No financial activity found for the selected period.</Card>
+        )}
+      </div>
+
+      <Card className="hidden overflow-hidden p-0 lg:block">
         <div className="border-b border-slate-100 px-5 py-4"><h3 className="font-bold text-slate-900">Recent Financial Activity</h3></div>
         <div className="overflow-x-auto">
           <table className="min-w-full text-left text-sm">

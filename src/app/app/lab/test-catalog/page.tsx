@@ -35,6 +35,15 @@ function fmtTurnaround(hours: number) {
   return `${hours} hr${hours > 1 ? "s" : ""}`;
 }
 
+function MobileMeta({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-start justify-between gap-3 border-b border-slate-100 py-2 last:border-b-0 last:pb-0">
+      <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{label}</span>
+      <span className="text-right text-sm font-medium text-slate-700">{value}</span>
+    </div>
+  );
+}
+
 export default function LabTestCatalogPage() {
   const { catalog } = useLabStore();
   const [categoryFilter, setCategoryFilter] = useState("All");
@@ -123,11 +132,11 @@ export default function LabTestCatalogPage() {
       <div className="grid gap-4 sm:grid-cols-3">
         <Card className="p-5">
           <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Total Tests Available</p>
-          <p className="mt-1 text-3xl font-bold text-slate-900">{catalog.length}</p>
+          <p className="mt-1 text-2xl font-bold text-slate-900 sm:text-3xl">{catalog.length}</p>
         </Card>
         <Card className="p-5">
           <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Categories</p>
-          <p className="mt-1 text-3xl font-bold text-slate-900">{CATEGORY_OPTIONS.length}</p>
+          <p className="mt-1 text-2xl font-bold text-slate-900 sm:text-3xl">{CATEGORY_OPTIONS.length}</p>
         </Card>
         <Card className="p-5">
           <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Price Range</p>
@@ -161,7 +170,40 @@ export default function LabTestCatalogPage() {
           <h3 className="font-bold text-slate-900">Test List</h3>
           <p className="text-xs text-slate-500">{filtered.length} test{filtered.length !== 1 ? "s" : ""} · Combined price: ₦{totalRevenuePotential.toLocaleString()}</p>
         </div>
-        <div className="overflow-x-auto">
+        <div className="space-y-3 p-4 md:hidden">
+          {filtered.map((item) => (
+            <Card key={item.id} className="p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="font-semibold text-slate-900">{item.name}</p>
+                  <p className="text-xs font-mono text-slate-500">{item.code}</p>
+                </div>
+                <span className="rounded-full bg-sky-50 px-2.5 py-0.5 text-xs font-semibold text-sky-700">{item.category}</span>
+              </div>
+              <div className="mt-3 space-y-2">
+                <MobileMeta label="Department" value={item.department} />
+                <MobileMeta label="Sample Type" value={item.sampleType} />
+                <MobileMeta label="Price" value={`₦${item.price.toLocaleString()}`} />
+                <MobileMeta label="Turnaround" value={fmtTurnaround(item.turnaroundHours)} />
+              </div>
+              <div className="mt-4 flex gap-2">
+                <Button size="sm" variant="outline" onClick={() => setViewItem(item)}>Details</Button>
+                <Button size="sm" variant="ghost" onClick={() => openEdit(item)}>Edit</Button>
+              </div>
+            </Card>
+          ))}
+          {filtered.length === 0 && (
+            <Card className="p-6 text-center text-sm text-slate-400">
+              {catalog.length === 0 ? (
+                <div className="space-y-2">
+                  <p>No tests in catalog yet.</p>
+                  <button onClick={openAdd} className="text-[var(--accent)] font-semibold hover:underline">+ Add your first test</button>
+                </div>
+              ) : "No tests match your search."}
+            </Card>
+          )}
+        </div>
+        <div className="hidden overflow-x-auto md:block">
           <table className="min-w-full text-sm text-left">
             <thead>
               <tr className="bg-slate-50 border-b border-slate-100">
@@ -215,7 +257,7 @@ export default function LabTestCatalogPage() {
       {viewItem && (
         <Modal open={true} onClose={() => setViewItem(null)} title={viewItem.name}>
           <div className="space-y-3 text-sm">
-            <div className="grid grid-cols-2 gap-3 rounded-lg bg-slate-50 p-3">
+            <div className="grid grid-cols-1 gap-3 rounded-lg bg-slate-50 p-3 sm:grid-cols-2">
               <div><p className="text-xs text-slate-500">Code</p><p className="font-mono font-bold">{viewItem.code}</p></div>
               <div><p className="text-xs text-slate-500">Category</p><p>{viewItem.category}</p></div>
               <div><p className="text-xs text-slate-500">Department</p><p>{viewItem.department}</p></div>
@@ -238,7 +280,7 @@ export default function LabTestCatalogPage() {
       {/* Add / Edit modal */}
       <Modal open={formOpen} onClose={() => setFormOpen(false)} title={editTarget ? `Edit — ${editTarget.name}` : "Add New Test"}>
         <div className="space-y-4">
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
               <label className="block text-xs font-semibold text-slate-600 mb-1">Test Code *</label>
               <input value={form.code} onChange={(e) => setField("code", e.target.value)}
@@ -258,7 +300,7 @@ export default function LabTestCatalogPage() {
               placeholder="e.g. Full Blood Count" className={inputCls} />
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
               <label className="block text-xs font-semibold text-slate-600 mb-1">Department</label>
               <input value={form.department} onChange={(e) => setField("department", e.target.value)}
@@ -271,7 +313,7 @@ export default function LabTestCatalogPage() {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
               <label className="block text-xs font-semibold text-slate-600 mb-1">Price (₦) *</label>
               <input type="number" min="0" value={form.price} onChange={(e) => setField("price", e.target.value)}

@@ -27,6 +27,15 @@ function formatDate(date: Date) {
   return date.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
 }
 
+function MobileMeta({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-start justify-between gap-3 rounded-lg bg-slate-50 px-3 py-2">
+      <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{label}</span>
+      <span className="text-right text-sm font-medium text-slate-700">{value}</span>
+    </div>
+  );
+}
+
 export default function AdminReportsPage() {
   const { frontDeskCharges, consultationFees, supplierPayments, payrollBatches, kioskSales, labCharges, nursingCharges, metrics } =
     useAccountsStore();
@@ -338,7 +347,7 @@ export default function AdminReportsPage() {
       />
 
       {/* KPI row */}
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {[
           { label: "Revenue Today",   value: money(revenueToday),   sub: "Billing + pharmacy + invoices", color: "text-emerald-700" },
           { label: "Collected Today", value: money(collectedToday), sub: "Confirmed receipts",            color: "text-slate-900" },
@@ -404,7 +413,28 @@ export default function AdminReportsPage() {
             <h3 className="font-bold text-slate-900">Recent Financial Activity</h3>
             <p className="mt-0.5 text-xs text-slate-400">Latest transactions across all departments</p>
           </div>
-          <div className="overflow-x-auto">
+          <div className="space-y-3 p-3 md:hidden">
+            {recentActivity.map((item, i) => (
+              <Card key={`${item.source}-${i}`} className="p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-semibold text-slate-900">{item.name}</p>
+                    <p className="text-xs text-slate-400">{item.source}</p>
+                  </div>
+                  <span className="rounded-full bg-sky-50 px-2 py-0.5 text-[11px] font-bold text-sky-700">{item.status}</span>
+                </div>
+                <div className="mt-3 grid grid-cols-1 gap-2">
+                  <MobileMeta label="Details" value={item.detail ?? "—"} />
+                  <MobileMeta label="Amount" value={money(item.amount)} />
+                  <MobileMeta label="Time" value={formatDateTime(item.time)} />
+                </div>
+              </Card>
+            ))}
+            {recentActivity.length === 0 && (
+              <p className="px-2 py-8 text-center text-sm text-slate-400">No financial activity found yet.</p>
+            )}
+          </div>
+          <div className="hidden overflow-x-auto md:block">
             <table className="min-w-full text-left text-sm">
               <thead>
                 <tr className="border-b border-slate-100 bg-slate-50">

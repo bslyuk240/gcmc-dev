@@ -33,6 +33,15 @@ const TIMEZONES = [
   "(GMT-05:00) Eastern Time (US)",
 ];
 
+function MobileMeta({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-start justify-between gap-3 rounded-lg bg-slate-50 px-3 py-2">
+      <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{label}</span>
+      <span className="text-right text-sm font-medium text-slate-700">{value}</span>
+    </div>
+  );
+}
+
 export default function AdminSettingsPage() {
   const [activeTab, setActiveTab] = useState("general");
   const [toast, setToast] = useState<ToastData | null>(null);
@@ -143,13 +152,13 @@ export default function AdminSettingsPage() {
 
       {/* Tab bar */}
       <div className="border-b border-slate-200">
-        <nav className="flex gap-8" aria-label="Settings tabs">
+        <nav className="flex flex-wrap gap-3 sm:gap-8" aria-label="Settings tabs">
           {TABS.map((tab) => (
             <button
               key={tab.id}
               type="button"
               onClick={() => setActiveTab(tab.id)}
-              className={`relative pb-3 text-sm font-semibold transition ${activeTab === tab.id ? "text-blue-700" : "text-slate-500 hover:text-slate-700"}`}
+              className={`relative rounded-full px-3 py-2 text-sm font-semibold transition sm:rounded-none sm:px-0 sm:py-0 ${activeTab === tab.id ? "bg-blue-50 text-blue-700 sm:bg-transparent" : "text-slate-500 hover:text-slate-700"}`}
             >
               {tab.label}
               {activeTab === tab.id && (
@@ -256,7 +265,7 @@ export default function AdminSettingsPage() {
       {activeTab === "billing-rates" && (
         <div className="space-y-8">
           <div className="rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-xs text-sky-800">
-            <strong>How this works:</strong> These rates are used system-wide — by Front Desk check-ins, Doctors' consultation fees, Nursing procedure charges, and manual Front Desk billing. Changes take effect immediately across all departments.
+            <strong>How this works:</strong> These rates are used system-wide — by Front Desk check-ins, Doctors&apos; consultation fees, Nursing procedure charges, and manual Front Desk billing. Changes take effect immediately across all departments.
           </div>
 
           {presetsLoading ? (
@@ -274,7 +283,47 @@ export default function AdminSettingsPage() {
                       <p className="text-xs text-slate-500 mt-0.5">{rows.length} rate{rows.length !== 1 ? "s" : ""}</p>
                     </div>
                   </div>
-                  <div className="overflow-x-auto">
+                  <div className="space-y-3 p-3 md:hidden">
+                    {rows.map((p) => (
+                      <Card key={p.id} className="p-4">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="text-sm font-semibold text-slate-900">{p.name}</p>
+                            <p className="mt-1 text-xs text-slate-500">{CATEGORY_LABELS[cat] ?? cat}</p>
+                          </div>
+                          <span className="text-sm font-bold text-slate-900">₦{p.amount.toFixed(2)}</span>
+                        </div>
+                        <div className="mt-3 grid grid-cols-1 gap-2">
+                          <MobileMeta label="Description" value={editingId === p.id ? "Editing" : (p.description || "—")} />
+                        </div>
+                        <div className="mt-3 flex flex-wrap justify-end gap-2">
+                          {editingId === p.id ? (
+                            <>
+                              <Button size="sm" onClick={() => commitEdit(p)} disabled={saving}>
+                                {saving ? "Saving…" : "Save"}
+                              </Button>
+                              <Button size="sm" variant="ghost" onClick={() => setEditingId(null)}>Cancel</Button>
+                            </>
+                          ) : (
+                            <>
+                              <button onClick={() => startEdit(p)} className="text-xs font-semibold text-[var(--accent)] hover:underline">
+                                Edit
+                              </button>
+                              <button onClick={() => handleDelete(p)} className="text-xs font-semibold text-red-500 hover:underline">
+                                Delete
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </Card>
+                    ))}
+                    {rows.length === 0 && (
+                      <div className="rounded-xl border border-dashed border-slate-200 px-4 py-8 text-center text-sm text-slate-400">
+                        No rates configured. Add one below.
+                      </div>
+                    )}
+                  </div>
+                  <div className="hidden overflow-x-auto md:block">
                     <table className="w-full text-sm">
                       <thead>
                         <tr className="border-b border-slate-100 bg-slate-50">
@@ -464,3 +513,4 @@ export default function AdminSettingsPage() {
     </div>
   );
 }
+

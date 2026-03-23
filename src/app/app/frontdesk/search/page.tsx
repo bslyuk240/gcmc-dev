@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
 import Link from "next/link";
+import { useState } from "react";
 import { Card } from "@/components/ui/card";
 import { PageHeader } from "@/components/layout/page-header";
 import { INTERNAL_PREFIX } from "@/lib/constants/navigation";
@@ -19,13 +19,13 @@ type Tab = "patient" | "visit" | "staff";
 function fmtDate(iso?: string) {
   if (!iso) return "—";
   const d = new Date(iso);
-  return isNaN(d.getTime()) ? "—" : d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+  return Number.isNaN(d.getTime()) ? "—" : d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
 }
 
 function calcAge(dob?: string) {
   if (!dob) return "—";
   const d = new Date(dob);
-  if (isNaN(d.getTime())) return "—";
+  if (Number.isNaN(d.getTime())) return "—";
   const today = new Date();
   let age = today.getFullYear() - d.getFullYear();
   if (today.getMonth() < d.getMonth() || (today.getMonth() === d.getMonth() && today.getDate() < d.getDate())) age--;
@@ -33,26 +33,47 @@ function calcAge(dob?: string) {
 }
 
 const STATUS_STYLES: Record<string, string> = {
-  Waiting:           "bg-amber-50 text-amber-700",
+  Waiting: "bg-amber-50 text-amber-700",
   "In Consultation": "bg-sky-50 text-sky-700",
-  "Checked In":      "bg-sky-50 text-sky-700",
-  Discharged:        "bg-emerald-50 text-emerald-700",
-  Completed:         "bg-emerald-50 text-emerald-700",
-  Referred:          "bg-violet-50 text-violet-700",
-  Billing:           "bg-orange-50 text-orange-700",
-  Active:            "bg-emerald-50 text-emerald-700",
-  Terminated:        "bg-slate-100 text-slate-500",
+  "Checked In": "bg-sky-50 text-sky-700",
+  Discharged: "bg-emerald-50 text-emerald-700",
+  Completed: "bg-emerald-50 text-emerald-700",
+  Referred: "bg-violet-50 text-violet-700",
+  Billing: "bg-orange-50 text-orange-700",
+  Active: "bg-emerald-50 text-emerald-700",
+  Terminated: "bg-slate-100 text-slate-500",
 };
 
+function MobileMeta({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-start justify-between gap-3 border-b border-slate-100 py-2 last:border-b-0 last:pb-0">
+      <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{label}</span>
+      <span className="text-right text-sm font-medium text-slate-700">{value}</span>
+    </div>
+  );
+}
+
+function EmptyState({ type, query }: { type: string; query: string }) {
+  return (
+    <Card className="py-14 text-center">
+      <svg className="mx-auto h-10 w-10 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeWidth="1.5" strokeLinecap="round" d="M21 21l-4.35-4.35M11 19a8 8 0 100-16 8 8 0 000 16z" />
+      </svg>
+      <p className="mt-3 font-medium text-slate-500">No {type} matched &quot;{query}&quot;</p>
+      <p className="mt-1 text-sm text-slate-400">Try a different name, ID, or phone number.</p>
+    </Card>
+  );
+}
+
 export default function FrontDeskSearchPage() {
-  const [query,       setQuery]       = useState("");
-  const [tab,         setTab]         = useState<Tab>("patient");
-  const [searching,   setSearching]   = useState(false);
+  const [query, setQuery] = useState("");
+  const [tab, setTab] = useState<Tab>("patient");
+  const [searching, setSearching] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
 
   const [patients, setPatients] = useState<PatientRegistration[]>([]);
-  const [visits,   setVisits]   = useState<VisitRow[]>([]);
-  const [staff,    setStaff]    = useState<StaffMember[]>([]);
+  const [visits, setVisits] = useState<VisitRow[]>([]);
+  const [staff, setStaff] = useState<StaffMember[]>([]);
 
   async function handleSearch(e: React.FormEvent) {
     e.preventDefault();
@@ -96,8 +117,7 @@ export default function FrontDeskSearchPage() {
     <div className="space-y-6">
       <PageHeader title="Search" description="Find patients, visits, and staff records across the HMS." />
 
-      {/* Search bar */}
-      <Card className="p-5">
+      <Card className="p-4 sm:p-5">
         <form onSubmit={handleSearch} className="flex flex-col gap-4 sm:flex-row sm:items-end">
           <div className="flex-1">
             <label className="mb-1.5 block text-sm font-semibold text-slate-700">Search query</label>
@@ -116,21 +136,27 @@ export default function FrontDeskSearchPage() {
             </div>
           </div>
 
-          {/* Tab type */}
           <div>
             <label className="mb-1.5 block text-sm font-semibold text-slate-700">Search in</label>
-            <div className="flex rounded-xl border border-slate-200 p-0.5 gap-0.5">
+            <div className="flex gap-0.5 rounded-xl border border-slate-200 p-0.5">
               {(["patient", "visit", "staff"] as Tab[]).map((t) => (
-                <button key={t} type="button" onClick={() => setTab(t)}
-                  className={`rounded-lg px-4 py-2 text-sm font-semibold capitalize transition ${tab === t ? "bg-[var(--accent)] text-white" : "text-slate-600 hover:text-slate-900"}`}>
+                <button
+                  key={t}
+                  type="button"
+                  onClick={() => setTab(t)}
+                  className={`rounded-lg px-4 py-2 text-sm font-semibold capitalize transition ${tab === t ? "bg-[var(--accent)] text-white" : "text-slate-600 hover:text-slate-900"}`}
+                >
                   {t === "patient" ? "Patients" : t === "visit" ? "Visits" : "Staff"}
                 </button>
               ))}
             </div>
           </div>
 
-          <button type="submit" disabled={searching || !query.trim()}
-            className="flex items-center gap-2 rounded-xl bg-[var(--accent)] px-6 py-2.5 text-sm font-bold text-white transition hover:opacity-90 disabled:opacity-50">
+          <button
+            type="submit"
+            disabled={searching || !query.trim()}
+            className="flex items-center gap-2 rounded-xl bg-[var(--accent)] px-6 py-2.5 text-sm font-bold text-white transition hover:opacity-90 disabled:opacity-50"
+          >
             {searching
               ? <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
               : <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeWidth="2" strokeLinecap="round" d="M21 21l-4.35-4.35M11 19a8 8 0 100-16 8 8 0 000 16z" /></svg>}
@@ -139,7 +165,6 @@ export default function FrontDeskSearchPage() {
         </form>
       </Card>
 
-      {/* Before search */}
       {!hasSearched && (
         <Card className="py-20 text-center">
           <svg className="mx-auto h-12 w-12 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -150,18 +175,44 @@ export default function FrontDeskSearchPage() {
         </Card>
       )}
 
-      {/* Results */}
       {hasSearched && (
         <div>
           <p className="mb-4 text-sm text-slate-500">
             {resultCount === 0 ? `No ${tab}s matched "${query}".` : `${resultCount} result${resultCount !== 1 ? "s" : ""} found.`}
           </p>
 
-          {/* ── Patient results ── */}
           {tab === "patient" && (
             patients.length > 0 ? (
               <Card className="overflow-hidden p-0">
-                <div className="overflow-x-auto">
+                <div className="space-y-3 p-3 md:hidden">
+                  {patients.map((p) => (
+                    <div key={p.id} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-semibold text-slate-900">{p.patientName}</p>
+                          <p className="truncate text-[11px] text-slate-400">{p.patientId || "No patient ID"}</p>
+                        </div>
+                        <span className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold ${STATUS_STYLES[p.status] ?? "bg-slate-100 text-slate-600"}`}>
+                          {p.status}
+                        </span>
+                      </div>
+                      <div className="mt-3 space-y-1.5">
+                        <MobileMeta label="Patient ID" value={p.patientId || "—"} />
+                        <MobileMeta label="Age / Sex" value={`${calcAge(p.dateOfBirth)}${p.gender ? ` / ${p.gender}` : ""}`} />
+                        <MobileMeta label="Phone" value={p.contact || "—"} />
+                        <MobileMeta label="Blood Group" value={p.bloodGroup || "—"} />
+                        <MobileMeta label="Registered" value={fmtDate(p.registeredAt)} />
+                      </div>
+                      <div className="mt-4">
+                        <Link href={`${INTERNAL_PREFIX}/frontdesk/patients/${p.id}`} className="text-sm font-semibold text-[var(--accent)] hover:underline">
+                          Open →
+                        </Link>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="hidden overflow-x-auto md:block">
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="border-b border-slate-100 bg-slate-50 text-left">
@@ -175,9 +226,7 @@ export default function FrontDeskSearchPage() {
                         <tr key={p.id} className="hover:bg-slate-50">
                           <td className="px-5 py-3 font-mono text-xs text-slate-400">{p.patientId || "—"}</td>
                           <td className="px-5 py-3 font-semibold text-slate-900">{p.patientName}</td>
-                          <td className="px-5 py-3 text-slate-600 whitespace-nowrap">
-                            {calcAge(p.dateOfBirth)}{p.gender ? ` / ${p.gender}` : ""}
-                          </td>
+                          <td className="px-5 py-3 whitespace-nowrap text-slate-600">{calcAge(p.dateOfBirth)}{p.gender ? ` / ${p.gender}` : ""}</td>
                           <td className="px-5 py-3 text-slate-600">{p.contact || "—"}</td>
                           <td className="px-5 py-3">
                             {p.bloodGroup
@@ -191,8 +240,7 @@ export default function FrontDeskSearchPage() {
                             </span>
                           </td>
                           <td className="px-5 py-3">
-                            <Link href={`${INTERNAL_PREFIX}/frontdesk/patients/${p.id}`}
-                              className="text-xs font-semibold text-[var(--accent)] hover:underline">
+                            <Link href={`${INTERNAL_PREFIX}/frontdesk/patients/${p.id}`} className="text-xs font-semibold text-[var(--accent)] hover:underline">
                               Open →
                             </Link>
                           </td>
@@ -202,16 +250,35 @@ export default function FrontDeskSearchPage() {
                   </table>
                 </div>
               </Card>
-            ) : (
-              <EmptyState type="patients" query={query} />
-            )
+            ) : <EmptyState type="patients" query={query} />
           )}
 
-          {/* ── Visit results ── */}
           {tab === "visit" && (
             visits.length > 0 ? (
               <Card className="overflow-hidden p-0">
-                <div className="overflow-x-auto">
+                <div className="space-y-3 p-3 md:hidden">
+                  {visits.map((v) => (
+                    <div key={v.id} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-semibold text-slate-900">{v.patientName}</p>
+                          <p className="truncate text-[11px] text-slate-400">{v.patientId || "No patient ID"}</p>
+                        </div>
+                        <span className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold ${STATUS_STYLES[v.status] ?? "bg-slate-100 text-slate-600"}`}>
+                          {v.status}
+                        </span>
+                      </div>
+
+                      <div className="mt-3 space-y-1.5">
+                        <MobileMeta label="Visit Type" value={v.visitType || "—"} />
+                        <MobileMeta label="Assigned To" value={v.assignedTo || "—"} />
+                        <MobileMeta label="Date" value={fmtDate(v.visitDate)} />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="hidden overflow-x-auto md:block">
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="border-b border-slate-100 bg-slate-50 text-left">
@@ -239,12 +306,9 @@ export default function FrontDeskSearchPage() {
                   </table>
                 </div>
               </Card>
-            ) : (
-              <EmptyState type="visits" query={query} />
-            )
+            ) : <EmptyState type="visits" query={query} />
           )}
 
-          {/* ── Staff results ── */}
           {tab === "staff" && (
             staff.length > 0 ? (
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -264,24 +328,10 @@ export default function FrontDeskSearchPage() {
                   </Card>
                 ))}
               </div>
-            ) : (
-              <EmptyState type="staff" query={query} />
-            )
+            ) : <EmptyState type="staff" query={query} />
           )}
         </div>
       )}
     </div>
-  );
-}
-
-function EmptyState({ type, query }: { type: string; query: string }) {
-  return (
-    <Card className="py-14 text-center">
-      <svg className="mx-auto h-10 w-10 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeWidth="1.5" strokeLinecap="round" d="M21 21l-4.35-4.35M11 19a8 8 0 100-16 8 8 0 000 16z" />
-      </svg>
-      <p className="mt-3 font-medium text-slate-500">No {type} matched &quot;{query}&quot;</p>
-      <p className="mt-1 text-sm text-slate-400">Try a different name, ID, or phone number.</p>
-    </Card>
   );
 }

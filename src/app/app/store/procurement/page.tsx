@@ -54,6 +54,15 @@ function fmtDate(iso: string) {
   return d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
 }
 
+function MobileMeta({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-start justify-between gap-3 rounded-lg bg-slate-50 px-3 py-2">
+      <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{label}</span>
+      <span className="text-right text-sm font-medium text-slate-700">{value}</span>
+    </div>
+  );
+}
+
 function newPoId(orders: StorePO[]): string {
   const nums = orders
     .map((o) => parseInt(o.id.replace(/\D/g, ""), 10))
@@ -156,7 +165,7 @@ export default function StoreProcurementPage() {
     }
 
     addSupplierPayment({
-      id: `SP-${Date.now()}`,
+      id: `SP-${payTarget.id}`,
       poId: payTarget.id,
       supplier: payTarget.supplier,
       amount: payTarget.value,
@@ -180,7 +189,7 @@ export default function StoreProcurementPage() {
     e.preventDefault();
     if (!newSupName) return;
     const s: StoreSupplier = {
-      id: `_tmp_${Date.now()}`,
+      id: `_tmp_${dbSuppliers.length + 1}`,
       name: newSupName, category: newSupCategory,
       contact: newSupContact, phone: newSupPhone, lead: newSupLead,
       createdAt: new Date().toISOString(),
@@ -216,24 +225,24 @@ export default function StoreProcurementPage() {
       <div className="grid gap-4 sm:grid-cols-3">
         <Card className="p-5">
           <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Total Orders (MTD)</p>
-          <p className="mt-1 text-3xl font-bold text-slate-900">{loading ? "—" : orders.length}</p>
+          <p className="mt-1 text-2xl font-bold text-slate-900 sm:text-3xl">{loading ? "—" : orders.length}</p>
         </Card>
         <Card className="p-5">
           <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Awaiting Delivery</p>
-          <p className="mt-1 text-3xl font-bold text-amber-600">{loading ? "—" : pending.length}</p>
+          <p className="mt-1 text-2xl font-bold text-amber-600 sm:text-3xl">{loading ? "—" : pending.length}</p>
           {!loading && <p className="mt-1 text-sm text-slate-500">₦{pending.reduce((s, o) => s + o.value, 0).toLocaleString()} in transit</p>}
         </Card>
         <Card className="p-5">
           <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">MTD Spend (Received)</p>
-          <p className="mt-1 text-3xl font-bold text-slate-900">{loading ? "—" : `₦${totalSpend.toLocaleString()}`}</p>
+          <p className="mt-1 text-2xl font-bold text-slate-900 sm:text-3xl">{loading ? "—" : `₦${totalSpend.toLocaleString()}`}</p>
         </Card>
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 rounded-lg border border-slate-200 bg-slate-50 p-1 w-fit">
+      <div className="flex w-full flex-wrap gap-1 rounded-lg border border-slate-200 bg-slate-50 p-1 sm:w-fit">
         {(["orders", "suppliers"] as const).map((t) => (
           <button key={t} type="button" onClick={() => setTab(t)}
-            className={`rounded-md px-5 py-2 text-sm font-semibold capitalize transition ${tab === t ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-900"}`}>
+            className={`flex-1 rounded-md px-4 py-2 text-sm font-semibold capitalize transition sm:flex-none sm:px-5 ${tab === t ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-900"}`}>
             {t === "orders" ? "Purchase Orders" : "Suppliers"}
           </button>
         ))}
@@ -255,7 +264,49 @@ export default function StoreProcurementPage() {
               <p className="mt-1 text-xs text-slate-400">Click &quot;+ New Order&quot; to raise your first PO.</p>
             </div>
           ) : (
-            <div className="overflow-x-auto">
+            <>
+              <div className="space-y-3 p-3 md:hidden">
+                {orders.map((o) => (
+                  <Card key={o.id} className={`p-4 ${o.status === "Received" ? "bg-emerald-50/30" : o.status === "Cancelled" || o.status === "Rejected" ? "bg-rose-50/30" : "bg-white"}`}>
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-xs font-mono font-semibold text-slate-500">{o.id}</p>
+                        <p className="mt-1 text-sm font-semibold text-slate-900">{o.supplier}</p>
+                        <p className="text-xs text-slate-400">{o.items} item{o.items === 1 ? "" : "s"}</p>
+                      </div>
+                      <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${STATUS_STYLES[o.status] ?? "bg-slate-100 text-slate-600"}`}>{o.status}</span>
+                    </div>
+                    <div className="mt-3 grid grid-cols-1 gap-2">
+                      <MobileMeta label="Total Cost" value={`₦${o.value.toLocaleString()}`} />
+                      <MobileMeta label="Date Raised" value={fmtDate(o.requestedAt)} />
+                      <MobileMeta label="Expected" value={o.expectedDate ? fmtDate(o.expectedDate) : "—"} />
+                      <MobileMeta
+                        label="Accounts Payment"
+                        value={o.paymentSubmitted ? "✓ Submitted" : o.status === "Received" ? "Pending submission" : "—"}
+                      />
+                    </div>
+                    <div className="mt-3 flex flex-wrap justify-end gap-2">
+                      <Button size="sm" variant="outline" onClick={() => setViewOrder(o)}>
+                        View
+                      </Button>
+                      {o.status !== "Received" && o.status !== "Cancelled" && o.status !== "Rejected" && (
+                        <Button size="sm" variant="outline" onClick={() => advanceStatus(o)}>
+                          {o.status === "Draft" ? "Send"
+                            : o.status === "Sent" ? "Confirm"
+                            : o.status === "Confirmed" ? "Mark Received"
+                            : "Advance"}
+                        </Button>
+                      )}
+                      {o.status === "Received" && !o.paymentSubmitted && (
+                        <Button size="sm" onClick={() => setPayTarget(o)}>
+                          Submit Payment
+                        </Button>
+                      )}
+                    </div>
+                  </Card>
+                ))}
+              </div>
+              <div className="hidden overflow-x-auto md:block">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-slate-100 bg-slate-50 text-left">
@@ -308,7 +359,8 @@ export default function StoreProcurementPage() {
                   ))}
                 </tbody>
               </table>
-            </div>
+              </div>
+            </>
           )}
         </Card>
       )}
@@ -375,7 +427,7 @@ export default function StoreProcurementPage() {
               {allSuppliers.map((s) => <option key={s.id}>{s.name}</option>)}
             </select>
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
               <label className="mb-1 block text-sm font-semibold text-slate-700">No. of Items *</label>
               <input type="number" min="1" required value={newItems} onChange={(e) => setNewItems(e.target.value)} className={inputCls} />
@@ -465,7 +517,7 @@ export default function StoreProcurementPage() {
               {SUPPLIER_CATEGORIES.map((c) => <option key={c}>{c}</option>)}
             </select>
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
               <label className="mb-1 block text-sm font-semibold text-slate-700">Email</label>
               <input type="email" value={newSupContact} onChange={(e) => setNewSupContact(e.target.value)} placeholder="orders@supplier.com" className={inputCls} />

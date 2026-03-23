@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { PageHeader } from "@/components/layout/page-header";
+import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Modal, ModalFooter } from "@/components/ui/modal";
 import { Toast, type ToastData } from "@/components/ui/toast";
@@ -53,6 +54,15 @@ const EMPTY_FORM: TariffFormData = {
 
 function fmt(n: number) {
   return `₦${n.toLocaleString("en-NG", { minimumFractionDigits: 2 })}`;
+}
+
+function MobileMeta({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg bg-slate-50 px-3 py-2">
+      <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">{label}</p>
+      <div className="mt-0.5 text-xs font-medium text-slate-700">{value}</div>
+    </div>
+  );
 }
 
 export default function NhisTariffsPage() {
@@ -213,7 +223,7 @@ export default function NhisTariffsPage() {
       {/* Category tabs */}
       {selectedSchemeId && (
         <div className="border-b border-slate-200 bg-white px-6 overflow-x-auto">
-          <nav className="flex gap-0 -mb-px">
+          <nav className="flex gap-0 -mb-px min-w-max">
             {SERVICE_CATEGORIES.map((cat) => {
               const count = grouped[cat]?.length ?? 0;
               const isActive = activeTab === cat;
@@ -284,7 +294,37 @@ export default function NhisTariffsPage() {
                 </Button>
               </div>
             ) : (
-              <div className="overflow-x-auto">
+              <>
+              <div className="grid gap-3 p-3 md:hidden">
+                {activeTariffs.length === 0 ? null : activeTariffs.map((t) => (
+                  <Card key={t.id} className="p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold text-slate-900">{t.serviceName}</p>
+                        <p className="mt-0.5 text-[11px] text-slate-500">{CATEGORY_LABELS[t.serviceCategory]}</p>
+                      </div>
+                      <span className={`rounded-full px-2.5 py-1 text-[10px] font-semibold ${t.isActive ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>
+                        {t.isActive ? "Active" : "Inactive"}
+                      </span>
+                    </div>
+                    <div className="mt-3 grid grid-cols-1 gap-2">
+                      <MobileMeta label="HMO Price" value={fmt(t.hmoPrice)} />
+                      <MobileMeta label="Copay Type" value={t.copayType} />
+                      <MobileMeta label="Copay Value" value={t.copayType === "percentage" ? `${t.copayValue}%` : fmt(t.copayValue)} />
+                    </div>
+                    <div className="mt-3 flex flex-wrap justify-end gap-2">
+                      <Button size="sm" variant="ghost" onClick={() => openEdit(t)}>Edit</Button>
+                      <Button size="sm" variant="ghost" onClick={() => handleDelete(t)} className="text-red-500 hover:text-red-700">Delete</Button>
+                    </div>
+                  </Card>
+                ))}
+                {activeTariffs.length === 0 && (
+                  <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm text-slate-400">
+                    No {CATEGORY_LABELS[activeTab].toLowerCase()} tariffs yet for this scheme.
+                  </div>
+                )}
+              </div>
+              <div className="hidden overflow-x-auto md:block">
                 <table className="min-w-full text-sm text-left">
                   <thead>
                     <tr className="bg-slate-50 border-b border-slate-100">
@@ -331,6 +371,7 @@ export default function NhisTariffsPage() {
                   </tbody>
                 </table>
               </div>
+              </>
             )}
           </div>
         )}

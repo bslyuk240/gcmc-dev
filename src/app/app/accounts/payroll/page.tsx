@@ -37,6 +37,15 @@ function formatPayrollTimestamp(value?: string) {
   });
 }
 
+function MobileMeta({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-start justify-between gap-3 border-b border-slate-100 py-2 last:border-b-0 last:pb-0">
+      <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{label}</span>
+      <span className="text-right text-sm font-medium text-slate-700">{value}</span>
+    </div>
+  );
+}
+
 export default function AccountsPayrollPage() {
   const { payrollBatches, metrics } = useAccountsStore();
 
@@ -109,23 +118,73 @@ export default function AccountsPayrollPage() {
         </div>
       )}
 
-      <div className="grid gap-4 sm:grid-cols-4">
+      <div className="grid gap-3 sm:grid-cols-4">
         {[
           { label: "Awaiting Approval", value: metrics.payrollPendingCount, sub: `${money(metrics.payrollPendingValue)} pending`, color: "text-sky-700" },
           { label: "Approved Batches", value: approvedBatches.length, sub: `${money(approvedBatches.reduce((sum, batch) => sum + batch.totalAmount, 0))} ready`, color: "text-violet-700" },
           { label: "Paid This Period", value: payrollBatches.filter((batch) => batch.status === "Paid").length, sub: `${money(metrics.payrollPaidMTD)} disbursed`, color: "text-emerald-700" },
           { label: "Total Batches", value: payrollBatches.length, color: "text-slate-900" },
         ].map((card) => (
-          <Card key={card.label} className="p-5">
+          <Card key={card.label} className="p-4 sm:p-5">
             <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{card.label}</p>
-            <p className={`mt-1 text-2xl font-bold ${card.color}`}>{card.value}</p>
+            <p className={`mt-1 text-xl font-bold sm:text-2xl ${card.color}`}>{card.value}</p>
             {card.sub && <p className="mt-0.5 text-xs text-slate-500">{card.sub}</p>}
           </Card>
         ))}
       </div>
 
-      <Card className="overflow-hidden p-0">
-        <div className="border-b border-slate-100 px-5 py-4">
+      <div className="space-y-3 md:hidden">
+        {payrollBatches.map((batch) => {
+          const totals = summarisePayrollEntries(batch.entries ?? []);
+          return (
+            <Card key={batch.id} className={`p-4 ${batch.status === "Submitted" ? "border-sky-200 bg-sky-50/30" : ""}`}>
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="truncate font-semibold text-slate-900">{batch.department ?? "Department"}</p>
+                  <p className="text-xs text-slate-500">{batch.period}</p>
+                </div>
+                <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${STATUS_STYLES[batch.status]}`}>
+                  {batch.status}
+                </span>
+              </div>
+
+              <div className="mt-4 space-y-2">
+                <MobileMeta label="Staff" value={String(batch.totalStaff)} />
+                <MobileMeta label="Gross" value={money(totals.gross)} />
+                <MobileMeta label="Deductions" value={money(totals.deductions)} />
+                <MobileMeta label="Net" value={money(batch.totalAmount)} />
+                <MobileMeta label="Prepared By" value={batch.preparedBy} />
+                <MobileMeta label="Submitted" value={formatPayrollTimestamp(batch.preparedAt)} />
+                <MobileMeta label="Approved" value={formatPayrollTimestamp(batch.approvedAt)} />
+                <MobileMeta label="Paid" value={formatPayrollTimestamp(batch.paidAt)} />
+              </div>
+
+              <div className="mt-4 flex flex-wrap gap-2">
+                <Button size="sm" variant="outline" onClick={() => setViewBatch(batch)}>
+                  View
+                </Button>
+                {batch.status === "Submitted" && (
+                  <Button size="sm" onClick={() => setActionTarget({ batch, action: "approve" })}>
+                    Approve
+                  </Button>
+                )}
+                {batch.status === "Approved" && (
+                  <Button size="sm" onClick={() => setActionTarget({ batch, action: "pay" })}>
+                    Disburse
+                  </Button>
+                )}
+                {batch.status === "Paid" && <span className="text-xs font-semibold text-emerald-700">Paid</span>}
+              </div>
+            </Card>
+          );
+        })}
+        {payrollBatches.length === 0 && (
+          <Card className="p-6 text-center text-sm text-slate-400">No payroll batches received from HR yet.</Card>
+        )}
+      </div>
+
+      <Card className="hidden overflow-hidden p-0 md:block">
+        <div className="border-b border-slate-100 px-4 py-3 sm:px-5 sm:py-4">
           <h3 className="font-bold text-slate-900">Payroll Batches from HR</h3>
         </div>
         <div className="overflow-x-auto">
@@ -145,16 +204,16 @@ export default function AccountsPayrollPage() {
 
                 return (
                   <tr key={batch.id} className={`hover:bg-slate-50 ${batch.status === "Submitted" ? "bg-sky-50/30" : ""}`}>
-                    <td className="px-5 py-3 font-medium text-slate-800">{batch.department ?? "-"}</td>
-                    <td className="px-5 py-3 font-semibold text-slate-900">{batch.period}</td>
-                    <td className="px-5 py-3 text-slate-600">{batch.totalStaff}</td>
-                    <td className="px-5 py-3 font-semibold text-slate-700">{money(totals.gross)}</td>
-                    <td className="px-5 py-3 text-rose-600">{money(totals.deductions)}</td>
-                    <td className="px-5 py-3 font-bold text-slate-900">{money(batch.totalAmount)}</td>
-                    <td className="px-5 py-3 text-slate-500">{batch.preparedBy}</td>
-                    <td className="px-5 py-3 text-xs text-slate-500">{formatPayrollTimestamp(batch.preparedAt)}</td>
-                    <td className="px-5 py-3 text-xs text-slate-500">{formatPayrollTimestamp(batch.approvedAt)}</td>
-                    <td className="px-5 py-3 text-xs text-slate-500">{formatPayrollTimestamp(batch.paidAt)}</td>
+                    <td className="px-4 py-3 font-medium text-slate-800 sm:px-5">{batch.department ?? "-"}</td>
+                    <td className="px-4 py-3 font-semibold text-slate-900 sm:px-5">{batch.period}</td>
+                    <td className="px-4 py-3 text-slate-600 sm:px-5">{batch.totalStaff}</td>
+                    <td className="px-4 py-3 font-semibold text-slate-700 sm:px-5">{money(totals.gross)}</td>
+                    <td className="px-4 py-3 text-rose-600 sm:px-5">{money(totals.deductions)}</td>
+                    <td className="px-4 py-3 font-bold text-slate-900 sm:px-5">{money(batch.totalAmount)}</td>
+                    <td className="px-4 py-3 text-slate-500 sm:px-5">{batch.preparedBy}</td>
+                    <td className="px-4 py-3 text-xs text-slate-500 sm:px-5">{formatPayrollTimestamp(batch.preparedAt)}</td>
+                    <td className="px-4 py-3 text-xs text-slate-500 sm:px-5">{formatPayrollTimestamp(batch.approvedAt)}</td>
+                    <td className="px-4 py-3 text-xs text-slate-500 sm:px-5">{formatPayrollTimestamp(batch.paidAt)}</td>
                     <td className="px-5 py-3">
                       <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${STATUS_STYLES[batch.status]}`}>
                         {batch.status}

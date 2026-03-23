@@ -6,6 +6,15 @@ import { PageHeader } from "@/components/layout/page-header";
 import { INTERNAL_PREFIX } from "@/lib/constants/navigation";
 import { usePharmacyStore } from "@/lib/hooks/use-pharmacy-store";
 
+function MobileMeta({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-center justify-between gap-3 rounded-lg bg-slate-50 px-3 py-2.5">
+      <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{label}</span>
+      <span className="text-right text-sm font-medium text-slate-700">{value}</span>
+    </div>
+  );
+}
+
 function fmtRxTime(s: string) {
   if (!s) return "—";
   const d = new Date(s);
@@ -79,11 +88,11 @@ export default function PharmacyDashboardPage() {
       />
 
       {/* KPIs */}
-      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-4">
         {kpis.map((k) => (
           <Card key={k.label} className="p-4 sm:p-5">
             <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 sm:text-xs">{k.label}</p>
-            <p className={`mt-1 text-xl font-bold sm:text-2xl ${k.color}`}>{k.value}</p>
+            <p className={`mt-1 text-lg font-bold sm:text-2xl ${k.color}`}>{k.value}</p>
             <p className={`mt-1 flex items-center gap-1 text-xs ${k.up ? "text-emerald-600" : "text-slate-500"}`}>
               {k.up && (
                 <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -109,7 +118,33 @@ export default function PharmacyDashboardPage() {
             {recentRx.length === 0 ? (
               <p className="px-5 py-8 text-center text-sm text-slate-400">No prescriptions yet today.</p>
             ) : (
-              <div className="overflow-x-auto">
+              <>
+                <div className="space-y-3 px-4 py-4 md:hidden">
+                  {recentRx.map((rx) => (
+                    <div key={rx.id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-semibold text-slate-900">{rx.patientName}</p>
+                          <p className="text-xs text-slate-500">{rx.doctorName}</p>
+                        </div>
+                        <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${STATUS_STYLES[rx.status]}`}>
+                          {rx.status}
+                        </span>
+                      </div>
+                      <div className="mt-3 space-y-2">
+                        <MobileMeta label="Ref" value={rx.id} />
+                        <MobileMeta label="Drugs" value={rx.drugs.map((d) => d.name).join(", ")} />
+                        <MobileMeta label="Time" value={fmtRxTime(rx.createdAt)} />
+                      </div>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${PRIORITY_STYLES[rx.urgency]}`}>
+                          {rx.urgency}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div className="hidden overflow-x-auto md:block">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-slate-100 bg-slate-50 text-left">
@@ -142,7 +177,8 @@ export default function PharmacyDashboardPage() {
                     ))}
                   </tbody>
                 </table>
-              </div>
+                </div>
+              </>
             )}
           </Card>
 
@@ -217,7 +253,7 @@ export default function PharmacyDashboardPage() {
           {/* Quick Actions */}
           <Card className="p-5">
             <h3 className="font-bold text-slate-900">Quick Actions</h3>
-            <div className="mt-4 grid grid-cols-2 gap-3">
+            <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
               {[
                 { label: "Pending Rx", href: `${INTERNAL_PREFIX}/pharmacy/pending-prescriptions`, color: "text-amber-600" },
                 { label: "Inventory", href: `${INTERNAL_PREFIX}/pharmacy/inventory`, color: "text-slate-700" },

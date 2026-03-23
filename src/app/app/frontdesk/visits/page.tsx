@@ -42,6 +42,15 @@ function fmtTime(iso?: string | null) {
     : date.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
 }
 
+function MobileMeta({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-start justify-between gap-3 border-b border-slate-100 py-2 last:border-b-0 last:pb-0">
+      <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{label}</span>
+      <span className="text-right text-sm font-medium text-slate-700">{value}</span>
+    </div>
+  );
+}
+
 const selCls =
   "w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 " +
   "outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/20";
@@ -233,9 +242,9 @@ export default function FrontdeskVisitsPage() {
         description="Create a visit record, capture the complaint, and route the patient to the correct doctor lane."
       />
 
-      <div className="grid gap-6 lg:grid-cols-5">
-        <Card className="p-6 lg:col-span-2">
-          <h3 className="mb-5 font-bold text-slate-900">New Visit</h3>
+      <div className="grid gap-4 sm:gap-5 lg:grid-cols-5">
+        <Card className="p-4 sm:p-6 lg:col-span-2">
+          <h3 className="mb-4 font-bold text-slate-900 sm:mb-5">New Visit</h3>
 
           {loadingData ? (
             <div className="flex items-center justify-center py-10">
@@ -331,7 +340,42 @@ export default function FrontdeskVisitsPage() {
           )}
         </Card>
 
-        <Card className="overflow-hidden p-0 lg:col-span-3">
+        <div className="space-y-3 lg:hidden lg:col-span-3">
+          <div className="flex items-center justify-between px-1">
+            <h3 className="font-bold text-slate-900">
+              Today&apos;s Visits{" "}
+              <span className="ml-1 text-sm font-normal text-slate-400">({loadingData ? "..." : todayVisits.length})</span>
+            </h3>
+          </div>
+          {loadingData ? (
+            <div className="flex items-center justify-center py-12">
+              <div className="h-6 w-6 animate-spin rounded-full border-4 border-slate-200 border-t-[var(--accent)]" />
+            </div>
+          ) : (
+            todayVisits.map((visit) => (
+              <Card key={visit.id} className="p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="truncate font-semibold text-slate-900">{visit.patientName}</p>
+                    <p className="text-xs text-slate-500">{visit.visitType || "-"}</p>
+                  </div>
+                  <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${STATUS_STYLES[visit.status] ?? "bg-slate-100 text-slate-600"}`}>
+                    {visit.status}
+                  </span>
+                </div>
+                <div className="mt-4 space-y-2">
+                  <MobileMeta label="Assigned To" value={visit.assignedTo || visit.doctorSpecialty || "-"} />
+                  <MobileMeta label="Check-in" value={fmtTime(visit.checkedInAt)} />
+                </div>
+              </Card>
+            ))
+          )}
+          {!loadingData && todayVisits.length === 0 ? (
+            <Card className="p-6 text-center text-sm text-slate-400">No visits today yet.</Card>
+          ) : null}
+        </div>
+
+        <Card className="hidden overflow-hidden p-0 lg:col-span-3 lg:block">
           <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
             <h3 className="font-bold text-slate-900">
               Today&apos;s Visits{" "}

@@ -288,7 +288,7 @@ export default function AttendancePage() {
         <p className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-400">
           {monthLabel()} Summary
         </p>
-        <div className="grid grid-cols-4 gap-2">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
           {[
             { label: "Days Present", value: present, color: "text-emerald-700" },
             { label: "Late", value: late, color: "text-amber-600" },

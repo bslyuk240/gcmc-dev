@@ -27,7 +27,7 @@ export function WorkspaceOverview({
         }
       />
 
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <section className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
         {board.stats.map((stat) => (
           <StatsCard key={stat.label} {...stat} />
         ))}

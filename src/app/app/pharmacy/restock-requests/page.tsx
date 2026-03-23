@@ -31,6 +31,15 @@ const URGENCY_STYLES: Record<string, string> = {
   Critical: "bg-red-50 text-red-700",
 };
 
+function MobileMeta({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-start justify-between gap-3 border-b border-slate-100 py-2 last:border-b-0 last:pb-0">
+      <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{label}</span>
+      <span className="text-right text-sm font-medium text-slate-700">{value}</span>
+    </div>
+  );
+}
+
 export default function PharmacyRestockRequestsPage() {
   const session = useHMSSession();
   const staffName = session?.full_name ?? "Pharmacist";
@@ -105,7 +114,40 @@ export default function PharmacyRestockRequestsPage() {
         action={<Button onClick={() => { resetForm(); setShowNew(true); }}>+ New Request</Button>}
       />
 
-      <Card className="overflow-hidden p-0">
+      <div className="space-y-3 md:hidden">
+        {restockRequests.map((row) => (
+          <Card key={row.id} className="p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="truncate font-semibold text-slate-900">{row.drug}</p>
+                <p className="text-xs text-slate-500">{row.id}</p>
+              </div>
+              <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${STATUS_STYLES[row.status] ?? "bg-slate-100 text-slate-600"}`}>
+                {row.status}
+              </span>
+            </div>
+
+            <div className="mt-4 space-y-2">
+              <MobileMeta label="Qty" value={row.qtyRequested != null ? `${row.qtyRequested} ${row.unit}` : "Store decides"} />
+              <MobileMeta label="Urgency" value={row.urgency} />
+              <MobileMeta label="Requested By" value={row.requestedBy} />
+              <MobileMeta label="Date" value={fmtDate(row.requestedAt)} />
+            </div>
+
+            <div className="mt-4 flex items-center justify-between gap-3">
+              <Button size="sm" variant="outline" onClick={() => setViewReq(row)}>View</Button>
+              <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${URGENCY_STYLES[row.urgency]}`}>{row.urgency}</span>
+            </div>
+          </Card>
+        ))}
+        {restockRequests.length === 0 && (
+          <Card className="p-6 text-center text-sm text-slate-400">
+            No restock requests yet. Click &quot;+ New Request&quot; to raise one.
+          </Card>
+        )}
+      </div>
+
+      <Card className="hidden overflow-hidden p-0 md:block">
         <div className="border-b border-slate-100 px-5 py-4">
           <h3 className="font-bold text-slate-900">All Requests <span className="text-sm font-normal text-slate-400">({restockRequests.length})</span></h3>
         </div>
@@ -200,7 +242,7 @@ export default function PharmacyRestockRequestsPage() {
             </div>
           )}
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Quantity <span className="text-slate-400 font-normal">(optional)</span></label>
               <input type="number" min="1" value={newQty} onChange={(e) => setNewQty(e.target.value)} placeholder="Leave blank for Store to choose" className={inputCls} />

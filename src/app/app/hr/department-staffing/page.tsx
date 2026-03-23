@@ -68,7 +68,6 @@ export default function DepartmentStaffingPage() {
   // ── HOD assignment modal ───────────────────────────────────────────────────
   const [hodModalOpen,    setHodModalOpen]    = useState(false);
   const [hodSelectedId,   setHodSelectedId]   = useState("");
-  const [hodConfirmOpen,  setHodConfirmOpen]  = useState(false);
 
   // ── Role edit modal ────────────────────────────────────────────────────────
   const [roleModal,   setRoleModal]   = useState<StaffMember | null>(null);
@@ -113,7 +112,6 @@ export default function DepartmentStaffingPage() {
       type: "success",
     });
     setHodModalOpen(false);
-    setHodConfirmOpen(false);
     setHodSelectedId("");
   }
 
@@ -142,7 +140,7 @@ export default function DepartmentStaffingPage() {
       {/* Department picker */}
       <div className="space-y-3">
         {departmentRows.map((row, rowIndex) => (
-          <div key={`dept-row-${rowIndex}`} className="grid grid-cols-2 gap-3 md:grid-cols-6">
+          <div key={`dept-row-${rowIndex}`} className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-6">
             {row.map((dept) => {
               const members = staff.filter((s) => s.department === dept);
               const active  = members.filter((s) => s.status === "Active").length;
@@ -188,7 +186,79 @@ export default function DepartmentStaffingPage() {
               </Link>
             </div>
 
-            <div className="overflow-x-auto">
+            <div className="space-y-3 px-4 py-4 md:hidden">
+              {deptStaff.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm text-slate-400">
+                  No staff in {activeDept} yet.
+                </div>
+              ) : (
+                deptStaff.map((s) => {
+                  const isHod = s.id === currentHod?.staffId;
+                  return (
+                    <Card key={s.id} className={`border border-slate-200 p-4 ${s.status === "Suspended" ? "bg-red-50/30" : "bg-white"}`}>
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex items-start gap-3">
+                          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-violet-100 text-sm font-bold text-violet-700">
+                            {getInitials(s.name)}
+                          </div>
+                          <div className="min-w-0">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <p className="font-semibold text-slate-900">{s.name}</p>
+                              {isHod && (
+                                <span className="rounded-full bg-violet-100 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wide text-violet-700">
+                                  HOD
+                                </span>
+                              )}
+                            </div>
+                            <p className="truncate text-xs text-slate-500">{s.email}</p>
+                            <p className="mt-0.5 text-[10px] text-slate-400">{s.role || "—"}</p>
+                          </div>
+                        </div>
+                        <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${STATUS_STYLES[s.status]}`}>{s.status}</span>
+                      </div>
+
+                      <div className="mt-3 space-y-1">
+                        <div className="flex items-center justify-between gap-3 border-b border-slate-100 py-1">
+                          <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Staff ID</span>
+                          <span className="font-mono text-xs text-slate-600">
+                            {formatStaffDisplayId({ id: s.id, name: s.name, department: s.department })}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between gap-3 border-b border-slate-100 py-1">
+                          <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Role</span>
+                          <span className="text-xs font-semibold text-slate-700">{s.roleKey ? ROLE_KEY_LABELS[s.roleKey] : "—"}</span>
+                        </div>
+                        <div className="flex items-center justify-between gap-3 border-b border-slate-100 py-1">
+                          <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Unit</span>
+                          <span className="text-xs font-semibold text-slate-700">{s.unit ?? "—"}</span>
+                        </div>
+                        <div className="flex items-center justify-between gap-3 border-b border-slate-100 py-1">
+                          <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Contract</span>
+                          <span className="text-xs font-semibold text-slate-700">{s.contractType}</span>
+                        </div>
+                        <div className="flex items-center justify-between gap-3 border-b border-slate-100 py-1">
+                          <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Access</span>
+                          <span className={`text-xs font-semibold ${s.systemAccessCreated ? "text-emerald-600" : "text-amber-600"}`}>
+                            {s.systemAccessCreated ? "Active" : "Pending IT"}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="mt-3 flex gap-2">
+                        <Button size="sm" variant="outline" onClick={() => openRoleEdit(s)} className="flex-1">
+                          Role
+                        </Button>
+                        <Button size="sm" variant="ghost" onClick={() => { setStatusModal(s); setNewStatus(s.status); }} className="flex-1">
+                          Status
+                        </Button>
+                      </div>
+                    </Card>
+                  );
+                })
+              )}
+            </div>
+
+            <div className="hidden overflow-x-auto md:block">
               <table className="min-w-full text-sm">
                 <thead>
                   <tr className="border-b border-slate-100 bg-slate-50">
@@ -440,10 +510,10 @@ export default function DepartmentStaffingPage() {
                 ))}
               </select>
               {editRoleKey === "hod" && (
-                <p className="mt-1 text-[11px] font-semibold text-violet-600">
-                  Assigning HOD role here updates this staff member's system permissions.
-                  To formally track the HOD assignment, use the "Assign HOD" button in the sidebar.
-                </p>
+                  <p className="mt-1 text-[11px] font-semibold text-violet-600">
+                    Assigning HOD role here updates this staff member&apos;s system permissions.
+                    To formally track the HOD assignment, use the Assign HOD button in the sidebar.
+                  </p>
               )}
             </div>
 

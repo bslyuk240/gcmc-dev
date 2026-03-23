@@ -30,6 +30,21 @@ function createLocalId(prefix: string) {
   return `${prefix}-${Date.now().toString().slice(-5)}`;
 }
 
+function MobileMeta({
+  label,
+  value,
+}: {
+  label: string;
+  value: string | number;
+}) {
+  return (
+    <div className="rounded-lg bg-slate-50 px-3 py-2">
+      <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">{label}</p>
+      <div className="mt-0.5 text-xs font-medium text-slate-700">{value}</div>
+    </div>
+  );
+}
+
 export default function DoctorsQueuePage() {
   const { allPatients } = useNursesStore();
   const { doctors, consultations } = useDoctorsStore();
@@ -164,61 +179,125 @@ export default function DoctorsQueuePage() {
           <p className="text-xs text-slate-400">Filtered by direct doctor assignment or specialty route</p>
         </div>
         {outpatientQueue.length > 0 ? (
-          <div className="overflow-x-auto">
-            <table className="min-w-full text-sm">
-              <thead>
-                <tr className="border-b border-slate-100 bg-slate-50">
-                  {["Patient", "Patient ID", "Bed/Slot", "Triage", "Route", "Priority", "Assigned Nurse", "Action"].map((heading) => (
-                    <th key={heading} className="whitespace-nowrap px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                      {heading}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {outpatientQueue.map((patient) => (
-                  <tr key={patient.id} className="hover:bg-slate-50">
-                    <td className="px-4 py-3 font-semibold text-slate-900">{patient.patientName}</td>
-                    <td className="px-4 py-3 font-mono text-xs text-slate-400">{patient.patientId}</td>
-                    <td className="px-4 py-3 font-mono text-xs font-bold text-slate-600">{patient.bed}</td>
-                    <td className="max-w-[220px] px-4 py-3 text-xs text-slate-500">
-                      <p className="truncate">{patient.diagnosis}</p>
-                      {patient.notes ? (
-                        <p className="mt-1 line-clamp-2 text-[11px] text-amber-700">
-                          Latest nursing note: {patient.notes.split("\n")[0]}
-                        </p>
-                      ) : null}
-                    </td>
-                    <td className="px-4 py-3 text-xs text-slate-500">{describeDoctorRoute(patient)}</td>
-                    <td className="px-4 py-3">
-                      <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${PRIORITY_STYLES[patient.priority]}`}>
-                        {patient.priority}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-xs text-slate-500">{patient.assignedNurse}</td>
-                    <td className="px-4 py-3">
-                      {consultingId === patient.id ? (
-                        <div className="flex items-center gap-2">
-                          <select
-                            value={consultType}
-                            onChange={(event) => setConsultType(event.target.value as ConsultType)}
-                            className={`${inputCls} w-32 py-1`}
-                          >
-                            {["General", "Specialist", "Emergency", "Follow-up", "Antenatal", "Paediatric"].map((type) => (
-                              <option key={type}>{type}</option>
-                            ))}
-                          </select>
-                          <Button size="sm" onClick={() => void handleStartConsult(patient)}>Start</Button>
-                          <Button size="sm" variant="ghost" onClick={() => setConsultingId(null)}>Cancel</Button>
+          <div className="space-y-0">
+            <div className="grid gap-3 p-4 md:hidden">
+              {outpatientQueue.map((patient) => (
+                <div key={patient.id} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold text-slate-900">{patient.patientName}</p>
+                      <p className="mt-0.5 font-mono text-[11px] text-slate-500">{patient.patientId}</p>
+                    </div>
+                    <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${PRIORITY_STYLES[patient.priority]}`}>
+                      {patient.priority}
+                    </span>
+                  </div>
+                  <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    <MobileMeta label="Bed/Slot" value={patient.bed} />
+                    <MobileMeta label="Triage" value={patient.diagnosis} />
+                    <MobileMeta label="Route" value={describeDoctorRoute(patient)} />
+                    <MobileMeta label="Nurse" value={patient.assignedNurse} />
+                  </div>
+                  {patient.notes ? (
+                    <p className="mt-3 line-clamp-2 text-xs text-slate-500">
+                      Latest nursing note: {patient.notes.split("\n")[0]}
+                    </p>
+                  ) : null}
+                  <div className="mt-3">
+                    {consultingId === patient.id ? (
+                      <div className="space-y-2">
+                        <select
+                          value={consultType}
+                          onChange={(event) => setConsultType(event.target.value as ConsultType)}
+                          className={`${inputCls} w-full py-2`}
+                        >
+                          {["General", "Specialist", "Emergency", "Follow-up", "Antenatal", "Paediatric"].map((type) => (
+                            <option key={type}>{type}</option>
+                          ))}
+                        </select>
+                        <div className="flex gap-2">
+                          <Button size="sm" className="flex-1" onClick={() => void handleStartConsult(patient)}>
+                            Start
+                          </Button>
+                          <Button size="sm" variant="ghost" className="flex-1" onClick={() => setConsultingId(null)}>
+                            Cancel
+                          </Button>
                         </div>
-                      ) : (
-                        <Button size="sm" onClick={() => setConsultingId(patient.id)}>Start Consult</Button>
-                      )}
-                    </td>
+                      </div>
+                    ) : (
+                      <Button size="sm" className="w-full" onClick={() => setConsultingId(patient.id)}>
+                        Start Consult
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="hidden overflow-x-auto md:block">
+              <table className="min-w-full text-sm">
+                <thead>
+                  <tr className="border-b border-slate-100 bg-slate-50">
+                    {["Patient", "Patient ID", "Bed/Slot", "Triage", "Route", "Priority", "Assigned Nurse", "Action"].map((heading) => (
+                      <th
+                        key={heading}
+                        className="whitespace-nowrap px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500"
+                      >
+                        {heading}
+                      </th>
+                    ))}
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {outpatientQueue.map((patient) => (
+                    <tr key={patient.id} className="hover:bg-slate-50">
+                      <td className="px-4 py-3 font-semibold text-slate-900">{patient.patientName}</td>
+                      <td className="px-4 py-3 font-mono text-xs text-slate-400">{patient.patientId}</td>
+                      <td className="px-4 py-3 font-mono text-xs font-bold text-slate-600">{patient.bed}</td>
+                      <td className="max-w-[220px] px-4 py-3 text-xs text-slate-500">
+                        <p className="truncate">{patient.diagnosis}</p>
+                        {patient.notes ? (
+                          <p className="mt-1 line-clamp-2 text-[11px] text-amber-700">
+                            Latest nursing note: {patient.notes.split("\n")[0]}
+                          </p>
+                        ) : null}
+                      </td>
+                      <td className="px-4 py-3 text-xs text-slate-500">{describeDoctorRoute(patient)}</td>
+                      <td className="px-4 py-3">
+                        <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${PRIORITY_STYLES[patient.priority]}`}>
+                          {patient.priority}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-xs text-slate-500">{patient.assignedNurse}</td>
+                      <td className="px-4 py-3">
+                        {consultingId === patient.id ? (
+                          <div className="flex items-center gap-2">
+                            <select
+                              value={consultType}
+                              onChange={(event) => setConsultType(event.target.value as ConsultType)}
+                              className={`${inputCls} w-32 py-1`}
+                            >
+                              {["General", "Specialist", "Emergency", "Follow-up", "Antenatal", "Paediatric"].map((type) => (
+                                <option key={type}>{type}</option>
+                              ))}
+                            </select>
+                            <Button size="sm" onClick={() => void handleStartConsult(patient)}>
+                              Start
+                            </Button>
+                            <Button size="sm" variant="ghost" onClick={() => setConsultingId(null)}>
+                              Cancel
+                            </Button>
+                          </div>
+                        ) : (
+                          <Button size="sm" onClick={() => setConsultingId(patient.id)}>
+                            Start Consult
+                          </Button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         ) : (
           <div className="px-5 py-10 text-center">

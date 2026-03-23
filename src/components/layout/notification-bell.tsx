@@ -15,7 +15,6 @@ import {
   SEVERITY_RING,
   SEVERITY_BADGE,
   type AppNotification,
-  type NotifSeverity,
 } from "@/lib/data/notification-store";
 import { getDepartmentFromPath } from "@/lib/constants/navigation";
 import { cn } from "@/lib/utils/cn";
@@ -40,10 +39,6 @@ function NotifToast({
     }, 4500);
     return () => { clearTimeout(t1); clearTimeout(t2); };
   }, [onDismiss]);
-
-  const severityIcon: Record<NotifSeverity, string> = {
-    urgent: "🔴", warning: "🟡", success: "🟢", info: "🔵",
-  };
 
   return (
     <div
@@ -279,7 +274,7 @@ export function NotificationBell() {
             {/* Footer */}
             <div className="border-t border-slate-100 px-4 py-3">
               <Link
-                href="/app/profile/notifications"
+                href="/app/notifications"
                 onClick={() => setOpen(false)}
                 className="flex w-full items-center justify-center gap-1 text-xs font-semibold text-blue-600 hover:underline"
               >

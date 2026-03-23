@@ -19,6 +19,15 @@ const STATUS_STYLES: Record<string, string> = {
   Cancelled: "bg-slate-100 text-slate-500",
 };
 
+function MobileMeta({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-start justify-between gap-3 rounded-lg bg-slate-50 px-3 py-2">
+      <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{label}</span>
+      <span className="text-right text-sm font-medium text-slate-700">{value}</span>
+    </div>
+  );
+}
+
 export default function LabDashboardPage() {
   const { tests, metrics } = useLabStore();
 
@@ -56,7 +65,7 @@ export default function LabDashboardPage() {
       )}
 
       {/* KPI cards */}
-      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-5">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-5">
         {[
           { label: "Pending Tests", value: metrics.pendingTests, sub: "Awaiting sample", color: "text-amber-600", bg: "bg-amber-50", href: `${INTERNAL_PREFIX}/lab/test-requests` },
           { label: "Sample Collected", value: metrics.sampleCollectedTests, sub: "Awaiting processing", color: "text-sky-700", bg: "bg-sky-50", href: `${INTERNAL_PREFIX}/lab/sample-collection` },
@@ -88,7 +97,29 @@ export default function LabDashboardPage() {
                 Full queue →
               </Link>
             </div>
-            <div className="overflow-x-auto">
+            <div className="space-y-3 p-3 md:hidden">
+              {pendingTests.map((t) => (
+                <Card key={t.id} className={`p-4 ${t.priority === "STAT" ? "border-red-200 bg-red-50/40" : t.priority === "Urgent" ? "bg-amber-50/30" : "bg-white"}`}>
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-semibold text-slate-900">{t.patientName}</p>
+                      <p className="text-xs text-slate-400">{t.patientId}</p>
+                    </div>
+                    <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${PRIORITY_STYLES[t.priority]}`}>{t.priority}</span>
+                  </div>
+                  <div className="mt-3 grid grid-cols-1 gap-2">
+                    <MobileMeta label="Test" value={t.testName} />
+                    <MobileMeta label="Category" value={t.category} />
+                    <MobileMeta label="Ordered By" value={t.orderedBy} />
+                    <MobileMeta label="Status" value={t.status} />
+                  </div>
+                </Card>
+              ))}
+              {pendingTests.length === 0 && (
+                <p className="px-2 py-8 text-center text-sm text-slate-400">No pending tests at the moment.</p>
+              )}
+            </div>
+            <div className="hidden overflow-x-auto md:block">
               <table className="min-w-full text-sm text-left">
                 <thead>
                   <tr className="bg-slate-50 border-b border-slate-100">
@@ -131,7 +162,31 @@ export default function LabDashboardPage() {
               <h3 className="font-bold text-slate-900">Recently Completed</h3>
               <Link href={`${INTERNAL_PREFIX}/lab/results`} className="text-sm font-semibold text-accent hover:underline">All results →</Link>
             </div>
-            <div className="divide-y divide-slate-100">
+            <div className="space-y-3 p-3 md:hidden">
+              {recentCompleted.map((t) => (
+                <Card key={t.id} className="p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-semibold text-slate-900">{t.patientName}</p>
+                      <p className="text-xs text-slate-400">{t.testName}</p>
+                    </div>
+                    <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                      t.interpretation === "Critical" ? "bg-red-50 text-red-700"
+                      : t.interpretation === "Abnormal" ? "bg-amber-50 text-amber-700"
+                      : "bg-emerald-50 text-emerald-700"
+                    }`}>{t.interpretation ?? "Normal"}</span>
+                  </div>
+                  <div className="mt-3 grid grid-cols-1 gap-2">
+                    <MobileMeta label="Ordered By" value={t.orderedBy} />
+                    <MobileMeta label="Completed" value={t.completedAt ?? "—"} />
+                  </div>
+                </Card>
+              ))}
+              {recentCompleted.length === 0 && (
+                <p className="px-2 py-8 text-center text-sm text-slate-400">No completed tests yet today.</p>
+              )}
+            </div>
+            <div className="hidden divide-y divide-slate-100 md:block">
               {recentCompleted.map((t) => (
                 <div key={t.id} className="flex items-center gap-4 px-5 py-3">
                   <div className={`h-2 w-2 shrink-0 rounded-full ${t.interpretation === "Critical" ? "bg-red-500" : t.interpretation === "Abnormal" ? "bg-amber-400" : "bg-emerald-400"}`} />

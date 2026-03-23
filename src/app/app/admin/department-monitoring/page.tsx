@@ -25,6 +25,15 @@ const STATUS_TEXT: Record<StatusLevel, string> = {
   OK: "text-emerald-700", Warning: "text-amber-700", Critical: "text-red-700", Info: "text-sky-700",
 };
 
+function MobileMeta({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-start justify-between gap-3 rounded-lg bg-slate-50 px-3 py-2">
+      <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{label}</span>
+      <span className="text-right text-sm font-medium text-slate-700">{value}</span>
+    </div>
+  );
+}
+
 export default function DepartmentMonitoringPage() {
   const { metrics: rxM, restockRequests } = usePharmacyStore();
   const { metrics: accM } = useAccountsStore();
@@ -196,7 +205,7 @@ export default function DepartmentMonitoringPage() {
                   <path strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
                 </svg>
               </div>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                 {dept.metrics.map((m) => (
                   <div key={m.label} className="rounded-lg bg-white/70 px-2.5 py-2 text-center">
                     <p className={`text-base font-bold ${m.alert ? STATUS_TEXT[dept.status] : "text-slate-800"}`}>{m.value}</p>
@@ -214,7 +223,25 @@ export default function DepartmentMonitoringPage() {
         <div className="border-b border-slate-100 px-5 py-4">
           <h3 className="font-bold text-slate-900">All Departments Summary</h3>
         </div>
-        <div className="overflow-x-auto">
+        <div className="space-y-3 p-3 md:hidden">
+          {departments.map((d) => (
+            <Card key={d.key} className={`p-4 ${STATUS_RING[d.status]}`}>
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="font-semibold text-slate-900">{d.label}</p>
+                  <p className={`mt-1 text-xs font-semibold ${STATUS_TEXT[d.status]}`}>{d.statusLabel}</p>
+                </div>
+                <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${STATUS_TEXT[d.status]}`}>{d.status}</span>
+              </div>
+              <div className="mt-3 grid gap-2">
+                {d.metrics.map((m) => (
+                  <MobileMeta key={m.label} label={m.label} value={String(m.value)} />
+                ))}
+              </div>
+            </Card>
+          ))}
+        </div>
+        <div className="hidden overflow-x-auto md:block">
           <table className="min-w-full text-sm">
             <thead>
               <tr className="bg-slate-50 border-b border-slate-100">

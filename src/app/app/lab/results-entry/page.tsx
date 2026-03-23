@@ -17,6 +17,15 @@ const PRIORITY_STYLES: Record<string, string> = {
   STAT: "bg-red-100 text-red-700 font-bold",
 };
 
+function MobileMeta({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-start justify-between gap-3 rounded-lg bg-slate-50 px-3 py-2">
+      <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{label}</span>
+      <span className="text-right text-sm font-medium text-slate-700">{value}</span>
+    </div>
+  );
+}
+
 export default function LabResultsEntryPage() {
   const { tests } = useLabStore();
   const [techOptions, setTechOptions] = useState<string[]>(["Lab Technician"]);
@@ -63,7 +72,7 @@ export default function LabResultsEntryPage() {
     });
     // Send billing charge to Accounts
     addLabCharge({
-      id: `LAB-BILL-${Date.now()}`,
+      id: `LAB-BILL-${entryTarget.id}`,
       patientName: entryTarget.patientName,
       patientId: entryTarget.patientId,
       testName: entryTarget.testName,
@@ -106,7 +115,32 @@ export default function LabResultsEntryPage() {
           <h3 className="font-bold text-slate-900">Tests In Progress — Ready for Results</h3>
           <p className="text-xs text-slate-400 mt-0.5">These tests are being processed. Enter result values once analysis is complete.</p>
         </div>
-        <div className="overflow-x-auto">
+        <div className="space-y-3 p-3 md:hidden">
+          {inProgress.map((t) => (
+            <Card key={t.id} className={`p-4 ${t.priority === "STAT" ? "border-red-200 bg-red-50/40" : t.priority === "Urgent" ? "bg-amber-50/30" : "bg-white"}`}>
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold text-slate-900">{t.patientName}</p>
+                  <p className="text-xs text-slate-400">{t.patientId}</p>
+                </div>
+                <span className={`rounded-full px-2.5 py-0.5 text-[11px] ${PRIORITY_STYLES[t.priority]}`}>{t.priority}</span>
+              </div>
+              <div className="mt-3 grid grid-cols-1 gap-2">
+                <MobileMeta label="Test" value={t.testName} />
+                <MobileMeta label="Category" value={t.category} />
+                <MobileMeta label="Technician" value={t.technicianName ?? "—"} />
+                <MobileMeta label="Started" value={t.processingStartedAt ?? "—"} />
+              </div>
+              <div className="mt-3">
+                <Button size="sm" className="w-full" onClick={() => { setEntryTarget(t); resetForm(); }}>Enter Result</Button>
+              </div>
+            </Card>
+          ))}
+          {inProgress.length === 0 && (
+            <p className="px-2 py-8 text-center text-sm text-slate-400">No tests are currently in progress. Start processing samples first.</p>
+          )}
+        </div>
+        <div className="hidden overflow-x-auto md:block">
           <table className="min-w-full text-sm text-left">
             <thead>
               <tr className="bg-slate-50 border-b border-slate-100">
@@ -164,7 +198,7 @@ export default function LabResultsEntryPage() {
                 placeholder="e.g. Hb: 12.4 g/dL, WBC: 6.2×10⁹/L" className={inputCls} />
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Unit (optional)</label>
                 <input value={resultUnit} onChange={(e) => setResultUnit(e.target.value)}
