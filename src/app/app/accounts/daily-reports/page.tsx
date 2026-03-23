@@ -15,7 +15,8 @@ const money = (value: number) => `NGN ${value.toLocaleString("en-GB", { minimumF
 const formatDateOnly = (value?: string) => (value ? new Date(value).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }) : "-");
 const formatDateTime = (value?: string) =>
   value ? new Date(value).toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: false }) : "-";
-const escapeHtml = (value: string) => value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
+const escapeHtml = (value: string) =>
+  value.split("&").join("&amp;").split("<").join("&lt;").split(">").join("&gt;").split('"').join("&quot;");
 
 const toInputDate = () => {
   const local = new Date(Date.now() - new Date().getTimezoneOffset() * 60000);

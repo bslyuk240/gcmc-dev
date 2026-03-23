@@ -30,7 +30,7 @@ const ROLE_LABELS: Record<string, string> = {
 
 export function Topbar() {
   const { session } = useSession();
-  const pathname = usePathname();
+  const pathname = usePathname() ?? "";
   const item = findNavigationItem(pathname);
   const theme = departmentThemes[item?.department ?? "dashboard"];
   const [profileOpen, setProfileOpen] = useState(false);
@@ -63,7 +63,7 @@ export function Topbar() {
   }, [profileOpen]);
 
   function handleOpenMobileMenu() {
-    window.dispatchEvent(new CustomEvent("hms:open-mobile-sidebar"));
+    window.dispatchEvent(new Event("hms:open-mobile-sidebar"));
   }
 
   function handleLogout() {
@@ -72,7 +72,8 @@ export function Topbar() {
 
   const initials = staffBasic.name
     .split(" ")
-    .map((name) => name[0])
+    .filter(Boolean)
+    .map((name) => name[0] ?? "")
     .join("")
     .slice(0, 2);
 

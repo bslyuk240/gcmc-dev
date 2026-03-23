@@ -99,7 +99,7 @@ type NavItem = {
 };
 
 export function BottomNav() {
-  const pathname = usePathname();
+  const pathname = usePathname() ?? "";
   const session = useHMSSession();
   const dept = getDepartmentFromPath(pathname);
   const homeDept = session?.department ?? dept;

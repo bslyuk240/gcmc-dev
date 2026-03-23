@@ -211,9 +211,15 @@ export function StaffPortalShell({
   session: HMSSession;
   children: React.ReactNode;
 }) {
-  const pathname = usePathname();
+  const pathname = usePathname() ?? "";
   const [notifCount, setNotifCount] = useState(0);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+
+  useEffect(() => {
+    const openSidebar = () => setMobileSidebarOpen(true);
+    window.addEventListener("hms:open-mobile-sidebar", openSidebar);
+    return () => window.removeEventListener("hms:open-mobile-sidebar", openSidebar);
+  }, []);
 
   useEffect(() => {
     const run = () => {
@@ -239,7 +245,13 @@ export function StaffPortalShell({
   }, [pathname]);
 
   const initials = session.full_name
-    .split(" ").map((w) => w[0]).slice(0, 2).join("").toUpperCase();
+    .split(" ")
+    .filter(Boolean)
+    .map((w) => w[0])
+    .filter(Boolean)
+    .slice(0, 2)
+    .join("")
+    .toUpperCase();
 
   const deptLabel = DEPT_LABELS[session.department] ?? session.department;
   const avatarUrl = session.avatar_url?.trim() ?? null;

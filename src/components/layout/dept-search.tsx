@@ -253,7 +253,7 @@ const TYPE_COLOR: Record<string, string> = {
 };
 
 export function DeptSearch() {
-  const pathname = usePathname();
+  const pathname = usePathname() ?? "";
   const router = useRouter();
   const dept = getDepartmentFromPath(pathname) ?? "";
   const [query, setQuery] = useState("");

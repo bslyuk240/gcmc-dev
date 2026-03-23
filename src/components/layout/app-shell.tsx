@@ -8,7 +8,7 @@ import { Topbar } from "@/components/layout/topbar";
 import { getDepartmentFromPath } from "@/lib/constants/navigation";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
-  const pathname = usePathname();
+  const pathname = usePathname() ?? "";
   const department = getDepartmentFromPath(pathname);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 

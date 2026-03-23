@@ -78,7 +78,7 @@ function NotifToast({
 
 // ─── Main component ───────────────────────────────────────────────────────────
 export function NotificationBell() {
-  const pathname = usePathname();
+  const pathname = usePathname() ?? "";
   // Derive current department from URL: /app/nurses/... → "nurses"
   const currentDept = getDepartmentFromPath(pathname) ?? "admin";
 

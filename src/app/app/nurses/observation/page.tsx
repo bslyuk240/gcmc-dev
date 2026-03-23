@@ -192,7 +192,12 @@ export default function NursesObservationPage() {
 
       if (cancelled) return;
 
-      const loaded = results.flatMap((result) => (result.status === "fulfilled" ? result.value : []));
+      const loaded = results.reduce<typeof results[number]["value"][]>((acc, result) => {
+        if (result.status === "fulfilled") {
+          acc.push(...result.value);
+        }
+        return acc;
+      }, []);
       const failedCount = results.filter((result) => result.status === "rejected").length;
 
       const rows = dedupeObservationRows(

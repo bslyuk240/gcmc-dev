@@ -143,7 +143,7 @@ function SidebarInner({
 
       <div className="shrink-0 border-t border-slate-200 bg-white p-3 pb-24 xl:pb-3">
         <Link
-          href="/staff/dashboard"
+          href="/staff/login?next=/staff/dashboard"
           className="mt-2.5 flex w-full items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white py-2 text-xs font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900"
           onClick={onNavigate}
         >
@@ -171,7 +171,7 @@ function SidebarInner({
 }
 
 export function Sidebar() {
-  const pathname = usePathname();
+  const pathname = usePathname() ?? "";
 
   return (
     <aside className="hidden h-screen min-h-0 w-60 shrink-0 overflow-hidden border-r border-slate-200 bg-white xl:sticky xl:top-0 xl:flex xl:self-start">
@@ -189,7 +189,7 @@ export function MobileSidebar({
   open: boolean;
   onClose: () => void;
 }) {
-  const pathname = usePathname();
+  const pathname = usePathname() ?? "";
 
   if (!open) return null;
 

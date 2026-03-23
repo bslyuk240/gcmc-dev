@@ -651,22 +651,35 @@ export const workspaceBoards: Record<DepartmentKey, WorkspaceBoard> = {
   profile: makeBoard("Staff Profile", "Personal profile, security settings, and session visibility.", [["08:21", "Login", "Chrome / London", "Success"], ["08:34", "Dashboard", "Global board", "Allowed"], ["09:12", "Ticket update", "IT-1021", "Logged"], ["09:38", "Profile", "Security tab", "Allowed"]], [{ title: "Separation of concerns", copy: "Profile management should never be confused with departmental workspace permissions." }, { title: "Session control", copy: "The user should be able to see and revoke active devices later in the auth flow." }, { title: "Security readiness", copy: "The structure already anticipates MFA, device fingerprinting, and breach monitoring." }]),
 };
 
-export function getDepartmentFromPath(pathname: string): DepartmentKey {
-  if (!pathname.startsWith(INTERNAL_PREFIX + "/")) {
+function getAllNavigationItems() {
+  const items: Array<(typeof dashboardNavigation)[number]["items"][number]> = [];
+
+  for (const section of dashboardNavigation) {
+    items.push(...section.items);
+  }
+
+  return items;
+}
+
+export function getDepartmentFromPath(pathname?: string | null): DepartmentKey {
+  const normalizedPath = pathname ?? "";
+
+  if (!normalizedPath.startsWith(INTERNAL_PREFIX + "/")) {
     return "dashboard";
   }
 
-  const directMatch = dashboardNavigation
-    .flatMap((section) => section.items)
-    .find((item) => pathname === item.href || pathname.startsWith(`${item.href}/`));
+  const directMatch = getAllNavigationItems().find(
+    (item) => normalizedPath === item.href || normalizedPath.startsWith(`${item.href}/`),
+  );
 
   return directMatch?.department ?? "dashboard";
 }
 
-export function findNavigationItem(pathname: string) {
-  return dashboardNavigation
-    .flatMap((section) => section.items)
-    .find((item) => pathname === item.href || pathname.startsWith(`${item.href}/`));
+export function findNavigationItem(pathname?: string | null) {
+  const normalizedPath = pathname ?? "";
+  return getAllNavigationItems().find(
+    (item) => normalizedPath === item.href || normalizedPath.startsWith(`${item.href}/`),
+  );
 }
 
 export function getSidebarSections(department: DepartmentKey) {
