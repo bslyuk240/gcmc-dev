@@ -1,4 +1,5 @@
 import { getStaffPortalSession } from "@/lib/auth/session";
+import { PortalLoginForm } from "@/components/auth/portal-login-form";
 
 export const metadata = {
   title: "Staff Login — GCMC Staff Portal",
@@ -64,62 +65,19 @@ export default async function StaffLoginPage({
             </div>
           )}
 
-          <form action="/api/auth/staff-login" method="post" className="space-y-4">
-            {/* Hidden fields */}
-            {next && next.startsWith("/staff") && (
-              <input type="hidden" name="next" value={next} />
-            )}
-
-            <div>
-              <label htmlFor="email" className="mb-1 block text-sm font-semibold text-slate-700">
-                Work Email
-              </label>
-              <input
-                id="email"
-                name="email"
-                type="email"
-                required
-                autoComplete="email"
-                placeholder="you@gcmc.local"
-                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-indigo-400 focus:bg-white focus:ring-2 focus:ring-indigo-100"
-              />
-            </div>
-
-            <div>
-              <div className="mb-1 flex items-center justify-between">
-                <label htmlFor="password" className="text-sm font-semibold text-slate-700">
-                  Password
-                </label>
-                <a href="/forgot-password" className="text-xs font-medium text-indigo-600 hover:underline">
-                  Forgot password?
-                </a>
-              </div>
-              <input
-                id="password"
-                name="password"
-                type="password"
-                required
-                autoComplete="current-password"
-                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-indigo-400 focus:bg-white focus:ring-2 focus:ring-indigo-100"
-              />
-            </div>
-
-            <label className="flex items-center gap-2 text-sm text-slate-600">
-              <input
-                type="checkbox"
-                name="remember"
-                className="rounded border-slate-300 accent-indigo-600"
-              />
-              Keep me signed in
-            </label>
-
-            <button
-              type="submit"
-              className="w-full rounded-xl bg-indigo-600 py-3 text-sm font-bold text-white shadow-sm transition hover:bg-indigo-700 active:scale-[0.98]"
-            >
-              Sign In to Staff Portal
-            </button>
-          </form>
+          <div className="space-y-4">
+            <PortalLoginForm
+              action="/api/auth/staff-login"
+              next={next && next.startsWith("/staff") ? next : undefined}
+              emailLabel="Work Email"
+              emailPlaceholder="you@gcmc.local"
+              passwordLabel="Password"
+              submitLabel="Sign In to Staff Portal"
+              rememberLabel="Keep me signed in"
+              forgotHref="/forgot-password"
+              forgotLabel="Forgot password?"
+            />
+          </div>
         </div>
 
         {/* Links */}
