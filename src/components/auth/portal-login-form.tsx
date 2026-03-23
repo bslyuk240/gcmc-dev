@@ -36,6 +36,7 @@ export function PortalLoginForm({
 
     const form = event.currentTarget;
     const formData = new FormData(form);
+    const errorBase = action.includes("/staff-login") ? "/staff/login" : "/login";
 
     setPending(true);
     try {
@@ -43,11 +44,28 @@ export function PortalLoginForm({
         method: "POST",
         body: formData,
         credentials: "include",
+        headers: {
+          "Accept": "application/json",
+          "x-portal-login": "1",
+        },
       });
 
-      window.location.assign(response.url);
+      const payload = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        const errorCode = payload?.error ? String(payload.error) : "credentials";
+        window.location.assign(`${errorBase}?error=${encodeURIComponent(errorCode)}`);
+        return;
+      }
+
+      if (payload?.redirectTo) {
+        window.location.assign(String(payload.redirectTo));
+        return;
+      }
+
+      form.submit();
     } catch {
-      window.location.assign(action);
+      form.submit();
     } finally {
       setPending(false);
     }

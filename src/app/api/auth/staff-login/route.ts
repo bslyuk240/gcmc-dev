@@ -18,9 +18,12 @@ export async function POST(request: Request) {
   const email = String(formData.get("email") ?? "").trim();
   const password = String(formData.get("password") ?? "").trim();
   const nextUrl = String(formData.get("next") ?? "").trim();
+  const wantsJson = request.headers.get("x-portal-login") === "1";
 
   const loginError = (code: string) =>
-    NextResponse.redirect(new URL(`/staff/login?error=${code}`, request.url), 303);
+    wantsJson
+      ? NextResponse.json({ error: code }, { status: 400 })
+      : NextResponse.redirect(new URL(`/staff/login?error=${code}`, request.url), 303);
 
   if (!email || !password) {
     return loginError("invalid");
@@ -87,5 +90,7 @@ export async function POST(request: Request) {
   await writeStaffPortalSessionCookie(session);
 
   const destination = nextUrl && isAllowedStaffNext(nextUrl) ? nextUrl : "/staff/dashboard";
-  return NextResponse.redirect(new URL(destination, request.url), 303);
+  return wantsJson
+    ? NextResponse.json({ redirectTo: destination })
+    : NextResponse.redirect(new URL(destination, request.url), 303);
 }
