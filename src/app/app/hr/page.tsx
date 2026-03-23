@@ -5,6 +5,7 @@ import { Card } from "@/components/ui/card";
 import { PageHeader } from "@/components/layout/page-header";
 import { INTERNAL_PREFIX } from "@/lib/constants/navigation";
 import { useHRStore } from "@/lib/hooks/use-hr-store";
+import { DB_TO_STAFF_DEPT } from "@/lib/data/hr-store";
 
 function MobileMeta({ label, value }: { label: string; value: string }) {
   return (
@@ -13,6 +14,10 @@ function MobileMeta({ label, value }: { label: string; value: string }) {
       <span className="text-right text-sm font-medium text-slate-700">{value}</span>
     </div>
   );
+}
+
+function departmentLabel(value: string) {
+  return DB_TO_STAFF_DEPT[value] ?? value;
 }
 
 const DEPT_COLORS: Record<string, string> = {
@@ -130,7 +135,7 @@ export default function HRDashboardPage() {
                     <div className="flex items-start justify-between gap-3">
                       <div>
                         <p className="text-sm font-semibold text-slate-900">{r.staffName}</p>
-                        <p className="mt-0.5 text-xs text-slate-500">{r.department}</p>
+                        <p className="mt-0.5 text-xs text-slate-500">{departmentLabel(r.department)}</p>
                       </div>
                       <span className={`rounded-full px-2.5 py-1 text-[10px] font-semibold ${LEAVE_STATUS_STYLES[r.status]}`}>
                         {r.status}
@@ -159,7 +164,7 @@ export default function HRDashboardPage() {
                     <tr key={r.id} className={`hover:bg-slate-50 ${r.status === "Pending" ? "bg-amber-50/20" : ""}`}>
                       <td className="px-4 py-3 font-medium text-slate-900">{r.staffName}</td>
                       <td className="px-4 py-3">
-                        <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${DEPT_COLORS[r.department] ?? "bg-slate-100 text-slate-600"}`}>{r.department}</span>
+                        <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${DEPT_COLORS[r.department] ?? DEPT_COLORS[departmentLabel(r.department)] ?? "bg-slate-100 text-slate-600"}`}>{departmentLabel(r.department)}</span>
                       </td>
                       <td className="px-4 py-3 text-slate-600 text-xs">{r.leaveType}</td>
                       <td className="px-4 py-3 text-xs text-slate-500 whitespace-nowrap">{r.startDate} – {r.endDate}</td>
@@ -183,7 +188,7 @@ export default function HRDashboardPage() {
             <div className="space-y-3">
               {staffByDept.map((d) => (
                 <div key={d.dept} className="flex items-center gap-3">
-                  <span className={`w-24 shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold text-center ${DEPT_COLORS[d.dept] ?? "bg-slate-100 text-slate-600"}`}>{d.dept}</span>
+                  <span className={`w-24 shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold text-center ${DEPT_COLORS[d.dept] ?? DEPT_COLORS[departmentLabel(d.dept)] ?? "bg-slate-100 text-slate-600"}`}>{d.dept}</span>
                   <div className="flex-1 h-2 rounded-full bg-slate-100 overflow-hidden">
                     <div className="h-full rounded-full bg-violet-400" style={{ width: `${(d.active / (staffByDept[0]?.total || 1)) * 100}%` }} />
                   </div>

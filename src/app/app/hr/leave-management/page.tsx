@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Modal, ModalFooter } from "@/components/ui/modal";
 import { Toast, type ToastData } from "@/components/ui/toast";
 import { useHRStore } from "@/lib/hooks/use-hr-store";
-import { updateLeaveStatus, type LeaveRequest } from "@/lib/data/hr-store";
+import { DB_TO_STAFF_DEPT, updateLeaveStatus, type LeaveRequest } from "@/lib/data/hr-store";
 import { INTERNAL_PREFIX } from "@/lib/constants/navigation";
 
 const STATUS_STYLES: Record<string, string> = {
@@ -29,14 +29,18 @@ const LEAVE_TYPE_STYLES: Record<string, string> = {
 };
 
 const DEPT_COLORS: Record<string, string> = {
-  Doctors: "bg-violet-50 text-violet-700",
-  Nurses: "bg-pink-50 text-pink-700",
-  Pharmacy: "bg-emerald-50 text-emerald-700",
-  Lab: "bg-sky-50 text-sky-700",
-  "Front Desk": "bg-amber-50 text-amber-700",
-  Accounts: "bg-teal-50 text-teal-700",
-  IT: "bg-cyan-50 text-cyan-700",
-  HR: "bg-slate-100 text-slate-700",
+  doctors: "bg-violet-50 text-violet-700",
+  nurses: "bg-pink-50 text-pink-700",
+  pharmacy: "bg-emerald-50 text-emerald-700",
+  lab: "bg-sky-50 text-sky-700",
+  frontdesk: "bg-amber-50 text-amber-700",
+  accounts: "bg-teal-50 text-teal-700",
+  it: "bg-cyan-50 text-cyan-700",
+  hr: "bg-slate-100 text-slate-700",
+  store: "bg-orange-50 text-orange-700",
+  admin: "bg-indigo-50 text-indigo-700",
+  non_clinical: "bg-fuchsia-50 text-fuchsia-700",
+  nhis: "bg-violet-50 text-violet-700",
 };
 
 function MobileMeta({
@@ -52,6 +56,10 @@ function MobileMeta({
       <span className="text-right text-sm font-medium text-slate-700">{value}</span>
     </div>
   );
+}
+
+function departmentLabel(value: string) {
+  return DB_TO_STAFF_DEPT[value] ?? value;
 }
 
 export default function LeaveManagementPage() {
@@ -139,7 +147,7 @@ export default function LeaveManagementPage() {
             {/* Dept filter */}
             <select value={filterDept} onChange={(e) => setFilterDept(e.target.value)}
               className="rounded-lg border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 outline-none">
-              {allDepts.map((d) => <option key={d}>{d}</option>)}
+              {allDepts.map((d) => <option key={d} value={d}>{d === "All" ? "All" : departmentLabel(d)}</option>)}
             </select>
           </div>
         </div>
@@ -155,7 +163,7 @@ export default function LeaveManagementPage() {
                 <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${STATUS_STYLES[l.status]}`}>{l.status}</span>
               </div>
               <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
-                <MobileMeta label="Department" value={l.department} />
+                <MobileMeta label="Department" value={departmentLabel(l.department)} />
                 <MobileMeta label="Leave Type" value={l.leaveType} />
                 <MobileMeta label="Start" value={l.startDate} />
                 <MobileMeta label="End" value={l.endDate} />
@@ -193,7 +201,7 @@ export default function LeaveManagementPage() {
                 <tr key={l.id} className={`hover:bg-slate-50 ${l.status === "Pending" ? "bg-amber-50/15" : ""}`}>
                   <td className="px-4 py-3 font-semibold text-slate-900 whitespace-nowrap">{l.staffName}</td>
                   <td className="px-4 py-3">
-                    <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${DEPT_COLORS[l.department] ?? "bg-slate-100 text-slate-600"}`}>{l.department}</span>
+                    <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${DEPT_COLORS[l.department] ?? "bg-slate-100 text-slate-600"}`}>{departmentLabel(l.department)}</span>
                   </td>
                   <td className="px-4 py-3 text-xs text-slate-500">{l.role}</td>
                   <td className="px-4 py-3">
@@ -231,7 +239,7 @@ export default function LeaveManagementPage() {
         {reviewTarget && (
           <div className="space-y-3">
             <div className="rounded-lg bg-slate-50 p-3 space-y-1.5 text-sm">
-              <div className="flex justify-between"><span className="text-slate-500">Department</span><strong>{reviewTarget.department}</strong></div>
+              <div className="flex justify-between"><span className="text-slate-500">Department</span><strong>{departmentLabel(reviewTarget.department)}</strong></div>
               <div className="flex justify-between"><span className="text-slate-500">Leave Type</span><span>{reviewTarget.leaveType}</span></div>
               <div className="flex justify-between"><span className="text-slate-500">Duration</span><span>{reviewTarget.startDate} – {reviewTarget.endDate} <strong>({reviewTarget.days} days)</strong></span></div>
               <div className="flex justify-between"><span className="text-slate-500">Reason</span><span className="text-right max-w-[200px]">{reviewTarget.reason}</span></div>

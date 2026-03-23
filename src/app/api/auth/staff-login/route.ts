@@ -77,6 +77,7 @@ export async function POST(request: Request) {
 
   const session: HMSSession = {
     staff_id: profile.id,
+    auth_user_id: userId,
     full_name: profile.full_name,
     email: profile.email,
     avatar_url: profile.avatar_url ?? null,

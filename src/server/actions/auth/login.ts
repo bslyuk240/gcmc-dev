@@ -88,6 +88,7 @@ export async function loginStaffAction(formData: FormData) {
     // Build and write the HMS session
     const session: HMSSession = {
       staff_id:    userId,
+      auth_user_id: userId,
       full_name:   profile.full_name,
       email:       profile.email,
       department:  profile.department,

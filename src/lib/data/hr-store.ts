@@ -169,8 +169,9 @@ export type StaffMember = {
 export type LeaveRequest = {
   id: string;
   staffId: string;
+  staffAuthId?: string;
   staffName: string;
-  department: StaffDepartment;
+  department: string;
   role: string;
   leaveType: LeaveType;
   startDate: string;
@@ -600,7 +601,9 @@ export async function updateLeaveStatus(id: string, status: "Approved" | "Reject
     const req = state.leaveRequests.find((l) => l.id === id);
     if (req) {
       state.staff = state.staff.map((s) =>
-        s.id === req.staffId ? { ...s, status: status === "Approved" ? "On Leave" : s.status } : s
+        (s.id === req.staffId || s.id === req.staffAuthId)
+          ? { ...s, status: status === "Approved" ? "On Leave" : s.status }
+          : s
       );
     }
   });

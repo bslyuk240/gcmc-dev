@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Modal, ModalFooter } from "@/components/ui/modal";
 import { Toast, type ToastData } from "@/components/ui/toast";
 import { useAdminStore } from "@/lib/hooks/use-admin-store";
+import { DB_TO_STAFF_DEPT } from "@/lib/data/hr-store";
 import { updateLeaveStatus } from "@/lib/data/admin-store";
 
 const DEPT_STAFF: Record<string, { count: number; active: number }> = {
@@ -34,6 +35,10 @@ const UPCOMING = [
   { event: "New staff orientation — 2 hires", date: "Mar 17, 2026", tag: "Onboarding" },
   { event: "Payroll processing deadline", date: "Mar 25, 2026", tag: "Payroll" },
 ];
+
+function departmentLabel(value: string) {
+  return DB_TO_STAFF_DEPT[value] ?? value;
+}
 
 export default function AdminHRMonitorPage() {
   const { hrLeaveRequests, metrics } = useAdminStore();
@@ -89,7 +94,7 @@ export default function AdminHRMonitorPage() {
                     <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-4 py-3">
                       <div className="min-w-0">
                         <p className="truncate text-sm font-semibold text-slate-900">{l.staffName}</p>
-                        <p className="mt-0.5 text-[11px] text-slate-500">{l.department}</p>
+                        <p className="mt-0.5 text-[11px] text-slate-500">{departmentLabel(l.department)}</p>
                       </div>
                       <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${LEAVE_STYLES[l.status]}`}>{l.status}</span>
                     </div>
@@ -134,7 +139,7 @@ export default function AdminHRMonitorPage() {
                   {hrLeaveRequests.map((l) => (
                     <tr key={l.id} className="hover:bg-slate-50">
                       <td className="px-4 py-3 font-semibold text-slate-900">{l.staffName}</td>
-                      <td className="px-4 py-3 text-xs text-slate-500">{l.department}</td>
+                      <td className="px-4 py-3 text-xs text-slate-500">{departmentLabel(l.department)}</td>
                       <td className="px-4 py-3">
                         <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${LEAVE_TYPE_STYLES[l.leaveType] ?? "bg-slate-100 text-slate-600"}`}>{l.leaveType}</span>
                       </td>

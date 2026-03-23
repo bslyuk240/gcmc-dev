@@ -1,11 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useHMSSession } from "@/modules/rbac/hooks";
 import { useHRStore } from "@/lib/hooks/use-hr-store";
 import {
   addLeaveRequest,
-  DB_TO_STAFF_DEPT,
   type LeaveType,
   type LeaveStatus,
 } from "@/lib/data/hr-store";
@@ -21,7 +20,7 @@ const STATUS_STYLES: Record<LeaveStatus, string> = {
 
 export default function LeavePage() {
   const session = useHMSSession();
-  const { leaveRequests, leavePolicies } = useHRStore();
+  const { staff, leaveRequests, leavePolicies } = useHRStore();
   const [showForm, setShowForm] = useState(false);
   const [type, setType] = useState<LeaveType>("Annual");
   const [startDate, setStart] = useState("");
@@ -29,11 +28,26 @@ export default function LeavePage() {
   const [reason, setReason] = useState("");
   const [toast, setToast] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [mounted, setMounted] = useState(false);
+  const staffAuthId = session?.auth_user_id ?? session?.staff_id ?? null;
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
-  const requests = leaveRequests.filter((request) => request.staffId === session?.staff_id);
+  const staffRecord = session
+    ? staff.find((member) =>
+        member.id === session.staff_id
+        || member.email.toLowerCase() === session.email.toLowerCase()
+        || member.name.toLowerCase() === session.full_name.toLowerCase(),
+      ) ?? null
+    : null;
+  const staffDbId = staffRecord?.id ?? session?.staff_id ?? null;
+  const requests = leaveRequests.filter((request) => [staffDbId, staffAuthId].includes(request.staffId));
+  const visibleRequests = mounted ? requests : [];
   const currentYear = new Date().getFullYear();
   const leavePolicy = leavePolicies.find((policy) => policy.year === currentYear) ?? null;
-  const annualTotal = (leavePolicy?.annualDays ?? 21) + (leavePolicy?.carryForwardDays ?? 0);
+  const visibleLeavePolicy = mounted ? leavePolicy : null;
+  const annualTotal = (visibleLeavePolicy?.annualDays ?? 21) + (visibleLeavePolicy?.carryForwardDays ?? 0);
 
   function countDays(start: string, end: string) {
     if (!start || !end) return 0;
@@ -53,9 +67,10 @@ export default function LeavePage() {
       const requestId = `LV-${crypto.randomUUID()}`;
       await addLeaveRequest({
         id: requestId,
-        staffId: session.staff_id,
+        staffId: staffDbId ?? session.staff_id,
+        staffAuthId: staffAuthId ?? undefined,
         staffName: session.full_name,
-        department: DB_TO_STAFF_DEPT[session.department] ?? "Administration",
+        department: session.department,
         role: session.role.replace(/_/g, " "),
         leaveType: type,
         startDate,
@@ -80,13 +95,13 @@ export default function LeavePage() {
     }
   }
 
-  const annual = requests
+  const annual = visibleRequests
     .filter((request) =>
       request.leaveType === "Annual"
       && request.status === "Approved"
       && new Date(`${request.startDate}T00:00:00`).getFullYear() === currentYear)
     .reduce((sum, request) => sum + request.days, 0);
-  const pending = requests.filter((request) => request.status === "Pending").length;
+  const pending = visibleRequests.filter((request) => request.status === "Pending").length;
   const remaining = Math.max(0, annualTotal - annual);
   const inputCls = "w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100";
 
@@ -97,7 +112,7 @@ export default function LeavePage() {
         <p className="mt-1 text-sm text-slate-500">Apply for leave and track approval status from HR records.</p>
         <p className="mt-1 text-xs font-semibold text-indigo-600">
           {currentYear} entitlement: {annualTotal} days
-          {leavePolicy ? "" : " (default until HR sets the year policy)"}
+          {visibleLeavePolicy ? "" : " (default until HR sets the year policy)"}
         </p>
       </div>
 
@@ -162,12 +177,12 @@ export default function LeavePage() {
       <div>
         <p className="mb-3 text-xs font-bold uppercase tracking-wider text-slate-400">Leave History</p>
         <div className="space-y-2">
-          {requests.length === 0 && (
+          {visibleRequests.length === 0 && (
             <div className="rounded-xl border border-dashed border-slate-200 bg-white px-4 py-8 text-center text-sm text-slate-400">
               No leave records found in Supabase for this staff account.
             </div>
           )}
-          {requests.map((request) => (
+          {visibleRequests.map((request) => (
             <div key={request.id} className="rounded-xl border border-slate-200 bg-white px-4 py-3">
               <div className="flex items-start justify-between">
                 <div>

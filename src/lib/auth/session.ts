@@ -45,6 +45,7 @@ export type RoleKey =
  */
 export type HMSSession = {
   staff_id: string;
+  auth_user_id?: string;
   full_name: string;
   email: string;
   avatar_url?: string | null;

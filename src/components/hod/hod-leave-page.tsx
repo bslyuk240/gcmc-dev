@@ -10,6 +10,7 @@ import {
   fetchLeaveRequestsByDept,
   reviewLeaveRequestByHOD,
 } from "@/lib/supabase/db";
+import { DB_TO_STAFF_DEPT } from "@/lib/data/hr-store";
 import type { LeaveRequest } from "@/lib/data/hr-store";
 import { cn } from "@/lib/utils/cn";
 import type { DBDepartmentKey } from "@/lib/constants/navigation";
@@ -57,6 +58,7 @@ export function HodLeavePage({ department }: { department: DBDepartmentKey }) {
     Approved: requests.filter((r) => r.status === "Approved").length,
     Rejected: requests.filter((r) => r.status === "Rejected").length,
   };
+  const departmentLabel = DB_TO_STAFF_DEPT[department] ?? department;
 
   async function handleReview() {
     if (!reviewing || !session) return;
@@ -96,7 +98,7 @@ export function HodLeavePage({ department }: { department: DBDepartmentKey }) {
     <div className="space-y-6">
       {toast && <Toast toast={toast} onDismiss={() => setToast(null)} />}
 
-      <PageHeader title="Leave Requests" description="Review and manage leave for your department." />
+      <PageHeader title="Leave Requests" description={`Review and manage leave for ${departmentLabel}.`} />
 
       {/* Stats */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">

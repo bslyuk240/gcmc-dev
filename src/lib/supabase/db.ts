@@ -1468,8 +1468,9 @@ function mapLeaveRequest(r: Record<string, unknown>): LeaveRequest {
   return {
     id: r.id as string,
     staffId: (r.staff_id as string) ?? "",
+    staffAuthId: (r.staff_auth_id as string | undefined) ?? (r.auth_user_id as string | undefined),
     staffName: r.staff_name as string,
-    department: r.department as LeaveRequest["department"],
+    department: (r.department as string) ?? "",
     role: (r.role as string) ?? "",
     leaveType: r.leave_type as LeaveRequest["leaveType"],
     startDate: r.start_date as string,
@@ -1482,6 +1483,11 @@ function mapLeaveRequest(r: Record<string, unknown>): LeaveRequest {
     reviewedAt: r.reviewed_at as string | undefined,
     hrNotes: r.hr_notes as string | undefined,
   };
+}
+
+function isForeignKeyConstraintError(error: { code?: string; message?: string }) {
+  const message = (error.message ?? "").toLowerCase();
+  return error.code === "23503" || message.includes("foreign key constraint");
 }
 
 function mapLeaveYearPolicy(r: Record<string, unknown>): LeaveYearPolicy {
@@ -1592,24 +1598,33 @@ export async function updateStaffFinancialDetails(
 
 export async function insertLeaveRequest(r: LeaveRequest): Promise<void> {
   const sb = getSupabase(); if (!sb) return;
-  const { error } = await sb.from("leave_requests").insert({
-    id: r.id,
-    staff_id: r.staffId,
-    staff_name: r.staffName,
-    department: r.department,
-    role: r.role,
-    leave_type: r.leaveType,
-    start_date: r.startDate,
-    end_date: r.endDate,
-    days: r.days,
-    reason: r.reason,
-    status: r.status,
-    submitted_at: r.submittedAt,
-    reviewed_by: r.reviewedBy ?? null,
-    reviewed_at: r.reviewedAt ?? null,
-    hr_notes: r.hrNotes ?? null,
-  });
-  if (error) throw new Error(error.message);
+  const candidateStaffIds = Array.from(new Set([r.staffId, r.staffAuthId].filter((value): value is string => Boolean(value))));
+  let lastError: { code?: string; message?: string } | null = null;
+
+  for (const staffId of candidateStaffIds) {
+    const { error } = await sb.from("leave_requests").insert({
+      id: r.id,
+      staff_id: staffId,
+      staff_name: r.staffName,
+      department: r.department,
+      role: r.role,
+      leave_type: r.leaveType,
+      start_date: r.startDate,
+      end_date: r.endDate,
+      days: r.days,
+      reason: r.reason,
+      status: r.status,
+      submitted_at: r.submittedAt,
+      reviewed_by: r.reviewedBy ?? null,
+      reviewed_at: r.reviewedAt ?? null,
+      hr_notes: r.hrNotes ?? null,
+    });
+    if (!error) return;
+    lastError = error;
+    if (!isForeignKeyConstraintError(error)) break;
+  }
+
+  if (lastError) throw new Error(lastError.message ?? "Failed to insert leave request.");
 }
 
 export async function fetchLeaveRequestsByDept(department: string): Promise<LeaveRequest[]> {
