@@ -1,6 +1,6 @@
 import "server-only";
 
-import { createHmac, randomBytes } from "crypto";
+import { createHmac, randomBytes, timingSafeEqual } from "crypto";
 
 const PAYSTACK_BASE = "https://api.paystack.co";
 
@@ -31,8 +31,7 @@ export function verifyPaystackSignature(
   const secret = getPaystackSecretKey();
 
   if (!secret) {
-    // Structured, non-leaking warning — no secret value emitted.
-    console.warn("[paystack/webhook] PAYSTACK_SECRET_KEY is not configured — signature cannot be verified.");
+    console.warn("[paystack/webhook] PAYSTACK_SECRET_KEY is not configured; signature cannot be verified.");
     return { ok: false, reason: "missing_secret" };
   }
 
@@ -41,7 +40,11 @@ export function verifyPaystackSignature(
   }
 
   const hash = createHmac("sha512", secret).update(rawBody).digest("hex");
-  return hash === signature
+  const expected = Buffer.from(hash, "hex");
+  const actual = Buffer.from(signature, "hex");
+  const isValid = expected.length === actual.length && timingSafeEqual(expected, actual);
+
+  return isValid
     ? { ok: true }
     : { ok: false, reason: "invalid_signature" };
 }

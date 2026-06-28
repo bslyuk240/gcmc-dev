@@ -4,14 +4,17 @@ import { createTenantAdminClient } from "@/lib/supabase/admin-tenant";
 
 const BUCKET = "staff-documents";
 
-export async function getStaffDocumentById(documentId: string) {
+export async function getStaffDocumentById(documentId: string, hospitalId?: string) {
   const scoped = await createTenantAdminClient();
   if (!scoped) return null;
+
+  const scopedHospitalId = hospitalId ?? scoped.hospitalId;
+  if (hospitalId && scoped.hospitalId !== hospitalId) return null;
 
   const { data, error } = await scoped.admin
     .from("staff_documents")
     .select("*")
-    .eq("hospital_id", scoped.hospitalId)
+    .eq("hospital_id", scopedHospitalId)
     .eq("id", documentId)
     .maybeSingle();
 

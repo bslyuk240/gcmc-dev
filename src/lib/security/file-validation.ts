@@ -6,8 +6,6 @@ const { fileTypeFromBuffer } = require("file-type") as {
   fileTypeFromBuffer: (buffer: Buffer | Uint8Array) => Promise<{ ext: string; mime: string } | undefined>;
 };
 
-// ─── Allowlists ──────────────────────────────────────────────────────────────
-
 /** Image uploads: avatars, logos */
 export const ALLOWED_IMAGE_MIME_TYPES = new Set([
   "image/jpeg",
@@ -16,12 +14,11 @@ export const ALLOWED_IMAGE_MIME_TYPES = new Set([
   "image/gif",
 ]);
 
-/** Logo uploads additionally permit SVG (text-based, handled separately) */
+/** Logo uploads are restricted to browser-safe raster formats. */
 export const ALLOWED_LOGO_MIME_TYPES = new Set([
   "image/jpeg",
   "image/png",
   "image/webp",
-  "image/svg+xml",
 ]);
 
 /** HR/staff document uploads */
@@ -32,24 +29,18 @@ export const ALLOWED_DOCUMENT_MIME_TYPES = new Set([
   "application/pdf",
 ]);
 
-// ─── Size constants ───────────────────────────────────────────────────────────
-
 export const MAX_AVATAR_BYTES    = 5  * 1024 * 1024;  //  5 MB
 export const MAX_LOGO_BYTES      = 2  * 1024 * 1024;  //  2 MB
 export const MAX_DOCUMENT_BYTES  = 10 * 1024 * 1024;  // 10 MB
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-
 /**
- * SVG is XML text — file-type cannot detect it via magic bytes.
+ * SVG is XML text; file-type cannot detect it via magic bytes.
  * We check for it separately before falling back to magic-byte detection.
  */
 function isSvgBuffer(buf: Buffer): boolean {
   const head = buf.slice(0, 512).toString("utf8").trimStart();
   return head.startsWith("<?xml") || head.startsWith("<svg");
 }
-
-// ─── Core validator ───────────────────────────────────────────────────────────
 
 export type MimeValidationResult =
   | { ok: true; mimeType: string }
@@ -70,7 +61,7 @@ export async function validateMimeType(
   allowedTypes: Set<string>,
   allowSvg = false,
 ): Promise<MimeValidationResult> {
-  // 1. SVG is XML text — handle before magic-byte detection.
+  // 1. SVG is XML text; handle before magic-byte detection.
   if (allowSvg && allowedTypes.has("image/svg+xml") && isSvgBuffer(buffer)) {
     return { ok: true, mimeType: "image/svg+xml" };
   }
@@ -83,7 +74,7 @@ export async function validateMimeType(
   }
 
   if (!allowedTypes.has(detected.mime)) {
-    // Safe to include the detected type in the error — it is not secret.
+    // Safe to include the detected type in the error; it is not secret.
     return {
       ok: false,
       error: `File type "${detected.mime}" is not permitted. Allowed: ${[...allowedTypes].join(", ")}.`,

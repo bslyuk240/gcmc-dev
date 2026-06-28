@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 import { getServerSession } from "@/lib/auth/session";
 import { isHrRole, requireStaffPortalSession } from "@/modules/staff-portal/access";
 import {
@@ -8,16 +9,29 @@ import {
 
 type RouteContext = { params: Promise<{ id: string }> };
 
+const ParamsSchema = z.object({
+  id: z.string().uuid(),
+});
+
 export async function GET(_request: Request, context: RouteContext) {
   try {
-    const { id } = await context.params;
-    const doc = await getStaffDocumentById(id);
-    if (!doc) {
+    const staffSession = await requireStaffPortalSession().catch(() => null);
+    const mgmt = staffSession ? null : await getServerSession();
+    const session = staffSession ?? mgmt;
+
+    if (!session) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const parsedParams = ParamsSchema.safeParse(await context.params);
+    if (!parsedParams.success) {
       return NextResponse.json({ error: "Document not found." }, { status: 404 });
     }
 
-    const staffSession = await requireStaffPortalSession().catch(() => null);
-    const mgmt = staffSession ? null : await getServerSession();
+    const doc = await getStaffDocumentById(parsedParams.data.id, session.hospital_id);
+    if (!doc) {
+      return NextResponse.json({ error: "Document not found." }, { status: 404 });
+    }
 
     const isOwner = staffSession?.staff_id === String(doc.staff_id);
     const isHr = mgmt ? isHrRole(mgmt) : false;
@@ -41,8 +55,7 @@ export async function GET(_request: Request, context: RouteContext) {
     }
 
     return NextResponse.json({ url });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Download failed.";
-    return NextResponse.json({ error: message }, { status: 500 });
+  } catch {
+    return NextResponse.json({ error: "Download failed." }, { status: 500 });
   }
 }
