@@ -54,7 +54,16 @@ export function canCreateWorkforceTasks(session: HMSSession): boolean {
   return isWorkforceAdmin(session) || isWorkforceUnitHod(session);
 }
 
-export { canUpdateWorkforceTask } from "@/modules/staff-portal/access";
+export function canUpdateWorkforceTask(
+  session: HMSSession,
+  task: { assigneeId?: string | null; unitName?: string },
+  hodUnitName?: string | null,
+): boolean {
+  if (task.assigneeId && task.assigneeId === session.staff_id) return true;
+  if (isWorkforceAdmin(session)) return true;
+  if (isWorkforceUnitHod(session) && task.unitName && hodUnitName === task.unitName) return true;
+  return false;
+}
 
 export function canReviewWorkforceLeave(session: HMSSession): boolean {
   if (isWorkforceAdmin(session)) return true;

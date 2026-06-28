@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getServerSession, getStaffPortalSession } from "@/lib/auth/session";
 import { fetchMyNcUnit } from "@/lib/supabase/db";
 import {
+  canUpdateWorkforceTask,
   isWorkforceAdmin,
   isWorkforceUnitHod,
 } from "@/lib/workforce/access";
@@ -11,7 +12,6 @@ import {
   listWorkforceTasks,
   updateWorkforceTaskStatus,
 } from "@/modules/workforce/tasks/service";
-import { canUpdateWorkforceTask } from "@/modules/staff-portal/access";
 import type { WorkforceTaskStatus } from "@/lib/workforce/types";
 import {
   notifyWorkforceTaskAssigned,
