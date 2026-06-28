@@ -17,11 +17,25 @@ type PaystackWebhookPayload = {
 };
 
 export async function POST(request: Request) {
+  // Read raw body as text — required for HMAC signature verification.
+  // Do NOT call request.json() before this; it consumes the stream.
   const rawBody = await request.text();
   const signature = request.headers.get("x-paystack-signature");
 
-  if (!verifyPaystackSignature(rawBody, signature)) {
-    return NextResponse.json({ error: "Invalid signature." }, { status: 401 });
+  const verification = verifyPaystackSignature(rawBody, signature);
+
+  if (!verification.ok) {
+    switch (verification.reason) {
+      case "missing_secret":
+        // Server misconfiguration — structured log was already emitted inside verifyPaystackSignature.
+        return NextResponse.json({ error: "Webhook service not configured." }, { status: 503 });
+      case "missing_signature":
+        // Missing x-paystack-signature header — likely not a Paystack request at all.
+        return NextResponse.json({ error: "Missing signature header." }, { status: 400 });
+      case "invalid_signature":
+        // Signature present but does not match — reject the request.
+        return NextResponse.json({ error: "Signature verification failed." }, { status: 401 });
+    }
   }
 
   let payload: PaystackWebhookPayload;

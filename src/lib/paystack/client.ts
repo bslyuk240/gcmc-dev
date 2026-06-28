@@ -15,11 +15,35 @@ export function generatePaystackReference(hospitalId: string): string {
   return `HMS-${hospitalId.slice(0, 8).toUpperCase()}-${ts}-${rand}`;
 }
 
-export function verifyPaystackSignature(rawBody: string, signature: string | null): boolean {
+export type SignatureVerificationResult =
+  | { ok: true }
+  | { ok: false; reason: "missing_secret" | "missing_signature" | "invalid_signature" };
+
+/**
+ * Verify a Paystack webhook signature (HMAC-SHA512 over the raw request body).
+ * Returns a typed result so callers can distinguish between configuration errors
+ * and signature mismatches without leaking the secret value into logs.
+ */
+export function verifyPaystackSignature(
+  rawBody: string,
+  signature: string | null,
+): SignatureVerificationResult {
   const secret = getPaystackSecretKey();
-  if (!secret || !signature) return false;
+
+  if (!secret) {
+    // Structured, non-leaking warning — no secret value emitted.
+    console.warn("[paystack/webhook] PAYSTACK_SECRET_KEY is not configured — signature cannot be verified.");
+    return { ok: false, reason: "missing_secret" };
+  }
+
+  if (!signature) {
+    return { ok: false, reason: "missing_signature" };
+  }
+
   const hash = createHmac("sha512", secret).update(rawBody).digest("hex");
-  return hash === signature;
+  return hash === signature
+    ? { ok: true }
+    : { ok: false, reason: "invalid_signature" };
 }
 
 export type PaystackInitializeInput = {
