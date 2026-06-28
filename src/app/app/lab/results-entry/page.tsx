@@ -37,6 +37,7 @@ export default function LabResultsEntryPage() {
   const [notes, setNotes] = useState("");
   const [enteredBy, setEnteredBy] = useState("Lab Technician");
   const [toast, setToast] = useState<ToastData | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     fetchStaffMembers().then((staff) => {
@@ -54,37 +55,62 @@ export default function LabResultsEntryPage() {
   );
   const inProgress = displayTests.filter((t) => t.status === "In Progress");
 
-  function handleSubmitResult() {
-    if (!entryTarget || !resultValue) return;
+  async function handleSubmitResult() {
+    if (!entryTarget || !resultValue || submitting) return;
+    const target = entryTarget;
     const now = new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
     const today = new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
-    setLocalStatuses((prev) => ({ ...prev, [entryTarget.id]: "Completed" }));
-    updateLabTest(entryTarget.id, {
-      status: "Completed",
+    const completedAt = `${now} · ${today}`;
+    const resultUpdates = {
+      status: "Completed" as const,
       resultValue,
       resultUnit,
       referenceRange: refRange,
       interpretation,
       resultNotes: notes,
       resultEnteredBy: enteredBy,
-      completedAt: `${now} · ${today}`,
-      billStatus: "Billed",
-    });
-    // Send billing charge to Accounts
-    addLabCharge({
-      id: `LAB-BILL-${entryTarget.id}`,
-      patientName: entryTarget.patientName,
-      patientId: entryTarget.patientId,
-      testName: entryTarget.testName,
-      testId: entryTarget.id,
-      amount: entryTarget.price,
-      orderedBy: entryTarget.orderedBy,
-      completedAt: `${now} · ${today}`,
-      status: "Pending",
-    });
-    setToast({ message: `Result entered for ${entryTarget.patientName} — ${entryTarget.testName}. Bill sent to Accounts.`, type: "success" });
-    setEntryTarget(null);
-    resetForm();
+      completedAt,
+      billStatus: "Billed" as const,
+    };
+
+    setSubmitting(true);
+    setLocalStatuses((prev) => ({ ...prev, [target.id]: "Completed" }));
+
+    try {
+      await updateLabTest(target.id, resultUpdates);
+      await addLabCharge({
+        id: `LAB-BILL-${target.id}`,
+        patientName: target.patientName,
+        patientId: target.patientId,
+        testName: target.testName,
+        testId: target.id,
+        amount: target.price,
+        orderedBy: target.orderedBy,
+        completedAt,
+        status: "Pending",
+      });
+      setToast({
+        message: `Result entered for ${target.patientName} — ${target.testName}. Bill sent to Accounts.`,
+        type: "success",
+      });
+      setEntryTarget(null);
+      resetForm();
+    } catch (error) {
+      setLocalStatuses((prev) => {
+        const next = { ...prev };
+        delete next[target.id];
+        return next;
+      });
+      try {
+        await updateLabTest(target.id, { status: "In Progress", billStatus: "Pending" });
+      } catch {
+        /* rollback best-effort */
+      }
+      const message = error instanceof Error ? error.message : "Save failed";
+      setToast({ message: `Result entry failed: ${message}`, type: "error" });
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   function resetForm() {
@@ -246,7 +272,9 @@ export default function LabResultsEntryPage() {
         )}
         <ModalFooter>
           <Button variant="ghost" size="md" onClick={() => setEntryTarget(null)}>Cancel</Button>
-          <Button size="md" disabled={!resultValue} onClick={handleSubmitResult}>Submit Result</Button>
+          <Button size="md" disabled={!resultValue || submitting} onClick={handleSubmitResult}>
+            {submitting ? "Submitting…" : "Submit Result"}
+          </Button>
         </ModalFooter>
       </Modal>
 

@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
 import type { DBDepartmentKey } from "@/lib/constants/navigation";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { createTenantAdminClient } from "@/lib/supabase/admin-tenant";
 import { getStaffPortalSession } from "@/lib/auth/session";
 import { createRotaSwapRequest, getMyRotaSwapRequests } from "@/modules/workforce/rota/service";
 import type { ShiftType } from "@/modules/workforce/rota/types";
+import { notifyRotaSwapSubmitted } from "@/lib/email/notifications";
 
 export async function GET() {
   const session = await getStaffPortalSession();
@@ -29,14 +30,16 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "missing_assignment" }, { status: 400 });
   }
 
-  const admin = createAdminClient();
-  if (!admin) {
+  const scoped = await createTenantAdminClient();
+  if (!scoped) {
     return NextResponse.json({ error: "configuration" }, { status: 500 });
   }
 
+  const { admin, hospitalId } = scoped;
   const { data: assignment, error: assignmentError } = await admin
     .from("rota_assignments")
     .select("id, staff_id, department, shift_date, shift_type, shift_start, shift_end, unit_id")
+    .eq("hospital_id", hospitalId)
     .eq("id", assignmentId)
     .maybeSingle();
 
@@ -71,6 +74,13 @@ export async function POST(request: Request) {
   if (!created) {
     return NextResponse.json({ error: "failed_to_create_request" }, { status: 500 });
   }
+
+  await notifyRotaSwapSubmitted({
+    staffName: created.staffName,
+    department: created.department,
+    shiftDate: created.shiftDate,
+    shiftType: created.shiftType,
+  });
 
   return NextResponse.json({ request: created }, { status: 201 });
 }

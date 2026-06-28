@@ -1,12 +1,18 @@
-import type { NextRequest } from "next/server";
+import type { NextRequest, NextResponse } from "next/server";
 import {
   sessionCookieName,
   sessionDepartmentCookieName,
+  sessionStaffNameCookieName,
   hmsSessionV2CookieName,
   hmsStaffPortalSessionCookieName,
+  hmsPendingSessionCookieName,
+  hmsTenantSlugCookieName,
+  sessionCookieOptions,
 } from "@/lib/auth/constants";
-import { deserialiseSession } from "@/lib/auth/session";
+import { deserialiseSessionPayload } from "@/lib/auth/session-payload";
+import type { HMSSession } from "@/lib/auth/session-types";
 import { INTERNAL_PREFIX } from "@/lib/constants/navigation";
+import { sessionMatchesTenant } from "@/lib/tenant/resolve";
 
 /** Public staff portal paths that must NOT require authentication */
 const PUBLIC_STAFF_PATHS = ["/staff/login"];
@@ -22,66 +28,71 @@ export function isProtectedPath(pathname: string) {
   );
 }
 
-/**
- * Parse the management portal HMSSession from hms-session-v2 cookie.
- */
-export function getHMSSession(request: NextRequest) {
+export async function getHMSSession(request: NextRequest): Promise<HMSSession | null> {
   const raw = request.cookies.get(hmsSessionV2CookieName)?.value;
   if (!raw) return null;
-  return deserialiseSession(raw);
+  return deserialiseSessionPayload(raw);
 }
 
-/**
- * Parse the staff portal HMSSession from hms-staff-session cookie.
- */
-export function getStaffPortalHMSSession(request: NextRequest) {
+export async function getStaffPortalHMSSession(request: NextRequest): Promise<HMSSession | null> {
   const raw = request.cookies.get(hmsStaffPortalSessionCookieName)?.value;
   if (!raw) return null;
-  return deserialiseSession(raw);
+  return deserialiseSessionPayload(raw);
 }
 
-/**
- * Derive the department from the request for management portal.
- * Checks hms-session-v2 first, then falls back to legacy hms-department cookie.
- */
-export function getSessionDepartment(request: NextRequest): string | null {
-  const session = getHMSSession(request);
+export async function getPendingHMSSession(request: NextRequest): Promise<HMSSession | null> {
+  const raw = request.cookies.get(hmsPendingSessionCookieName)?.value;
+  if (!raw) return null;
+  return deserialiseSessionPayload(raw);
+}
+
+export async function getSessionDepartment(request: NextRequest): Promise<string | null> {
+  const session = await getHMSSession(request);
   if (session) return session.department;
   return request.cookies.get(sessionDepartmentCookieName)?.value ?? null;
 }
 
-/**
- * True when the request carries a valid management portal session.
- */
-export function hasManagementSession(request: NextRequest): boolean {
-  const session = getHMSSession(request);
-  if (session) return true;
-
-  const legacyDepartment = request.cookies.get(sessionDepartmentCookieName)?.value;
-  return Boolean(
-    legacyDepartment &&
-    (
-      request.cookies.has(hmsSessionV2CookieName) ||
-      request.cookies.has(sessionCookieName)
-    ),
-  );
+export async function hasManagementSession(request: NextRequest): Promise<boolean> {
+  // Only the HMAC-signed hms-session-v2 cookie is accepted.
+  // The legacy hms-session + hms-department pair has been removed — it carried
+  // no hospital_id and bypassed tenant verification entirely.
+  return (await getHMSSession(request)) !== null;
 }
 
-/**
- * True when the request carries a valid staff portal session.
- */
-export function hasStaffPortalSession(request: NextRequest): boolean {
-  return getStaffPortalHMSSession(request) !== null;
+export async function hasStaffPortalSession(request: NextRequest): Promise<boolean> {
+  return (await getStaffPortalHMSSession(request)) !== null;
 }
 
-/**
- * True when the request carries any valid session (either portal or legacy mock).
- * @deprecated Use hasManagementSession or hasStaffPortalSession for portal-specific checks.
- */
-export function hasSessionCookie(request: NextRequest): boolean {
-  return hasManagementSession(request) || hasStaffPortalSession(request);
+export async function hasSessionCookie(request: NextRequest): Promise<boolean> {
+  return (await hasManagementSession(request)) || (await hasStaffPortalSession(request));
 }
 
-export function shouldAllowProtectedRequest(request: NextRequest): boolean {
+export async function shouldAllowProtectedRequest(request: NextRequest): Promise<boolean> {
   return hasSessionCookie(request);
+}
+
+/** Clear HMS portal cookies (e.g. when returning to the platform console). */
+export function clearPortalSessionsOnResponse(response: NextResponse): void {
+  const opts = { path: "/", maxAge: 0 };
+  response.cookies.set(hmsSessionV2CookieName, "", opts);
+  response.cookies.set(hmsStaffPortalSessionCookieName, "", opts);
+  response.cookies.set(hmsPendingSessionCookieName, "", opts);
+  response.cookies.set(sessionCookieName, "", opts);
+  response.cookies.set(sessionDepartmentCookieName, "", opts);
+  response.cookies.set(sessionStaffNameCookieName, "", opts);
+}
+
+export function setTenantSlugCookie(response: NextResponse, tenantSlug: string): void {
+  response.cookies.set(hmsTenantSlugCookieName, tenantSlug, {
+    ...sessionCookieOptions,
+    secure: process.env.NODE_ENV === "production",
+  });
+}
+
+export async function validateSessionTenant(
+  session: HMSSession | null,
+  tenantSlug: string,
+): Promise<boolean> {
+  if (!session) return true;
+  return sessionMatchesTenant(session, tenantSlug);
 }

@@ -3,6 +3,10 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { DBDepartmentKey } from "@/lib/constants/navigation";
 import type { RoleKey } from "@/lib/auth/session";
+import { resolveLoginHospital } from "@/lib/tenant/login-tenant";
+import { notifyStaffAccountCreated } from "@/lib/email/notifications";
+import { logAuditEvent } from "@/lib/audit/log-event";
+import { getServerSession } from "@/lib/auth/session";
 
 export type CreateStaffAccountInput = {
   full_name: string;
@@ -29,9 +33,10 @@ export type CreateStaffAccountResult =
   | { success: false; error: string };
 
 /** Generates a secure temporary password: e.g. GCMC@Xk9Lm2Np */
-function generateTempPassword(): string {
+function generateTempPassword(prefix: string): string {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
-  let pass = "GCMC@";
+  const safePrefix = prefix.replace(/[^A-Za-z0-9]/g, "").slice(0, 8).toUpperCase() || "HOSP";
+  let pass = `${safePrefix}@`;
   for (let i = 0; i < 8; i++) {
     pass += chars[Math.floor(Math.random() * chars.length)];
   }
@@ -94,14 +99,20 @@ export async function createStaffAccountAction(
     return { success: false, error: "Admin service not configured. Add SUPABASE_SERVICE_ROLE_KEY to .env.local." };
   }
 
-  const tempPassword = generateTempPassword();
+  const hospital = await resolveLoginHospital();
+  const hospitalId = hospital?.id;
+  if (!hospitalId) {
+    return { success: false, error: "Hospital tenant not found." };
+  }
+
+  const tempPassword = generateTempPassword(hospital.short_name ?? "HOSP");
 
   // 1. Create the Supabase Auth user
   const { data: authData, error: authError } = await admin.auth.admin.createUser({
     email,
     password: tempPassword,
     email_confirm: true, // skip email confirmation
-    user_metadata: { full_name },
+    user_metadata: { full_name, hospital_id: hospitalId },
   });
 
   if (authError || !authData.user) {
@@ -117,6 +128,7 @@ export async function createStaffAccountAction(
     email,
     department,
     role,
+    hospital_id: hospitalId,
     is_active: true,
     must_change_password: true,
     system_setup_done: false,
@@ -160,6 +172,27 @@ export async function createStaffAccountAction(
     await admin.auth.admin.deleteUser(userId);
     return { success: false, error: profileError.message };
   }
+
+  await notifyStaffAccountCreated({
+    fullName: full_name,
+    email,
+    department,
+    role,
+    tempPassword,
+    hospitalSlug: hospital.slug,
+  });
+
+  const actor = await getServerSession();
+  void logAuditEvent({
+    action: "hr.staff_created",
+    portal: "management",
+    actorId: actor?.staff_id ?? null,
+    actorName: actor?.full_name ?? null,
+    hospitalId: hospitalId,
+    department: actor?.department ?? null,
+    entityType: "staff_profile",
+    payload: { email, role, department, full_name },
+  });
 
   return { success: true, tempPassword };
 }

@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Modal, ModalFooter } from "@/components/ui/modal";
 import { useLabStore } from "@/lib/hooks/use-lab-store";
 import { useDoctorsStore } from "@/lib/hooks/use-doctors-store";
+import { useHMSSession } from "@/modules/rbac/hooks";
 import { updateConsultation } from "@/lib/data/doctors-store";
 
 const INTERP_STYLES: Record<string, string> = {
@@ -26,12 +27,18 @@ function MobileMeta({ label, value }: { label: string; value: string | number })
 }
 
 export default function DoctorLabResultsPage() {
+  const session = useHMSSession();
+  const doctorName = session?.full_name ?? "";
   const { tests } = useLabStore();
   const { consultations } = useDoctorsStore();
   const [viewResult, setViewResult] = useState<typeof tests[0] | null>(null);
   const [filterInterp, setFilterInterp] = useState("All");
 
-  const completedTests = tests.filter((t) => t.status === "Completed");
+  const completedTests = tests.filter(
+    (test) =>
+      test.status === "Completed" &&
+      test.orderedBy.trim().toLowerCase() === doctorName.trim().toLowerCase(),
+  );
   const criticalResults = completedTests.filter((t) => t.interpretation === "Critical");
 
   const filtered = filterInterp === "All"
@@ -51,7 +58,14 @@ export default function DoctorLabResultsPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Lab Results" description="Completed diagnostic results returned from the Laboratory. Review and act on results." />
+      <PageHeader
+        title="Lab Results"
+        description={
+          doctorName
+            ? `Completed results for tests ordered by ${doctorName}.`
+            : "Completed diagnostic results returned from the Laboratory."
+        }
+      />
 
       {criticalResults.length > 0 && (
         <div className="flex items-center gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3">

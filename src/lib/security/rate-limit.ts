@@ -1,26 +1,36 @@
-type RateLimitEntry = {
-  count: number;
-  resetAt: number;
-};
+type Bucket = { count: number; resetAt: number };
 
-const buckets = new Map<string, RateLimitEntry>();
+const buckets = new Map<string, Bucket>();
 
-export function checkRateLimit(key: string, limit = 10, windowMs = 60_000) {
-  const now = Date.now();
+const LOGIN_LIMIT = 10;
+const LOGIN_WINDOW_MS = 15 * 60 * 1000;
+
+function prune(key: string, now: number): Bucket {
   const existing = buckets.get(key);
+  if (!existing || existing.resetAt <= now) {
+    const fresh = { count: 0, resetAt: now + LOGIN_WINDOW_MS };
+    buckets.set(key, fresh);
+    return fresh;
+  }
+  return existing;
+}
 
-  if (!existing || now > existing.resetAt) {
-    buckets.set(key, {
-      count: 1,
-      resetAt: now + windowMs,
-    });
-    return { allowed: true, remaining: limit - 1 };
+/** Simple in-memory login rate limit (per IP + email). Use Redis in multi-instance prod. */
+export function checkLoginRateLimit(key: string): { allowed: boolean; retryAfterSec?: number } {
+  const now = Date.now();
+  const bucket = prune(key, now);
+
+  if (bucket.count >= LOGIN_LIMIT) {
+    return {
+      allowed: false,
+      retryAfterSec: Math.max(1, Math.ceil((bucket.resetAt - now) / 1000)),
+    };
   }
 
-  if (existing.count >= limit) {
-    return { allowed: false, remaining: 0 };
-  }
+  bucket.count += 1;
+  return { allowed: true };
+}
 
-  existing.count += 1;
-  return { allowed: true, remaining: limit - existing.count };
+export function loginRateLimitKey(ip: string | null, email: string): string {
+  return `login:${ip ?? "unknown"}:${email.trim().toLowerCase()}`;
 }

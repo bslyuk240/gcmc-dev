@@ -7,8 +7,8 @@ import { useHMSSession } from "@/modules/rbac/hooks";
 import { insertPatientRegistration } from "@/lib/supabase/db";
 import { Toast, type ToastData } from "@/components/ui/toast";
 import { fetchHmoSchemes } from "@/lib/supabase/db";
-import type { HmoScheme } from "@/lib/data/nhis-store";
-import { insertHmoEnrollment } from "@/lib/supabase/db";
+import { createHmoEnrollment } from "@/lib/nhis/client";
+import type { HmoScheme } from "@/modules/nhis/types";
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 function getInitials(first: string, last: string) {
@@ -207,16 +207,16 @@ export default function RegisterNewPatientPage() {
       // ── create HMO enrollment if applicable ──────────────────────────────
       if (hasHmo && selectedSchemeId && memberId.trim()) {
         const scheme = hmoSchemes.find((s) => s.id === selectedSchemeId);
-        await insertHmoEnrollment({
+        await createHmoEnrollment({
           patientId:       result.id,
           schemeId:        selectedSchemeId,
           memberId:        memberId.trim(),
           planName:        planName.trim() || undefined,
           copayPercentage: parseFloat(copayPct) || 10,
-          isActive:        true,
           validFrom:       validFrom || undefined,
           validUntil:      validUntil || undefined,
           authorizedBy:    session?.full_name ?? "Front Desk",
+          verifyImmediately: false,
         });
       }
 

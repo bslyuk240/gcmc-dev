@@ -418,10 +418,10 @@ export default function NursesDashboardPage() {
               <h3 className="font-bold text-slate-900">Recent Nursing Procedures</h3>
               <div className="flex items-center gap-3">
                 <Link
-                  href={`${INTERNAL_PREFIX}/accounts/nursing-billing`}
+                  href={`${INTERNAL_PREFIX}/nurses/procedure-charges`}
                   className="text-sm font-semibold text-slate-500 hover:text-slate-800 hover:underline"
                 >
-                  Accounts billing
+                  Procedure charge queue
                 </Link>
                 <Link
                   href={`${INTERNAL_PREFIX}/nurses/procedure-charges`}

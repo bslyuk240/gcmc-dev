@@ -45,6 +45,7 @@ export default function LabProcessingPage() {
   const [techName, setTechName] = useState("");
   const [equipment, setEquipment] = useState(EQUIPMENT_OPTIONS[0]);
   const [toast, setToast] = useState<ToastData | null>(null);
+  const [processing, setProcessing] = useState(false);
 
   useEffect(() => {
     fetchStaffMembers()
@@ -67,8 +68,9 @@ export default function LabProcessingPage() {
   const readyToProcess = displayTests.filter((t) => t.status === "Sample Collected");
   const inProgress = displayTests.filter((t) => t.status === "In Progress");
 
-  function handleStartProcessing() {
-    if (!processTarget) return;
+  async function handleStartProcessing() {
+    if (!processTarget || processing) return;
+    const target = processTarget;
     const now = new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
     const processingStartedAt = `${now} · ${new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}`;
     const overrides: Partial<LabTest> = {
@@ -77,10 +79,25 @@ export default function LabProcessingPage() {
       equipmentUsed: equipment,
       processingStartedAt,
     };
-    setLocalOverrides((prev) => ({ ...prev, [processTarget.id]: overrides }));
-    updateLabTest(processTarget.id, overrides);
-    setToast({ message: `Processing started: ${processTarget.testName} for ${processTarget.patientName}.`, type: "success" });
-    setProcessTarget(null);
+
+    setProcessing(true);
+    setLocalOverrides((prev) => ({ ...prev, [target.id]: overrides }));
+
+    try {
+      await updateLabTest(target.id, overrides);
+      setToast({ message: `Processing started: ${target.testName} for ${target.patientName}.`, type: "success" });
+      setProcessTarget(null);
+    } catch (error) {
+      setLocalOverrides((prev) => {
+        const next = { ...prev };
+        delete next[target.id];
+        return next;
+      });
+      const message = error instanceof Error ? error.message : "Save failed";
+      setToast({ message: `Processing failed: ${message}`, type: "error" });
+    } finally {
+      setProcessing(false);
+    }
   }
 
   const inputCls = "w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/20";
@@ -266,7 +283,9 @@ export default function LabProcessingPage() {
         )}
         <ModalFooter>
           <Button variant="ghost" size="md" onClick={() => setProcessTarget(null)}>Cancel</Button>
-          <Button size="md" onClick={handleStartProcessing}>Start Processing</Button>
+          <Button size="md" disabled={processing} onClick={handleStartProcessing}>
+            {processing ? "Starting…" : "Start Processing"}
+          </Button>
         </ModalFooter>
       </Modal>
 

@@ -1,6 +1,8 @@
 "use server";
 
-import { createAdminClient } from "@/lib/supabase/admin";
+import { requireSession } from "@/lib/auth/session";
+import { canViewItHelpdesk } from "@/lib/it/access";
+import { createTenantAdminClient } from "@/lib/supabase/admin-tenant";
 
 export type PendingSetupRecord = {
   id: string;
@@ -14,12 +16,19 @@ export type PendingSetupRecord = {
 export async function getPendingSetupsAction(): Promise<
   { success: true; data: PendingSetupRecord[] } | { success: false; error: string }
 > {
-  const admin = createAdminClient();
-  if (!admin) return { success: false, error: "Admin service not configured." };
+  const session = await requireSession();
+  if (!canViewItHelpdesk(session)) {
+    return { success: false, error: "You do not have permission to view the onboarding queue." };
+  }
 
+  const scoped = await createTenantAdminClient();
+  if (!scoped) return { success: false, error: "Admin service not configured." };
+
+  const { admin, hospitalId } = scoped;
   const { data, error } = await admin
     .from("staff_profiles")
     .select("id, full_name, email, department, role, created_at")
+    .eq("hospital_id", hospitalId)
     .eq("system_setup_done", false)
     .eq("is_active", true)
     .order("created_at", { ascending: true });

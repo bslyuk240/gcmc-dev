@@ -2,12 +2,13 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useHMSSession } from "@/modules/rbac/hooks";
-import { useHRStore } from "@/lib/hooks/use-hr-store";
+import { useStaffPortalStore } from "@/lib/hooks/use-staff-portal-store";
+import { fetchStaffProfileDetails } from "@/lib/staff-portal/client";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { DB_TO_STAFF_DEPT } from "@/lib/data/hr-store";
 import { formatStaffDisplayId } from "@/lib/staff-id";
 import { formatDepartmentLabel } from "@/lib/chat/types";
+import type { StaffProfileDetails } from "@/modules/staff-portal/types";
 
 const DEPT_LABELS: Record<string, string> = {
   frontdesk: "Front Desk", doctors: "Doctors", nurses: "Nurses Bay",
@@ -58,10 +59,12 @@ const TABS: { id: Tab; label: string }[] = [
 
 export default function StaffProfilePage() {
   const session = useHMSSession();
-  const { staff, generatedPayslips, getDeptHead } = useHRStore();
+  const { payslips } = useStaffPortalStore();
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const hydratedProfileRef = useRef(false);
+
+  const [profileDetails, setProfileDetails] = useState<StaffProfileDetails | null>(null);
 
   const [tab, setTab]         = useState<Tab>("info");
   const [editing, setEditing] = useState(false);
@@ -205,31 +208,38 @@ export default function StaffProfilePage() {
     ? (DEPT_LABELS[currentSession.department] ?? formatDepartmentLabel(currentSession.department))
     : "—";
   const roleLabel = currentSession ? formatRoleTitle(currentSession.role) : "—";
-  const staffRecord = currentSession ? staff.find((member) => member.id === currentSession.staff_id) ?? null : null;
-  const departmentHead = currentSession ? getDeptHead(DB_TO_STAFF_DEPT[currentSession.department] ?? "Administration") : null;
-  const latestPayslip = currentSession ? generatedPayslips.find((item) => item.staffId === currentSession.staff_id) ?? null : null;
-  const employmentStartDate = staffRecord?.joinDate ?? "Pending HR setup";
-  const employmentContractType = staffRecord?.contractType ?? "Permanent";
-  const employmentUnit = staffRecord?.unit ?? "—";
-  const employmentLineManager = departmentHead?.staffName ?? "HR Manager";
-  const employmentSalary = staffRecord ? `₦${staffRecord.salary.toLocaleString()}` : "Pending HR setup";
-  const bankName = staffRecord?.bankName ?? latestPayslip?.bankName ?? "Managed by Accounts";
-  const bankAccountSource = staffRecord?.bankAccount ?? latestPayslip?.bankAccount ?? "";
+  const latestPayslip = currentSession
+    ? payslips.find((item) => item.staffId === currentSession.staff_id) ?? null
+    : null;
+  const employmentStartDate = "Pending HR setup";
+  const employmentContractType = "Permanent";
+  const employmentUnit = profileDetails?.unit ?? "—";
+  const employmentLineManager = "HR Manager";
+  const employmentSalary = "Pending HR setup";
+  const bankName = profileDetails?.bankName ?? latestPayslip?.bankName ?? "Managed by Accounts";
+  const bankAccountSource = profileDetails?.bankAccount ?? latestPayslip?.bankAccount ?? "";
   const bankAccount = bankAccountSource ? maskAccountNumber(bankAccountSource) : "Managed by Accounts";
-  const taxId = staffRecord?.taxId ?? latestPayslip?.taxId ?? "Managed by Accounts";
-  const pensionNumber = staffRecord?.pensionNumber ?? "Managed by Accounts";
-  const nhfNumber = staffRecord?.nhfNumber ?? "Managed by Accounts";
-  const emergencyName = staffRecord?.emergencyContactName ?? "Pending HR setup";
-  const emergencyRelationship = staffRecord?.emergencyContactRelationship ?? "Pending HR setup";
-  const emergencyPhone = staffRecord?.emergencyContactPhone ?? "Pending HR setup";
-  const emergencyAddress = staffRecord?.emergencyContactAddress ?? "Pending HR setup";
+  const taxId = profileDetails?.taxId ?? latestPayslip?.taxId ?? "Managed by Accounts";
+  const pensionNumber = profileDetails?.pensionNumber ?? "Managed by Accounts";
+  const nhfNumber = profileDetails?.nhfNumber ?? "Managed by Accounts";
+  const emergencyName = profileDetails?.emergencyContactName ?? "Pending HR setup";
+  const emergencyRelationship = profileDetails?.emergencyContactRelationship ?? "Pending HR setup";
+  const emergencyPhone = profileDetails?.emergencyContactPhone ?? "Pending HR setup";
+  const emergencyAddress = profileDetails?.emergencyContactAddress ?? "Pending HR setup";
 
   useEffect(() => {
-    if (hydratedProfileRef.current || !staffRecord) return;
-    setPhone(staffRecord.phone || "");
-    setAddress(staffRecord.homeAddress || "");
+    if (!session?.staff_id) return;
+    fetchStaffProfileDetails()
+      .then((details) => setProfileDetails(details as StaffProfileDetails))
+      .catch(() => {});
+  }, [session?.staff_id]);
+
+  useEffect(() => {
+    if (hydratedProfileRef.current || !profileDetails) return;
+    setPhone(profileDetails.phone || "");
+    setAddress(profileDetails.homeAddress || "");
     hydratedProfileRef.current = true;
-  }, [staffRecord]);
+  }, [profileDetails]);
 
   if (!currentSession) {
     return (

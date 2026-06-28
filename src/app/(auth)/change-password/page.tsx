@@ -20,7 +20,7 @@ export default async function ChangePasswordPage({
   const pendingRaw = store.get(hmsPendingSessionCookieName)?.value;
   if (!pendingRaw) redirect("/login");
 
-  const session = deserialiseSession(pendingRaw);
+  const session = await deserialiseSession(pendingRaw);
   if (!session) redirect("/login");
 
   const { error } = await searchParams;

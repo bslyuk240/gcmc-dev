@@ -1,16 +1,13 @@
 import { NextResponse } from "next/server";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { createTenantAdminClient } from "@/lib/supabase/admin-tenant";
 import { getServerSession } from "@/lib/auth/session";
-import { isDBDepartmentKey } from "@/lib/constants/navigation";
+import { isDBDepartmentKey, type DBDepartmentKey } from "@/lib/constants/navigation";
+import { canManageDepartmentRota } from "@/lib/rota/dept-access";
 import {
   getRotaSwapRequests,
   reviewRotaSwapRequest,
 } from "@/modules/workforce/rota/service";
-
-function canManageDepartment(role: string, sessionDepartment: string, requestDepartment: string) {
-  if (role === "admin" || role === "hr_manager" || role === "hr_staff") return true;
-  return role === "hod" && sessionDepartment === requestDepartment;
-}
+import { notifyRotaSwapReviewed } from "@/lib/email/notifications";
 
 export async function GET(request: Request) {
   const session = await getServerSession();
@@ -24,7 +21,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "missing_department" }, { status: 400 });
   }
 
-  if (!canManageDepartment(session.role, session.department, department)) {
+  if (!canManageDepartmentRota(session, department)) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
 
@@ -47,14 +44,16 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: "invalid_payload" }, { status: 400 });
   }
 
-  const admin = createAdminClient();
-  if (!admin) {
+  const scoped = await createTenantAdminClient();
+  if (!scoped) {
     return NextResponse.json({ error: "configuration" }, { status: 500 });
   }
 
+  const { admin, hospitalId } = scoped;
   const { data: requestRow, error: fetchError } = await admin
     .from("rota_swap_requests")
     .select("id, department")
+    .eq("hospital_id", hospitalId)
     .eq("id", requestId)
     .maybeSingle();
 
@@ -67,7 +66,7 @@ export async function PATCH(request: Request) {
   }
 
   const requestDepartment = String((requestRow as { department?: string }).department ?? "");
-  if (!canManageDepartment(session.role, session.department, requestDepartment)) {
+  if (!isDBDepartmentKey(requestDepartment) || !canManageDepartmentRota(session, requestDepartment)) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
 
@@ -81,6 +80,13 @@ export async function PATCH(request: Request) {
   if (!reviewed) {
     return NextResponse.json({ error: "failed_to_update_request" }, { status: 500 });
   }
+
+  await notifyRotaSwapReviewed({
+    staffId: reviewed.staffId,
+    status: reviewed.status,
+    shiftDate: reviewed.shiftDate,
+    reviewNote: reviewed.reviewNote,
+  });
 
   return NextResponse.json({ request: reviewed });
 }

@@ -4,26 +4,37 @@
  * Works as print-to-PDF in all modern browsers.
  */
 
-const HOSPITAL_NAME  = "Group Christian Medical Centre";
-const HOSPITAL_TAG   = "Quality Healthcare You Can Trust";
-const HOSPITAL_ADDR  = "12 Hospital Avenue, Lagos, Nigeria";
-const HOSPITAL_TEL   = "+234 801 234 5678";
-const HOSPITAL_EMAIL = "info@gcmc.ng";
+import type { ReceiptBranding } from "@/lib/tenant/branding";
+import { escapeHtml } from "@/lib/tenant/branding";
+import { getClientReceiptBranding } from "@/lib/tenant/branding-store";
 
 export type ReceiptLine = { label: string; value: string; bold?: boolean };
 
 export interface ReceiptOptions {
-  title: string;          // e.g. "Payment Receipt"
-  subtitle?: string;      // e.g. "Invoice #INV-2026-0082"
-  refNumber?: string;     // top-right reference
+  title: string;
+  subtitle?: string;
+  refNumber?: string;
   date?: string;
-  lines: ReceiptLine[];   // body rows
+  lines: ReceiptLine[];
   total?: { label: string; value: string };
-  footer?: string;        // small note at bottom
-  copyLabel?: string;     // "PATIENT COPY" | "HOSPITAL COPY" etc.
+  footer?: string;
+  copyLabel?: string;
+  branding?: ReceiptBranding;
+}
+
+function resolveBranding(opts: ReceiptOptions): ReceiptBranding {
+  return opts.branding ?? getClientReceiptBranding();
 }
 
 function buildReceiptHTML(opts: ReceiptOptions): string {
+  const brand = resolveBranding(opts);
+  const hospitalName = escapeHtml(brand.name);
+  const hospitalTag = escapeHtml(brand.receiptTagline);
+  const hospitalAddr = escapeHtml(brand.address);
+  const hospitalTel = escapeHtml(brand.phone);
+  const hospitalEmail = escapeHtml(brand.email);
+  const poweredBy = escapeHtml(`${brand.shortName} Internal Portal`);
+
   const now = opts.date ?? new Date().toLocaleString("en-GB", {
     day: "2-digit", month: "short", year: "numeric",
     hour: "2-digit", minute: "2-digit",
@@ -31,22 +42,30 @@ function buildReceiptHTML(opts: ReceiptOptions): string {
 
   const rows = opts.lines.map((l) => `
     <tr>
-      <td style="padding:5px 0;color:#64748b;font-size:13px;">${l.label}</td>
-      <td style="padding:5px 0;text-align:right;font-size:13px;font-weight:${l.bold ? "700" : "500"};color:#0f172a;">${l.value}</td>
+      <td style="padding:5px 0;color:#64748b;font-size:13px;">${escapeHtml(l.label)}</td>
+      <td style="padding:5px 0;text-align:right;font-size:13px;font-weight:${l.bold ? "700" : "500"};color:#0f172a;">${escapeHtml(l.value)}</td>
     </tr>`).join("");
 
   const totalRow = opts.total ? `
     <tr style="border-top:2px solid #0f172a;">
-      <td style="padding:10px 0 4px;font-size:15px;font-weight:700;color:#0f172a;">${opts.total.label}</td>
-      <td style="padding:10px 0 4px;text-align:right;font-size:18px;font-weight:800;color:#0f172a;">${opts.total.value}</td>
+      <td style="padding:10px 0 4px;font-size:15px;font-weight:700;color:#0f172a;">${escapeHtml(opts.total.label)}</td>
+      <td style="padding:10px 0 4px;text-align:right;font-size:18px;font-weight:800;color:#0f172a;">${escapeHtml(opts.total.value)}</td>
     </tr>` : "";
+
+  const defaultFooter = brand.receiptFooter
+    ? escapeHtml(brand.receiptFooter)
+    : `Thank you for choosing <strong>${hospitalName}</strong>.<br/>Keep this receipt for your records.`;
+
+  const footerHtml = opts.footer
+    ? escapeHtml(opts.footer)
+    : defaultFooter;
 
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>${opts.title} — ${HOSPITAL_NAME}</title>
+  <title>${escapeHtml(opts.title)} — ${hospitalName}</title>
   <style>
     *{box-sizing:border-box;margin:0;padding:0}
     body{font-family:'Segoe UI',Arial,sans-serif;background:#f8fafc;display:flex;justify-content:center;align-items:flex-start;min-height:100vh;padding:20px}
@@ -74,25 +93,23 @@ function buildReceiptHTML(opts: ReceiptOptions): string {
 <body>
   <div class="receipt">
     <div class="header">
-      <h1>${HOSPITAL_NAME}</h1>
-      <p>${HOSPITAL_TAG}</p>
-      <div class="addr">${HOSPITAL_ADDR}<br/>${HOSPITAL_TEL} · ${HOSPITAL_EMAIL}</div>
-      ${opts.copyLabel ? `<div class="copy-badge">${opts.copyLabel}</div>` : ""}
+      <h1>${hospitalName}</h1>
+      <p>${hospitalTag}</p>
+      <div class="addr">${hospitalAddr}<br/>${hospitalTel} · ${hospitalEmail}</div>
+      ${opts.copyLabel ? `<div class="copy-badge">${escapeHtml(opts.copyLabel)}</div>` : ""}
     </div>
     <div class="body">
-      <div class="receipt-title">${opts.title}</div>
-      ${opts.subtitle ? `<div class="receipt-sub">${opts.subtitle}</div>` : ""}
+      <div class="receipt-title">${escapeHtml(opts.title)}</div>
+      ${opts.subtitle ? `<div class="receipt-sub">${escapeHtml(opts.subtitle)}</div>` : ""}
       <div class="meta">
-        <span>Date: ${now}</span>
-        ${opts.refNumber ? `<span>Ref: <strong style="color:#0f172a">${opts.refNumber}</strong></span>` : ""}
+        <span>Date: ${escapeHtml(now)}</span>
+        ${opts.refNumber ? `<span>Ref: <strong style="color:#0f172a">${escapeHtml(opts.refNumber)}</strong></span>` : ""}
       </div>
       <table>${rows}${totalRow}</table>
       <hr class="divider"/>
-      ${opts.footer
-        ? `<div class="footer-note">${opts.footer}</div>`
-        : `<div class="footer-note">Thank you for choosing <strong>${HOSPITAL_NAME}</strong>.<br/>Keep this receipt for your records.</div>`}
+      <div class="footer-note">${footerHtml}</div>
     </div>
-    <div class="powered">Powered by GCMC Internal Portal · ${new Date().getFullYear()}</div>
+    <div class="powered">Powered by ${poweredBy} · ${new Date().getFullYear()}</div>
   </div>
   <script>
     window.onload = function(){ window.print(); }
@@ -121,3 +138,5 @@ export function downloadReceiptHTML(opts: ReceiptOptions, filename: string): voi
   a.click();
   URL.revokeObjectURL(url);
 }
+
+export { escapeHtml };

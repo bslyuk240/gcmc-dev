@@ -32,7 +32,7 @@ export async function changePasswordAction(formData: FormData) {
   const pendingRaw = store.get(hmsPendingSessionCookieName)?.value;
   if (!pendingRaw) redirect("/login");
 
-  const pendingSession = deserialiseSession(pendingRaw);
+  const pendingSession = await deserialiseSession(pendingRaw);
   if (!pendingSession) redirect("/login");
 
   const supabase = await createClient();
@@ -48,6 +48,7 @@ export async function changePasswordAction(formData: FormData) {
     await admin
       .from("staff_profiles")
       .update({ must_change_password: false })
+      .eq("hospital_id", pendingSession.hospital_id)
       .eq("id", pendingSession.staff_id);
   }
 

@@ -16,11 +16,16 @@ export const hmsStaffPortalSessionCookieName = "hms-staff-session";
 // point this cookie is deleted and the real hms-session-v2 is written.
 export const hmsPendingSessionCookieName = "hms-pending-session";
 
+// Resolved tenant slug for the current request (set by middleware)
+export const hmsTenantSlugCookieName = "hms-tenant-slug";
+
 // Cookie options shared across all session cookies
 export const sessionCookieOptions = {
   httpOnly: true,
   sameSite: "lax" as const,
   path: "/",
+  // Only send over HTTPS in production — never over plain HTTP
+  secure: process.env.NODE_ENV === "production",
   // 8 hours — matches typical hospital shift length
   maxAge: 60 * 60 * 8,
 } satisfies Record<string, unknown>;

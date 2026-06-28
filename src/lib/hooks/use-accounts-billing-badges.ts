@@ -1,50 +1,60 @@
 "use client";
 
 import { useEffect, useReducer, useState } from "react";
-import {
-  subscribeAccountsStore,
-  getConsultationFees,
-  getLabCharges,
-  getNursingCharges,
-  getFrontDeskCharges,
-} from "@/lib/data/accounts-store";
-import { subscribePharmacyStore, getPharmacyBills } from "@/lib/data/pharmacy-store";
+import { ACCOUNTS_PAYMENT_UPDATED_EVENT } from "@/lib/constants/accounts-events";
+import { fetchCashDeskQueue } from "@/lib/billing/client";
 
 /**
- * Returns pending billing counts keyed by route href.
- * Only subscribes to stores when department === "accounts" to avoid
- * loading accounts data for other departments.
+ * Pending billing counts keyed by route href — sourced from billing ledger API.
  */
 export function useAccountsBillingBadges(department: string): Record<string, number> {
   const [, rerender] = useReducer((x: number) => x + 1, 0);
-  const [hydrated, setHydrated] = useState(false);
+  const [badges, setBadges] = useState<Record<string, number>>({});
 
   useEffect(() => {
     if (department !== "accounts") return;
-    setHydrated(true);
-    const unsubAccounts = subscribeAccountsStore(rerender);
-    const unsubPharmacy = subscribePharmacyStore(rerender);
+
+    let alive = true;
+
+    const load = async () => {
+      try {
+        const queue = await fetchCashDeskQueue();
+        if (!alive) return;
+        const byDept = new Map<string, number>();
+        for (const line of queue.lines) {
+          byDept.set(line.department, (byDept.get(line.department) ?? 0) + 1);
+        }
+        const next: Record<string, number> = {};
+        if (queue.totals.openCount > 0) {
+          next["/app/accounts/cash-desk"] = queue.totals.openCount;
+        }
+        const doctors = byDept.get("doctors") ?? 0;
+        const lab = byDept.get("lab") ?? 0;
+        const nurses = byDept.get("nurses") ?? 0;
+        const pharmacy = byDept.get("pharmacy") ?? 0;
+        const frontdesk = byDept.get("frontdesk") ?? 0;
+        if (doctors) next["/app/accounts/cash-desk?department=doctors"] = doctors;
+        if (lab) next["/app/accounts/cash-desk?department=lab"] = lab;
+        if (nurses) next["/app/accounts/cash-desk?department=nurses"] = nurses;
+        if (pharmacy) next["/app/accounts/cash-desk?department=pharmacy"] = pharmacy;
+        if (frontdesk) next["/app/accounts/cash-desk?department=frontdesk"] = frontdesk;
+        setBadges(next);
+        rerender();
+      } catch {
+        /* ignore badge load errors */
+      }
+    };
+
+    void load();
+    const refresh = () => { void load(); };
+    window.addEventListener(ACCOUNTS_PAYMENT_UPDATED_EVENT, refresh);
+    const poll = setInterval(refresh, 30_000);
     return () => {
-      unsubAccounts();
-      unsubPharmacy();
+      alive = false;
+      window.removeEventListener(ACCOUNTS_PAYMENT_UPDATED_EVENT, refresh);
+      clearInterval(poll);
     };
   }, [department]);
 
-  if (!hydrated || department !== "accounts") return {};
-
-  const consultationPending = getConsultationFees().filter((f) => f.status === "Pending").length;
-  const labPending = getLabCharges().filter((c) => c.status === "Pending").length;
-  const nursingPending = getNursingCharges().filter((c) => c.status === "Pending" || c.status === "Billed").length;
-  const pharmacyPending = getPharmacyBills().filter((b) => b.billStatus === "Pending").length;
-  const fdPending = getFrontDeskCharges().filter((c) => c.status === "Billed").length;
-  const totalReceivePayment = consultationPending + labPending + nursingPending + pharmacyPending + fdPending;
-
-  const badges: Record<string, number> = {};
-  if (totalReceivePayment) badges["/app/accounts/receive-payment"] = totalReceivePayment;
-  if (consultationPending) badges["/app/accounts/consultation-fees"] = consultationPending;
-  if (labPending) badges["/app/accounts/lab-billing"] = labPending;
-  if (nursingPending) badges["/app/accounts/nursing-billing"] = nursingPending;
-  if (pharmacyPending) badges["/app/accounts/pharmacy-billing"] = pharmacyPending;
-
-  return badges;
+  return department === "accounts" ? badges : {};
 }

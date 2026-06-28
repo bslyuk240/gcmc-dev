@@ -18,6 +18,8 @@ import {
   type WardPatient,
 } from "@/lib/data/nurses-store";
 import { addNursingCharge } from "@/lib/data/accounts-store";
+import { RecordConsumableModal } from "@/components/nurses/record-consumable-modal";
+import { openInpatientStay, transferInpatientStay } from "@/lib/inpatient/client";
 import {
   fetchDoctors,
   insertHandoverNote,
@@ -31,36 +33,17 @@ import {
   describeDoctorRoute,
   resolveDoctorRoute,
 } from "@/lib/utils/doctor-routing";
+import { useBillingPresets } from "@/lib/hooks/use-billing-presets";
+import {
+  NURSING_PROCEDURE_TYPES,
+  type NursingProcedureType,
+} from "@/lib/billing/preset-catalog";
 
 const PRIORITY_STYLES: Record<WardPatient["priority"], string> = {
   Critical: "bg-red-50 text-red-700 font-bold",
   High: "bg-amber-50 text-amber-700 font-semibold",
   Watch: "bg-yellow-50 text-yellow-700",
   Stable: "bg-emerald-50 text-emerald-700",
-};
-
-const PROCEDURE_TYPES = [
-  "Injection",
-  "Dressing",
-  "IV Access",
-  "Catheter",
-  "Observation",
-  "Wound Care",
-  "Blood Draw",
-  "Procedure",
-  "Other",
-] as const;
-
-const PROCEDURE_PRICES: Record<(typeof PROCEDURE_TYPES)[number], number> = {
-  Injection: 25,
-  Dressing: 20,
-  "IV Access": 30,
-  Catheter: 60,
-  Observation: 15,
-  "Wound Care": 40,
-  "Blood Draw": 15,
-  Procedure: 50,
-  Other: 20,
 };
 
 function createLocalId(prefix: string) {
@@ -124,6 +107,7 @@ function MobileMeta({
 
 export default function NursesEmergencyPage() {
   const { getByUnit, procedures, allPatients } = useNursesStore();
+  const { getAmount } = useBillingPresets();
   const session = useHMSSession();
   const staffName = session?.full_name ?? "Emergency Nurse";
   const erPatients = getByUnit("Emergency").filter((patient) => patient.status === "Active");
@@ -137,6 +121,7 @@ export default function NursesEmergencyPage() {
   const [vitalsTarget, setVitalsTarget] = useState<WardPatient | null>(null);
   const [transferTarget, setTransferTarget] = useState<WardPatient | null>(null);
   const [procedureTarget, setProcedureTarget] = useState<WardPatient | null>(null);
+  const [consumableTarget, setConsumableTarget] = useState<WardPatient | null>(null);
   const [toast, setToast] = useState<ToastData | null>(null);
 
   const [selectedPatientId, setSelectedPatientId] = useState("");
@@ -153,7 +138,7 @@ export default function NursesEmergencyPage() {
   const [spo2, setSpo2] = useState("");
   const [vitalsNurse, setVitalsNurse] = useState(staffName);
 
-  const [procedureType, setProcedureType] = useState<(typeof PROCEDURE_TYPES)[number]>("Observation");
+  const [procedureType, setProcedureType] = useState<NursingProcedureType>("Observation");
   const [procedureDescription, setProcedureDescription] = useState("");
   const [procedureNurse, setProcedureNurse] = useState(staffName);
 
@@ -210,7 +195,7 @@ export default function NursesEmergencyPage() {
     setProcedureNurse(staffName);
   }
 
-  function handleAdmitPatient() {
+  async function handleAdmitPatient() {
     const selectedPatient = registrations.find((registration) => registration.id === selectedPatientId);
     const patientName = selectedPatient?.patientName ?? manualName.trim();
     const patientId = selectedPatient?.patientId ?? manualPatientId.trim();
@@ -226,12 +211,16 @@ export default function NursesEmergencyPage() {
       return;
     }
 
+    const wardPatientId = createLocalId("WP-ER");
+    const bed = buildUnitBed(allPatients, "Emergency");
+    const finalPatientId = patientId || createLocalId("PT-ER");
+
     addWardPatient({
-      id: createLocalId("WP-ER"),
+      id: wardPatientId,
       patientName,
-      patientId: patientId || createLocalId("PT-ER"),
+      patientId: finalPatientId,
       unit: "Emergency",
-      bed: buildUnitBed(allPatients, "Emergency"),
+      bed,
       diagnosis: complaint.trim(),
       admittedAt: new Date().toISOString(),
       assignedNurse: assignedNurse.trim() || staffName,
@@ -242,7 +231,24 @@ export default function NursesEmergencyPage() {
       notes: selectedPatient ? "Emergency admission from registered patient record." : "Emergency admission entered from nurses portal.",
     });
 
-    setToast({ message: `${patientName} admitted to Emergency Unit.`, type: "success" });
+    const stayResult = await openInpatientStay({
+      patientId: finalPatientId,
+      patientName,
+      unit: "Emergency",
+      bed,
+      wardPatientId,
+      doctorInCharge: route.doctorName ?? null,
+    });
+
+    if ("error" in stayResult) {
+      setToast({
+        message: `${patientName} admitted locally, but inpatient billing stay was not opened: ${stayResult.error}.`,
+        type: "error",
+      });
+    } else {
+      setToast({ message: `${patientName} admitted to Emergency Unit.`, type: "success" });
+    }
+
     setNewPatientModal(false);
     resetAdmitForm();
   }
@@ -290,7 +296,7 @@ export default function NursesEmergencyPage() {
     const performedAt = new Date().toISOString();
     const performedBy = procedureNurse.trim() || staffName;
     const description = procedureDescription.trim() || `${procedureType} in Emergency Unit`;
-    const amount = PROCEDURE_PRICES[procedureType];
+    const amount = getAmount("procedure", procedureType);
     const procedureId = createLocalId("NP-ER");
 
     const procedure: NursingProcedure = {
@@ -338,10 +344,25 @@ export default function NursesEmergencyPage() {
   async function handleTransfer(targetUnit: "Ward" | "ICU") {
     if (!transferTarget) return;
 
+    const newBed = buildUnitBed(
+      allPatients.filter((patient) => patient.id !== transferTarget.id),
+      targetUnit,
+    );
+
     try {
       await updateWardPatient(transferTarget.id, {
         unit: targetUnit,
-        bed: buildUnitBed(allPatients.filter((patient) => patient.id !== transferTarget.id), targetUnit),
+        bed: newBed,
+      });
+
+      const transferResult = await transferInpatientStay({
+        patientId: transferTarget.patientId,
+        patientName: transferTarget.patientName,
+        fromUnit: "Emergency",
+        toUnit: targetUnit,
+        bed: newBed,
+        wardPatientId: transferTarget.id,
+        doctorInCharge: transferTarget.doctorInCharge ?? null,
       });
 
       await insertHandoverNote({
@@ -353,11 +374,18 @@ export default function NursesEmergencyPage() {
         createdAt: new Date().toISOString(),
       });
 
-      setToast({ message: `${transferTarget.patientName} transferred to ${targetUnit}.`, type: "info" });
+      if (transferResult.error) {
+        setToast({
+          message: `${transferTarget.patientName} transferred to ${targetUnit}, but inpatient billing stay was not updated: ${transferResult.error}.`,
+          type: "error",
+        });
+      } else {
+        setToast({ message: `${transferTarget.patientName} transferred to ${targetUnit}.`, type: "info" });
+      }
       setTransferTarget(null);
     } catch (error) {
       setToast({
-        message: `Emergency transfer handover failed: ${error instanceof Error ? error.message : "Unknown error"}`,
+        message: `Emergency transfer failed: ${error instanceof Error ? error.message : "Unknown error"}`,
         type: "error",
       });
     }
@@ -471,6 +499,7 @@ export default function NursesEmergencyPage() {
               <div className="mt-4 flex flex-wrap gap-2">
                 <Button size="sm" className="flex-1" onClick={() => openVitals(patient)}>Vitals</Button>
                 <Button size="sm" variant="outline" className="flex-1" onClick={() => openProcedure(patient)}>Procedure</Button>
+                <Button size="sm" variant="outline" className="flex-1" onClick={() => setConsumableTarget(patient)}>Materials</Button>
               </div>
               <div className="mt-2 flex flex-wrap gap-2">
                 <Button size="sm" variant="outline" className="flex-1" onClick={() => setTransferTarget(patient)}>Transfer</Button>
@@ -541,6 +570,7 @@ export default function NursesEmergencyPage() {
                     <div className="flex flex-wrap gap-2">
                       <Button size="sm" onClick={() => openVitals(patient)}>Vitals</Button>
                       <Button size="sm" variant="outline" onClick={() => openProcedure(patient)}>Procedure</Button>
+                      <Button size="sm" variant="outline" onClick={() => setConsumableTarget(patient)}>Materials</Button>
                       <Button size="sm" variant="outline" onClick={() => setTransferTarget(patient)}>Transfer</Button>
                       <Button
                         size="sm"
@@ -738,10 +768,10 @@ export default function NursesEmergencyPage() {
             </div>
             <div>
               <label className="mb-1 block text-xs font-semibold text-slate-600">Procedure Type</label>
-              <select value={procedureType} onChange={(event) => setProcedureType(event.target.value as (typeof PROCEDURE_TYPES)[number])} className={inputCls}>
-                {PROCEDURE_TYPES.map((entry) => (
+              <select value={procedureType} onChange={(event) => setProcedureType(event.target.value as NursingProcedureType)} className={inputCls}>
+                {NURSING_PROCEDURE_TYPES.map((entry) => (
                   <option key={entry} value={entry}>
-                    {entry} (NGN {PROCEDURE_PRICES[entry]})
+                    {entry} (NGN {getAmount("procedure", entry).toLocaleString()})
                   </option>
                 ))}
               </select>
@@ -784,6 +814,16 @@ export default function NursesEmergencyPage() {
           <Button variant="ghost" size="md" onClick={() => setTransferTarget(null)}>Cancel</Button>
         </ModalFooter>
       </Modal>
+
+      <RecordConsumableModal
+        open={!!consumableTarget}
+        patientName={consumableTarget?.patientName ?? ""}
+        patientId={consumableTarget?.patientId ?? ""}
+        bed={consumableTarget?.bed}
+        onClose={() => setConsumableTarget(null)}
+        onSuccess={(message) => setToast({ message, type: "success" })}
+        onError={(message) => setToast({ message, type: "error" })}
+      />
 
       <Toast toast={toast} onDismiss={() => setToast(null)} />
     </div>

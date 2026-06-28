@@ -20,36 +20,20 @@ import {
 } from "@/lib/data/nurses-store";
 import { addNursingCharge } from "@/lib/data/accounts-store";
 import { updateAdmissionOrder, type AdmissionOrder } from "@/lib/data/doctors-store";
+import { RecordConsumableModal } from "@/components/nurses/record-consumable-modal";
+import { dischargeInpatientStay, openInpatientStay } from "@/lib/inpatient/client";
+import { checkHmoPreauthStatus, createHmoPreauthorization } from "@/lib/nhis/client";
+import { useBillingPresets } from "@/lib/hooks/use-billing-presets";
+import {
+  NURSING_PROCEDURE_TYPES,
+  type NursingProcedureType,
+} from "@/lib/billing/preset-catalog";
 
 const PRIORITY_STYLES: Record<WardPatient["priority"], string> = {
   Critical: "bg-red-50 text-red-700 font-bold",
   High: "bg-amber-50 text-amber-700",
   Watch: "bg-yellow-50 text-yellow-700",
   Stable: "bg-emerald-50 text-emerald-700",
-};
-
-const PROCEDURE_TYPES = [
-  "Injection",
-  "Dressing",
-  "IV Access",
-  "Catheter",
-  "Observation",
-  "Wound Care",
-  "Blood Draw",
-  "Procedure",
-  "Other",
-] as const;
-
-const PROCEDURE_PRICES: Record<(typeof PROCEDURE_TYPES)[number], number> = {
-  Injection: 25,
-  Dressing: 20,
-  "IV Access": 30,
-  Catheter: 60,
-  Observation: 15,
-  "Wound Care": 40,
-  "Blood Draw": 15,
-  Procedure: 50,
-  Other: 20,
 };
 
 function MobileMeta({ label, value }: { label: string; value: string }) {
@@ -113,6 +97,7 @@ function isLikelyToday(value?: string | null) {
 export default function NursesWardPage() {
   const { getByUnit, procedures } = useNursesStore();
   const { admissionOrders } = useDoctorsStore();
+  const { getAmount } = useBillingPresets();
   const session = useHMSSession();
   const staffName = session?.full_name ?? "Ward Nurse";
 
@@ -139,13 +124,15 @@ export default function NursesWardPage() {
   const [spo2, setSpo2] = useState("");
   const [vitalsNurse, setVitalsNurse] = useState(staffName);
 
-  const [procedureType, setProcedureType] = useState<(typeof PROCEDURE_TYPES)[number]>("Injection");
+  const [procedureType, setProcedureType] = useState<NursingProcedureType>("Injection");
   const [procedureDescription, setProcedureDescription] = useState("");
   const [procedureNurse, setProcedureNurse] = useState(staffName);
 
   const [admissionPriority, setAdmissionPriority] = useState<WardPatient["priority"]>("Watch");
   const [admissionNotes, setAdmissionNotes] = useState("");
   const [admissionNurse, setAdmissionNurse] = useState(staffName);
+
+  const [consumableTarget, setConsumableTarget] = useState<WardPatient | null>(null);
 
   function openVitals(patient: WardPatient) {
     setVitalsTarget(patient);
@@ -203,8 +190,29 @@ export default function NursesWardPage() {
     const performedAt = new Date().toISOString();
     const performedBy = procedureNurse.trim() || staffName;
     const description = procedureDescription.trim() || `${procedureType} for ${procedureTarget.patientName}`;
-    const amount = PROCEDURE_PRICES[procedureType];
+    const amount = getAmount("procedure", procedureType);
     const procedureId = createLocalId("NP");
+
+    let preauthNote = "";
+    try {
+      const preauth = await checkHmoPreauthStatus(procedureTarget.patientId, "procedure");
+      if (preauth.required && preauth.hasEnrollment && !preauth.approved) {
+        if (!preauth.pending) {
+          await createHmoPreauthorization({
+            patientRef: procedureTarget.patientId,
+            patientName: procedureTarget.patientName,
+            serviceCategory: "procedure",
+            serviceName: `${procedureType} — ${description}`,
+            amountCap: amount,
+            referenceType: "nursing_procedure",
+            referenceId: procedureId,
+          });
+        }
+        preauthNote = " HMO pre-auth pending — collect full fee until NHIS approves.";
+      }
+    } catch {
+      /* non-HMO — continue */
+    }
 
     const procedure: NursingProcedure = {
       id: procedureId,
@@ -235,8 +243,8 @@ export default function NursesWardPage() {
       });
 
       setToast({
-        message: `${procedureType} recorded for ${procedureTarget.patientName}. Billing is now in Accounts.`,
-        type: "success",
+        message: `${procedureType} recorded for ${procedureTarget.patientName}. Billing is now in Accounts.${preauthNote}`,
+        type: preauthNote ? "info" : "success",
       });
       setProcedureTarget(null);
       setProcedureDescription("");
@@ -248,42 +256,97 @@ export default function NursesWardPage() {
     }
   }
 
+  function openConsumable(patient: WardPatient) {
+    setConsumableTarget(patient);
+  }
+
   function handleDischarge() {
     if (!dischargeTarget) return;
 
-    updateWardPatient(dischargeTarget.id, { status: "Discharged" });
-    const relatedOrder = admissionOrders.find(
-      (order) => order.patientId === dischargeTarget.patientId && order.unit === "Ward" && order.status === "Admitted",
-    );
-    if (relatedOrder) updateAdmissionOrder(relatedOrder.id, { status: "Discharged" });
+    void (async () => {
+      updateWardPatient(dischargeTarget.id, { status: "Discharged" });
+      const relatedOrder = admissionOrders.find(
+        (order) => order.patientId === dischargeTarget.patientId && order.unit === "Ward" && order.status === "Admitted",
+      );
+      if (relatedOrder) await updateAdmissionOrder(relatedOrder.id, { status: "Discharged" });
 
-    setToast({ message: `${dischargeTarget.patientName} discharged from Ward.`, type: "info" });
-    setDischargeTarget(null);
+      try {
+        await dischargeInpatientStay({
+          patientId: dischargeTarget.patientId,
+          unit: "Ward",
+        });
+      } catch {
+        // Ward discharge still succeeds locally if billing sync fails.
+      }
+
+      setToast({ message: `${dischargeTarget.patientName} discharged from Ward.`, type: "info" });
+      setDischargeTarget(null);
+    })();
   }
 
   function handleAcceptAdmission() {
     if (!admissionTarget) return;
 
-    const nurseLabel = admissionNurse.trim() || staffName;
-    addWardPatient({
-      id: createLocalId("WP-WD"),
-      patientName: admissionTarget.patientName,
-      patientId: admissionTarget.patientId,
-      unit: "Ward",
-      bed: buildWardBed(wardPatients),
-      diagnosis: admissionTarget.reason || "Doctor admission order",
-      admittedAt: new Date().toISOString(),
-      assignedNurse: nurseLabel,
-      priority: admissionPriority,
-      status: "Active",
-      doctorInCharge: admissionTarget.orderedBy,
-      notes: admissionNotes.trim() || undefined,
-    });
-    updateAdmissionOrder(admissionTarget.id, { status: "Admitted" });
+    void (async () => {
+      try {
+        const preauth = await checkHmoPreauthStatus(admissionTarget.patientId, "admission");
+        if (preauth.required && preauth.hasEnrollment && !preauth.approved) {
+          setToast({
+            message: preauth.pending
+              ? `${admissionTarget.patientName} has HMO admission pre-auth pending at NHIS. Approve before ward intake.`
+              : `${admissionTarget.patientName} needs HMO admission pre-authorization. Ask the doctor to submit an admission order.`,
+            type: "error",
+          });
+          return;
+        }
+      } catch {
+        /* continue for non-HMO */
+      }
 
-    setToast({ message: `${admissionTarget.patientName} admitted into Ward.`, type: "success" });
-    setAdmissionTarget(null);
-    setAdmissionNotes("");
+      const nurseLabel = admissionNurse.trim() || staffName;
+      const wardPatientId = createLocalId("WP-WD");
+      const bed = buildWardBed(wardPatients);
+
+      addWardPatient({
+        id: wardPatientId,
+        patientName: admissionTarget.patientName,
+        patientId: admissionTarget.patientId,
+        unit: "Ward",
+        bed,
+        diagnosis: admissionTarget.reason || "Doctor admission order",
+        admittedAt: new Date().toISOString(),
+        assignedNurse: nurseLabel,
+        priority: admissionPriority,
+        status: "Active",
+        doctorInCharge: admissionTarget.orderedBy,
+        notes: admissionNotes.trim() || undefined,
+      });
+      await updateAdmissionOrder(admissionTarget.id, { status: "Admitted" });
+
+      const stayResult = await openInpatientStay({
+        patientId: admissionTarget.patientId,
+        patientName: admissionTarget.patientName,
+        unit: "Ward",
+        bed,
+        admissionOrderId: admissionTarget.id,
+        wardPatientId,
+        doctorInCharge: admissionTarget.orderedBy,
+      });
+      if ("error" in stayResult) {
+        const isPreauth = stayResult.error.includes("pre-authorization");
+        setToast({
+          message: isPreauth
+            ? `${admissionTarget.patientName}: ${stayResult.error}. Review at NHIS → Pre-authorizations.`
+            : `${admissionTarget.patientName} admitted, but inpatient billing stay was not opened: ${stayResult.error}.`,
+          type: "error",
+        });
+      } else {
+        setToast({ message: `${admissionTarget.patientName} admitted into Ward.`, type: "success" });
+      }
+
+      setAdmissionTarget(null);
+      setAdmissionNotes("");
+    })();
   }
 
   const inputCls =
@@ -449,6 +512,7 @@ export default function NursesWardPage() {
               <div className="mt-4 flex flex-wrap gap-2">
                 <Button size="sm" onClick={() => openVitals(patient)}>Vitals</Button>
                 <Button size="sm" variant="outline" onClick={() => openProcedure(patient)}>Procedure</Button>
+                <Button size="sm" variant="outline" onClick={() => openConsumable(patient)}>Materials</Button>
                 <Button
                   size="sm"
                   variant="outline"
@@ -520,6 +584,9 @@ export default function NursesWardPage() {
                       </Button>
                       <Button size="sm" variant="outline" onClick={() => openProcedure(patient)}>
                         Procedure
+                      </Button>
+                      <Button size="sm" variant="outline" onClick={() => openConsumable(patient)}>
+                        Materials
                       </Button>
                       <Button
                         size="sm"
@@ -735,10 +802,10 @@ export default function NursesWardPage() {
             </div>
             <div>
               <label className="mb-1 block text-xs font-semibold text-slate-600">Procedure Type</label>
-              <select value={procedureType} onChange={(event) => setProcedureType(event.target.value as (typeof PROCEDURE_TYPES)[number])} className={inputCls}>
-                {PROCEDURE_TYPES.map((entry) => (
+              <select value={procedureType} onChange={(event) => setProcedureType(event.target.value as NursingProcedureType)} className={inputCls}>
+                {NURSING_PROCEDURE_TYPES.map((entry) => (
                   <option key={entry} value={entry}>
-                    {entry} (NGN {PROCEDURE_PRICES[entry]})
+                    {entry} (NGN {getAmount("procedure", entry).toLocaleString()})
                   </option>
                 ))}
               </select>
@@ -766,6 +833,16 @@ export default function NursesWardPage() {
           <Button size="md" onClick={handleAddProcedure}>Record Procedure</Button>
         </ModalFooter>
       </Modal>
+
+      <RecordConsumableModal
+        open={!!consumableTarget}
+        patientName={consumableTarget?.patientName ?? ""}
+        patientId={consumableTarget?.patientId ?? ""}
+        bed={consumableTarget?.bed}
+        onClose={() => setConsumableTarget(null)}
+        onSuccess={(message) => setToast({ message, type: "success" })}
+        onError={(message) => setToast({ message, type: "error" })}
+      />
 
       <Modal open={!!dischargeTarget} onClose={() => setDischargeTarget(null)} title="Discharge Patient">
         {dischargeTarget && (

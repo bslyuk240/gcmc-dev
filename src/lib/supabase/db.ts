@@ -533,6 +533,15 @@ export async function fetchTestCatalog(): Promise<TestCatalogItem[]> {
   return (data ?? []).map(mapTestCatalog);
 }
 
+export async function seedTestCatalogIfEmpty(items: TestCatalogItem[]): Promise<TestCatalogItem[]> {
+  const existing = await fetchTestCatalog();
+  if (existing.length > 0) return existing;
+  const sb = getSupabase();
+  if (!sb || items.length === 0) return items;
+  await Promise.all(items.map((item) => upsertTestCatalogItem(item)));
+  return fetchTestCatalog();
+}
+
 export async function upsertTestCatalogItem(item: TestCatalogItem): Promise<void> {
   const sb = getSupabase();
   if (!sb) return;
@@ -570,6 +579,8 @@ export async function upsertLabTestResult(id: string, updates: Partial<LabTest>)
   if (updates.sampleCollectedBy) patch.sample_collected_by = updates.sampleCollectedBy;
   if (updates.sampleCollectedAt) patch.sample_collected_at = updates.sampleCollectedAt;
   if (updates.technicianName) patch.technician_name = updates.technicianName;
+  if (updates.equipmentUsed) patch.equipment_used = updates.equipmentUsed;
+  if (updates.processingStartedAt) patch.processing_started_at = updates.processingStartedAt;
   if (updates.resultValue !== undefined) patch.result_value = updates.resultValue;
   if (updates.resultUnit) patch.result_unit = updates.resultUnit;
   if (updates.referenceRange) patch.reference_range = updates.referenceRange;
@@ -1827,6 +1838,7 @@ function mapDeptAlert(r: Record<string, unknown>): DeptAlert {
 function mapITTicket(r: Record<string, unknown>): ITTicket {
   return {
     id: r.id as string,
+    ticketRef: String(r.ticket_ref ?? r.id),
     title: r.title as string,
     department: (r.department as string) ?? "",
     priority: r.priority as ITTicket["priority"],
@@ -2322,7 +2334,7 @@ export async function insertInvoice(
     severity: "info",
     title: "New invoice created",
     body: `${created.patient} - Invoice ${created.invoiceNumber} (${created.amountDue.toLocaleString()}) is ready for payment.`,
-    href: "/app/accounts/receive-payment",
+    href: "/app/accounts/cash-desk",
     targetDepartments: ["accounts"],
   });
   return created;
@@ -2765,7 +2777,7 @@ export async function deleteNonClinicalUnit(id: string): Promise<void> {
   await sb.from("nc_units").delete().eq("id", id);
 }
 
-/** Fetch all shifts for a unit across a date range */
+/** Fetch all shifts for a unit across a date range (unified rota_assignments). */
 export async function fetchShiftsForUnit(
   unitName: string,
   weekStart: string, // YYYY-MM-DD
@@ -2774,10 +2786,10 @@ export async function fetchShiftsForUnit(
   const sb = getSupabase();
   if (!sb) return [];
   const { data } = await sb
-    .from("staff_shifts")
+    .from("rota_assignments")
     .select("*")
-    .eq("unit", unitName)
     .eq("department", "non_clinical")
+    .eq("unit_name", unitName)
     .gte("shift_date", weekStart)
     .lte("shift_date", weekEnd)
     .order("shift_date", { ascending: true });
@@ -2785,11 +2797,11 @@ export async function fetchShiftsForUnit(
     id: r.id as string,
     staffId: r.staff_id as string,
     department: r.department as string,
-    unit: r.unit as string,
-    shiftDate: r.shift_date as string,
+    unit: (r.unit_name as string) ?? unitName,
+    shiftDate: String(r.shift_date).slice(0, 10),
     shiftType: (r.shift_type as NcShift["shiftType"]) ?? "morning",
-    shiftStart: (r.shift_start as string) ?? "07:00",
-    shiftEnd: (r.shift_end as string) ?? "15:00",
+    shiftStart: r.shift_start != null ? String(r.shift_start).slice(0, 5) : "07:00",
+    shiftEnd: r.shift_end != null ? String(r.shift_end).slice(0, 5) : "15:00",
     status: (r.status as NcShift["status"]) ?? "scheduled",
     createdAt: r.created_at as string,
   }));
@@ -2812,11 +2824,11 @@ export async function createNcShift(params: {
   if (!sb) return null;
   const times = SHIFT_TIMES[params.shiftType];
   const { data, error } = await sb
-    .from("staff_shifts")
+    .from("rota_assignments")
     .insert({
       staff_id:    params.staffId,
       department:  "non_clinical",
-      unit:        params.unitName,
+      unit_name:   params.unitName,
       shift_date:  params.shiftDate,
       shift_type:  params.shiftType,
       shift_start: times.start,
@@ -2830,11 +2842,11 @@ export async function createNcShift(params: {
     id: data.id as string,
     staffId: data.staff_id as string,
     department: data.department as string,
-    unit: data.unit as string,
-    shiftDate: data.shift_date as string,
+    unit: (data.unit_name as string) ?? params.unitName,
+    shiftDate: String(data.shift_date).slice(0, 10),
     shiftType: data.shift_type as NcShift["shiftType"],
-    shiftStart: data.shift_start as string,
-    shiftEnd: data.shift_end as string,
+    shiftStart: data.shift_start != null ? String(data.shift_start).slice(0, 5) : times.start,
+    shiftEnd: data.shift_end != null ? String(data.shift_end).slice(0, 5) : times.end,
     status: data.status as NcShift["status"],
     createdAt: data.created_at as string,
   };
@@ -2843,7 +2855,7 @@ export async function createNcShift(params: {
 export async function deleteNcShift(id: string): Promise<void> {
   const sb = getSupabase();
   if (!sb) return;
-  await sb.from("staff_shifts").delete().eq("id", id);
+  await sb.from("rota_assignments").delete().eq("id", id);
 }
 
 /** Fetch all shifts for a clinical department across a date range */
@@ -2976,6 +2988,11 @@ export async function setNcUnitHOD(params: {
     assigned_on: new Date().toISOString().slice(0, 10),
     assigned_by: params.assignedBy,
   });
+  await sb.from("staff_profiles").update({
+    role: "hod",
+    department: "non_clinical",
+    unit_name: params.unitName,
+  }).eq("id", params.staffId);
 }
 
 // ─── Shift Presets ────────────────────────────────────────────────────────────
@@ -3118,7 +3135,7 @@ export async function fetchMyShiftToday(staffId: string): Promise<NcShift | null
 
 export type BillingPreset = {
   id: string;
-  category: string;  // 'visit' | 'frontdesk' | 'consultation' | 'procedure'
+  category: string;  // 'visit' | 'frontdesk' | 'consultation' | 'procedure' | 'inpatient'
   name: string;
   amount: number;
   description?: string;
@@ -3162,7 +3179,7 @@ export async function upsertBillingPreset(
   if (preset.id) payload.id = preset.id;
   const { data, error } = await sb
     .from("billing_presets")
-    .upsert(payload, { onConflict: "category,name" })
+    .upsert(payload, { onConflict: "hospital_id,category,name" })
     .select()
     .single();
   if (error || !data) return null;
@@ -3352,6 +3369,7 @@ export async function upsertPharmacyInventoryFromStoreSnapshot(snapshot: StoreIn
 function mapHmoScheme(r: Record<string, unknown>): HmoScheme {
   return {
     id: r.id as string,
+    hospitalId: r.hospital_id as string | undefined,
     name: r.name as string,
     code: r.code as string,
     type: (r.type as HmoScheme["type"]) ?? "fee_for_service",
@@ -3390,6 +3408,7 @@ function mapHmoEnrollment(r: Record<string, unknown>): HmoEnrollment {
     planName: r.plan_name as string | undefined,
     copayPercentage: Number(r.copay_percentage ?? 10),
     isActive: (r.is_active as boolean) ?? true,
+    verificationStatus: (r.verification_status as HmoEnrollment["verificationStatus"]) ?? "pending",
     validFrom: r.valid_from as string | undefined,
     validUntil: r.valid_until as string | undefined,
     authorizedBy: r.authorized_by as string | undefined,
@@ -3407,6 +3426,7 @@ function mapHmoClaim(r: Record<string, unknown>): HmoClaim {
     patientId: r.patient_id as string,
     patientName: (r.patient_name as string) ?? "",
     enrollmentId: r.enrollment_id as string | undefined,
+    lines: [],
     services: (r.services as HmoClaim["services"]) ?? [],
     totalCost: Number(r.total_cost ?? 0),
     copayAmount: Number(r.copay_amount ?? 0),

@@ -10,7 +10,7 @@ export function DeptRotaPage({ department }: { department: DBDepartmentKey }) {
   const session = useHMSSession();
   const deptDisplayName = DB_TO_STAFF_DEPT[department] ?? department;
 
-  const isHod   = session?.role === "hod";
+  const isHod   = session?.role === "hod" && session.department === department;
   const isAdmin = session?.role === "admin";
   const isHR    = session?.role === "hr_manager" || session?.role === "hr_staff";
   const canManage = isHod || isAdmin || isHR;

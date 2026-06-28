@@ -6,11 +6,13 @@ import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/layout/page-header";
 import { Modal, ModalFooter } from "@/components/ui/modal";
 import { Toast, type ToastData } from "@/components/ui/toast";
+import { StoreCatalogPicker } from "@/components/store/store-catalog-picker";
 import {
-  fetchStockRequests,
-  insertStockRequest,
-  type StockRequest,
-} from "@/lib/supabase/db";
+  displayReqStatus,
+  fetchStoreRequisitions,
+  submitStoreRequisition,
+} from "@/lib/store/client";
+import type { StoreItem, StoreRequisition } from "@/modules/store/types";
 
 type Props = {
   /** The department key used in the stock_requests.dept column */
@@ -52,7 +54,26 @@ function fmtDate(iso: string) {
   return d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
 }
 
-function newReqId(requests: StockRequest[]): string {
+function mapReq(r: StoreRequisition) {
+  const line = r.lines[0];
+  return {
+    id: r.id,
+    item: line?.itemName ?? "Items",
+    qty: line?.qtyRequested ?? 0,
+    unit: line?.unit ?? "Units",
+    dept: r.department,
+    requestedBy: r.requestedBy,
+    urgency: r.urgency as "Routine" | "Urgent" | "Critical",
+    status: displayReqStatus(r.status) as "Pending" | "Approved" | "Rejected" | "Fulfilled",
+    notes: r.notes,
+    createdAt: r.createdAt,
+    isNonCatalog: line?.lineType === "non_catalog",
+  };
+}
+
+type DeptRequest = ReturnType<typeof mapReq>;
+
+function newReqId(requests: DeptRequest[]): string {
   const nums = requests.map((r) => parseInt(r.id.replace(/\D/g, ""), 10)).filter((n) => !isNaN(n));
   return `REQ-${nums.length > 0 ? Math.max(...nums) + 1 : 1000}`;
 }
@@ -67,23 +88,26 @@ function MobileMeta({ label, value }: { label: string; value: string | number })
 }
 
 export function DeptStoreRequests({ dept, deptLabel, suggestedItems = [], requestedBy = "Staff" }: Props) {
-  const [requests, setRequests] = useState<StockRequest[]>([]);
+  const [requests, setRequests] = useState<DeptRequest[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState<"All" | StockRequest["status"]>("All");
+  const [filter, setFilter] = useState<"All" | DeptRequest["status"]>("All");
   const [showNew, setShowNew] = useState(false);
   const [toast, setToast] = useState<ToastData | null>(null);
 
   // Form
+  const [requestMode, setRequestMode] = useState<"catalog" | "non_catalog">("catalog");
+  const [catalogItem, setCatalogItem] = useState<StoreItem | null>(null);
   const [item, setItem] = useState("");
+  const [justification, setJustification] = useState("");
   const [qty, setQty] = useState("");
   const [unit, setUnit] = useState("Pack");
-  const [urgency, setUrgency] = useState<StockRequest["urgency"]>("Routine");
+  const [urgency, setUrgency] = useState<DeptRequest["urgency"]>("Routine");
   const [notes, setNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    fetchStockRequests()
-      .then((all) => setRequests(all.filter((r) => r.dept === dept)))
+    fetchStoreRequisitions({ department: dept })
+      .then((all) => setRequests(all.map(mapReq)))
       .finally(() => setLoading(false));
   }, [dept]);
 
@@ -98,28 +122,51 @@ export function DeptStoreRequests({ dept, deptLabel, suggestedItems = [], reques
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!item || !qty) return;
+    const isCatalog = requestMode === "catalog";
+    if (isCatalog && !catalogItem) return;
+    if (!isCatalog && (!item.trim() || !justification.trim())) return;
+    if (!qty) return;
     setSubmitting(true);
-    const req: StockRequest = {
-      id: newReqId(requests),
-      item: item.trim(),
+    const reqId = newReqId(requests);
+    const itemName = isCatalog ? catalogItem!.name : item.trim();
+    const lineUnit = isCatalog ? catalogItem!.unit : unit;
+    const optimistic: DeptRequest = {
+      id: reqId,
+      item: itemName,
       qty: parseInt(qty) || 1,
-      unit,
+      unit: lineUnit,
       dept,
       requestedBy,
       urgency,
       status: "Pending",
       notes: notes.trim() || undefined,
       createdAt: new Date().toISOString(),
+      isNonCatalog: !isCatalog,
     };
-    // Optimistic
-    setRequests((prev) => [req, ...prev]);
-    setToast({ message: `Request ${req.id} submitted to Store.`, type: "success" });
+    setRequests((prev) => [optimistic, ...prev]);
+    setToast({ message: `Request ${reqId} submitted to Store.`, type: "success" });
     setShowNew(false);
-    setItem(""); setQty(""); setUnit("Pack"); setUrgency("Routine"); setNotes("");
+    setCatalogItem(null); setItem(""); setJustification(""); setQty(""); setUnit("Pack"); setUrgency("Routine"); setNotes(""); setRequestMode("catalog");
     setSubmitting(false);
-    // Persist
-    await insertStockRequest(req);
+    try {
+      await submitStoreRequisition({
+        id: reqId,
+        department: dept,
+        requestedBy,
+        urgency,
+        notes: notes.trim() || undefined,
+        lines: [{
+          itemName,
+          qty: parseInt(qty) || 1,
+          unit: lineUnit,
+          itemId: isCatalog ? catalogItem!.id : undefined,
+          lineType: isCatalog ? "catalog" : "non_catalog",
+          justification: isCatalog ? undefined : justification.trim(),
+        }],
+      });
+    } catch {
+      setToast({ message: "Failed to save request.", type: "error" });
+    }
   }
 
   const inputCls = "w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/20";
@@ -149,7 +196,7 @@ export function DeptStoreRequests({ dept, deptLabel, suggestedItems = [], reques
 
       {/* Info banner */}
       <div className="rounded-xl border border-sky-100 bg-sky-50 px-4 py-3 text-xs text-sky-800">
-        <strong>How it works:</strong> Submit a request below → Store reviews and approves → Store fulfils and delivers to {deptLabel}. Track status here in real time.
+        <strong>How it works:</strong> Pick an item from the store catalog when possible. For one-off or new items, use <strong>Not in catalog</strong> — Store will link, add to catalog, or send to procurement.
       </div>
 
       {/* Table */}
@@ -185,6 +232,9 @@ export function DeptStoreRequests({ dept, deptLabel, suggestedItems = [], reques
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <p className="font-semibold text-slate-900">{req.item}</p>
+                      {req.isNonCatalog && (
+                        <span className="mt-1 inline-block rounded-full bg-orange-50 px-2 py-0.5 text-[10px] font-semibold text-orange-700">Non-catalog</span>
+                      )}
                       <p className="font-mono text-[10px] text-slate-400">{req.id}</p>
                     </div>
                     <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${STATUS_STYLES[req.status] ?? "bg-slate-100 text-slate-500"}`}>
@@ -242,22 +292,50 @@ export function DeptStoreRequests({ dept, deptLabel, suggestedItems = [], reques
       {/* New request modal */}
       <Modal open={showNew} onClose={() => !submitting && setShowNew(false)} title="New Store Request">
         <form id="dept-req-form" onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Item <span className="text-red-500">*</span></label>
-            <input
-              required
-              list="item-suggestions"
-              value={item}
-              onChange={(e) => setItem(e.target.value)}
-              placeholder="What do you need?"
-              className={inputCls}
-            />
-            {suggestedItems.length > 0 && (
-              <datalist id="item-suggestions">
-                {suggestedItems.map((s) => <option key={s} value={s} />)}
-              </datalist>
-            )}
+          <div className="flex gap-2">
+            <Button type="button" size="sm" variant={requestMode === "catalog" ? "primary" : "secondary"} onClick={() => setRequestMode("catalog")}>
+              From catalog
+            </Button>
+            <Button type="button" size="sm" variant={requestMode === "non_catalog" ? "primary" : "secondary"} onClick={() => setRequestMode("non_catalog")}>
+              Not in catalog
+            </Button>
           </div>
+          {requestMode === "catalog" ? (
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Catalog item <span className="text-red-500">*</span></label>
+              <StoreCatalogPicker
+                value={catalogItem}
+                onChange={(picked) => {
+                  setCatalogItem(picked);
+                  if (picked) setUnit(picked.unit);
+                }}
+              />
+            </div>
+          ) : (
+            <>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Item description <span className="text-red-500">*</span></label>
+                <input
+                  required
+                  value={item}
+                  onChange={(e) => setItem(e.target.value)}
+                  placeholder="Describe the item you need"
+                  className={inputCls}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Why is this needed? <span className="text-red-500">*</span></label>
+                <textarea
+                  required
+                  rows={2}
+                  value={justification}
+                  onChange={(e) => setJustification(e.target.value)}
+                  placeholder="Clinical/operational justification for this one-off request"
+                  className={`${inputCls} resize-none`}
+                />
+              </div>
+            </>
+          )}
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Quantity <span className="text-red-500">*</span></label>
@@ -265,7 +343,7 @@ export function DeptStoreRequests({ dept, deptLabel, suggestedItems = [], reques
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Unit</label>
-              <select value={unit} onChange={(e) => setUnit(e.target.value)} className={inputCls}>
+              <select value={unit} onChange={(e) => setUnit(e.target.value)} className={inputCls} disabled={requestMode === "catalog" && !!catalogItem}>
                 {UNITS.map((u) => <option key={u}>{u}</option>)}
               </select>
             </div>

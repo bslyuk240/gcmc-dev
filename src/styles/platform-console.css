@@ -1,0 +1,15 @@
+/* Platform admin console: square buttons + slate primary palette */
+[data-platform-console] {
+  --radius-button: 0;
+  --accent: #0f172a;
+  --accent-soft: #f1f5f9;
+  --accent-foreground: #334155;
+}
+
+[data-platform-console] button:not(.rounded-full):not([class*="rounded-full"]) {
+  border-radius: 0;
+}
+
+[data-platform-console] a.platform-btn {
+  border-radius: 0;
+}

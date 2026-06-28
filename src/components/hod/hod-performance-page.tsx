@@ -8,16 +8,10 @@ import { Toast, type ToastData } from "@/components/ui/toast";
 import { useHMSSession } from "@/modules/rbac/hooks";
 import { useHRStore } from "@/lib/hooks/use-hr-store";
 import { STAFF_DEPT_TO_DB } from "@/lib/data/hr-store";
-import {
-  fetchReviewsByDept,
-  upsertPerformanceReview,
-  type KpiScore,
-  type PerformanceReview,
-} from "@/lib/supabase/db";
+import { canManagePerformanceForDepartment } from "@/lib/performance/access";
+import type { KpiScore, PerformanceReview } from "@/lib/performance/types";
 import { cn } from "@/lib/utils/cn";
 import type { DBDepartmentKey } from "@/lib/constants/navigation";
-
-const ALLOWED_ROLES = ["hod", "hr_manager", "hr_staff", "admin"];
 
 const DEFAULT_KPI_CATEGORIES = [
   "Clinical / Technical Knowledge",
@@ -27,23 +21,7 @@ const DEFAULT_KPI_CATEGORIES = [
   "Initiative & Problem Solving",
 ];
 
-function getQuarters(): { value: string; label: string; periodLabel: string }[] {
-  const now = new Date();
-  const year = now.getFullYear();
-  const q = Math.ceil((now.getMonth() + 1) / 3);
-  const months = ["January – March", "April – June", "July – September", "October – December"];
-  const result = [];
-  for (let i = 0; i < 4; i++) {
-    let qn = q - i; let yr = year;
-    if (qn <= 0) { qn += 4; yr--; }
-    result.push({
-      value: `Q${qn}-${yr}`,
-      label: `Q${qn} ${yr} (${months[qn - 1]})`,
-      periodLabel: `${months[qn - 1]} ${yr}`,
-    });
-  }
-  return result;
-}
+import { getQuarters } from "@/lib/performance/quarters";
 
 function StarRating({ value, onChange, readonly }: { value: number; onChange?: (v: number) => void; readonly?: boolean }) {
   return (
@@ -107,7 +85,9 @@ export function HodPerformancePage({ department }: { department: DBDepartmentKey
   // staff.department is a display label e.g. "Pharmacy" — map to DB key to compare
   const deptStaff = staff.filter((s) => {
     const dbKey = STAFF_DEPT_TO_DB[s.department as keyof typeof STAFF_DEPT_TO_DB];
-    return dbKey === department;
+    if (dbKey !== department) return false;
+    if (session?.role === "hod" && s.id === session.staff_id) return false;
+    return true;
   });
 
   const overallRating = kpiScores.every((k) => k.rating === 0)
@@ -116,9 +96,17 @@ export function HodPerformancePage({ department }: { department: DBDepartmentKey
 
   const load = useCallback(async () => {
     setLoading(true);
-    const data = await fetchReviewsByDept(department);
-    setReviews(data);
-    setLoading(false);
+    try {
+      const res = await fetch(`/api/performance/reviews?department=${encodeURIComponent(department)}`);
+      if (res.ok) {
+        const data = await res.json();
+        setReviews(data.reviews ?? []);
+      } else {
+        setReviews([]);
+      }
+    } finally {
+      setLoading(false);
+    }
   }, [department]);
 
   useEffect(() => { void load(); }, [load]);
@@ -149,36 +137,43 @@ export function HodPerformancePage({ department }: { department: DBDepartmentKey
     const quarter = quarters.find((q) => q.value === selPeriod);
     setSaving(true);
     try {
-      await upsertPerformanceReview({
-        id: editingId,
-        staffId: selStaffId,
-        staffName: selectedStaff.name,
-        department,
-        reviewerId: session.staff_id,
-        reviewerName: session.full_name,
-        period: selPeriod,
-        periodLabel: quarter?.periodLabel ?? selPeriod,
-        kpiScores,
-        overallRating,
-        strengths,
-        improvements,
-        comments,
-        status: submitNow ? "submitted" : "draft",
-        submittedAt: submitNow ? new Date().toISOString() : null,
-        acknowledgedAt: null,
+      const res = await fetch("/api/performance/reviews", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: editingId,
+          staffId: selStaffId,
+          staffName: selectedStaff.name,
+          department,
+          period: selPeriod,
+          periodLabel: quarter?.periodLabel ?? selPeriod,
+          kpiScores,
+          overallRating,
+          strengths,
+          improvements,
+          comments,
+          status: submitNow ? "submitted" : "draft",
+        }),
       });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        throw new Error(data?.error ?? "Failed to save review.");
+      }
       setToast({ type: "success", message: submitNow ? "Review submitted." : "Draft saved." });
       resetForm();
       setView("list");
       await load();
-    } catch {
-      setToast({ type: "error", message: "Failed to save review." });
+    } catch (error) {
+      setToast({
+        type: "error",
+        message: error instanceof Error ? error.message : "Failed to save review.",
+      });
     } finally {
       setSaving(false);
     }
   }
 
-  if (!session || !ALLOWED_ROLES.includes(session.role)) {
+  if (!session || !canManagePerformanceForDepartment(session, department)) {
     return (
       <div className="flex min-h-[60vh] items-center justify-center">
         <div className="text-center">

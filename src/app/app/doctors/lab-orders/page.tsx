@@ -64,6 +64,7 @@ export default function DoctorLabOrdersPage() {
   const [labLines, setLabLines] = useState<LabLine[]>([{ ...BLANK_LAB }]);
   const [clinicalNotes, setClinicalNotes] = useState("");
   const [selectedPatientKey, setSelectedPatientKey] = useState("");
+  const [ordering, setOrdering] = useState(false);
 
   // Unified patient options
   const activeConsults = consultations.filter((c) => c.status === "In Progress" || c.status === "Awaiting Results");
@@ -119,41 +120,62 @@ export default function DoctorLabOrdersPage() {
     setLabLines((prev) => prev.map((l, i) => (i === idx ? { ...l, [field]: value } : l)));
   }
 
-  function handleOrder() {
+  async function handleOrder() {
     const filled = labLines.filter((l) => l.testCode);
     if (!patient) { setToast({ message: "Enter patient name.", type: "error" }); return; }
     if (!filled.length) { setToast({ message: "Select at least one test.", type: "error" }); return; }
+    if (ordering) return;
 
     const now = new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+    const orderedAt = `${now} · ${new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}`;
 
-    filled.forEach((line) => {
-      const cat = catalog.find((c) => c.code === line.testCode);
-      if (!cat) return;
-      addLabTest({
-        id: `LAB-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-        patientName: patient,
-        patientId: patientId || `PT-${Date.now().toString().slice(-4)}`,
-        testName: cat.name,
-        testCode: cat.code,
-        category: cat.category,
-        orderedBy: orderingDoc,
-        orderedAt: `${now} · ${new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}`,
-        priority: line.priority,
-        status: "Pending",
-        sampleType: cat.sampleType,
-        price: cat.price,
-        billStatus: "Pending",
-        resultNotes: clinicalNotes || undefined,
+    setOrdering(true);
+    let created = 0;
+
+    try {
+      for (const line of filled) {
+        const cat = catalog.find((c) => c.code === line.testCode);
+        if (!cat) continue;
+        await addLabTest({
+          id: `LAB-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          patientName: patient,
+          patientId: patientId || `PT-${Date.now().toString().slice(-4)}`,
+          testName: cat.name,
+          testCode: cat.code,
+          category: cat.category,
+          orderedBy: orderingDoc,
+          orderedAt,
+          priority: line.priority,
+          status: "Pending",
+          sampleType: cat.sampleType,
+          price: cat.price,
+          billStatus: "Pending",
+          resultNotes: clinicalNotes || undefined,
+        });
+        created += 1;
+      }
+
+      if (created === 0) {
+        setToast({ message: "No valid tests selected.", type: "error" });
+        return;
+      }
+
+      setToast({
+        message: `${created} test(s) ordered for ${patient} — sent to Lab.`,
+        type: "success",
       });
-    });
-
-    setToast({
-      message: `${filled.length} test(s) ordered for ${patient} — sent to Lab.`,
-      type: "success",
-    });
-    setShowOrder(false);
-    setPatient(""); setPatientId(""); setClinicalNotes("");
-    setLabLines([{ ...BLANK_LAB }]); setOrderingDoc(sessionDoctorName);
+      setShowOrder(false);
+      setPatient("");
+      setPatientId("");
+      setClinicalNotes("");
+      setLabLines([{ ...BLANK_LAB }]);
+      setOrderingDoc(sessionDoctorName);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Order failed";
+      setToast({ message: `Lab order failed: ${message}`, type: "error" });
+    } finally {
+      setOrdering(false);
+    }
   }
 
   const inputCls = "w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-200";
@@ -401,8 +423,8 @@ export default function DoctorLabOrdersPage() {
         </div>
         <ModalFooter>
           <Button variant="ghost" size="md" onClick={() => setShowOrder(false)}>Cancel</Button>
-          <Button size="md" onClick={handleOrder}>
-            Send to Lab
+          <Button size="md" disabled={ordering} onClick={handleOrder}>
+            {ordering ? "Sending…" : "Send to Lab"}
           </Button>
         </ModalFooter>
       </Modal>

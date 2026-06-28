@@ -1,0 +1,79 @@
+/* Hospital admin portal — dark sidebar + light workspace */
+[data-department="admin"] {
+  --accent: #6366f1;
+  --accent-soft: #eef2ff;
+  --accent-foreground: #4338ca;
+  --radius-button: 0;
+}
+
+[data-department="admin"] .admin-sidebar {
+  border-color: #1e293b;
+  background: #0f172a;
+}
+
+[data-department="admin"] .admin-sidebar-inner {
+  background: #0f172a;
+}
+
+[data-department="admin"] .admin-sidebar-brand {
+  background: #0f172a;
+  border-bottom: 1px solid #1e293b;
+}
+
+[data-department="admin"] .admin-sidebar-brand h1 {
+  color: #f8fafc;
+}
+
+[data-department="admin"] .admin-sidebar-brand p {
+  color: #64748b;
+}
+
+[data-department="admin"] .admin-sidebar-nav {
+  background: #0f172a;
+}
+
+[data-department="admin"] .admin-sidebar-nav .admin-nav-link {
+  border-radius: 0;
+  color: #cbd5e1;
+}
+
+[data-department="admin"] .admin-sidebar-nav .admin-nav-link:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: #f8fafc;
+}
+
+[data-department="admin"] .admin-sidebar-nav .admin-nav-link[data-active="true"] {
+  background: rgba(99, 102, 241, 0.22);
+  color: #ffffff;
+  font-weight: 600;
+}
+
+[data-department="admin"] .admin-sidebar-nav .admin-nav-link[data-active="true"] svg,
+[data-department="admin"] .admin-sidebar-nav .admin-nav-link[data-active="true"] .admin-nav-icon {
+  color: #ffffff;
+}
+
+[data-department="admin"] .admin-sidebar-footer {
+  border-color: #1e293b;
+  background: #0f172a;
+}
+
+[data-department="admin"] .admin-sidebar-footer button,
+[data-department="admin"] .admin-sidebar-footer a {
+  border-radius: 0;
+  border-color: #334155;
+  background: transparent;
+  color: #cbd5e1;
+}
+
+[data-department="admin"] .admin-sidebar-footer button:hover,
+[data-department="admin"] .admin-sidebar-footer a:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: #f8fafc;
+}
+
+[data-department="admin"] .admin-sidebar-footer .admin-logout:hover {
+  border-color: #7f1d1d;
+  background: rgba(239, 68, 68, 0.12);
+  color: #fca5a5;
+}

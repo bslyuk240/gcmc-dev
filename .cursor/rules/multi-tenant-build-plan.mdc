@@ -1,0 +1,213 @@
+---
+description: Multi-tenant SaaS build order and security checklist for hospital-mgt-sys. Follow this when implementing tenant architecture, auth, RLS, or pre-ship work.
+alwaysApply: true
+---
+
+# Multi-Tenant Build Plan + Security Checklist
+
+**Context:** GCMC has NOT shipped yet. Build multi-tenant from day one; GCMC = tenant #1.
+**Stack:** Next.js 16, Supabase (Auth + Postgres + Storage), Netlify.
+**Evidence rule (Amospikins v2):** Tick items only with proof — tests, scan results, or review notes. "It works" is not evidence.
+
+---
+
+## Phase 0 — Decisions (before tenant code)
+
+**Build**
+- Define pricing tiers; tenant resolution (subdomain preferred over path)
+- Super-admin vs hospital admin — separate roles and routes
+- Document real schema (migrations + live `db.ts` tables)
+
+**Security**
+- Classify data (patients, billing, HR); note NDPR obligations
+- Threat model: cross-tenant leak, privilege escalation, service-role abuse, session hijack, IDOR
+- Secrets inventory: `SESSION_SECRET`, `CSRF_SECRET`, `SUPABASE_SERVICE_ROLE_KEY` — never client/git
+- Define tenant boundary (what must never cross hospitals)
+
+**Amospikins additions**
+- [ ] Can explain every AI-generated block line-by-line before accepting it
+- [ ] No real secrets, customer records, or proprietary code pasted into AI prompts
+
+---
+
+## Phase 1 — Tenant foundation
+
+**Build**
+- `hospitals` table; tenant settings (name, logo, address, receipt header)
+- `hospital_id UUID NOT NULL` on every tenant-owned table
+- Tenant-scoped uniques: `(hospital_id, hospital_number)`, `(hospital_id, email)`
+- Seed GCMC as tenant #1; `platform_admins` separate from `staff_profiles`
+
+**Security**
+- UUID for `hospital_id`; slugs for routing only
+- FK + `ON DELETE RESTRICT`; index `(hospital_id, …)` columns
+- RLS enabled on all new tables from day one; default deny
+- Never accept `hospital_id` from client body — set server-side
+- Audit platform actions; zero NULL `hospital_id` before ship
+
+**Verify:** Two test hospitals; no orphan rows.
+
+---
+
+## Phase 2 — Auth, session, middleware
+
+**Build**
+- Resolve tenant at edge → attach `hospital_id` to request
+- `staff_profiles.hospital_id`; extend `HMSSession` with `hospital_id`
+- Login: staff hospital must match resolved tenant
+- Middleware blocks session/tenant mismatch; separate `/platform/*` auth
+
+**Security**
+- Revalidate `hospital_id` against DB on sensitive actions — don't trust cookies alone
+- Cookies: `httpOnly`, `Secure` (prod), `SameSite=lax|strict`; signed session payload
+- **Never store JWT/session tokens in localStorage** — httpOnly cookies only
+- Refresh token rotation where applicable; sensible expiry
+- Generic login errors; rate limit login (IP + email)
+- Force password change preserved; logout clears all portal cookies
+
+**Amospikins additions**
+- [ ] Auth AND authorization tested separately (wrong role, wrong tenant, changed ID)
+
+**Verify:** Cookie tampering rejected; cross-subdomain login blocked.
+
+---
+
+## Phase 3 — RLS and data access
+
+**Build**
+- `auth_hospital_id()` Postgres helper
+- Tenant-aware `auth_department()` / `has_permission()`
+- Rewrite all RLS: `hospital_id = auth_hospital_id()` + dept rules
+- Remove/tighten `USING (true)` policies
+- Audit every `createAdminClient()` call — explicit `hospital_id` filter
+- Refactor `db.ts`: every query tenant-scoped
+
+**Security**
+- Defense in depth: RLS backstop even if app forgets filter
+- INSERT policies: `WITH CHECK (hospital_id = auth_hospital_id())`
+- Realtime channels and storage paths prefixed with `hospital_id`
+- **Mass assignment:** whitelist updatable fields per endpoint; reject `role`, `hospital_id`, `is_admin`, balances from request body
+- **SQL injection:** parameterized Supabase queries only — no raw SQL with user input
+- Service role bypass documented per call site
+
+**Verify (mandatory):** Hospital A cannot read/update/delete Hospital B records by UUID; anon key + stolen UUID blocked.
+
+---
+
+## Phase 4 — App layer, branding, files
+
+**Build**
+- Replace hardcoded GCMC branding; settings persist to DB
+- Tenant-scoped storage; search/reports/exports filtered
+
+**Security**
+- File upload: MIME + extension + size; no execution from upload paths; never trust filename
+- Signed short-lived download URLs; path includes caller's `hospital_id`
+- **Output encoding:** escape user/tenant data in HTML, attributes, JS, and print templates (XSS)
+- **Input validation:** type, length, format, allowed values on all forms, APIs, route params, webhooks
+- **SSRF:** if fetching URLs from input, allow-list destinations; block internal/metadata IPs
+- Export queries tenant-scoped; audit exports
+
+**Verify:** Cross-tenant file access fails; XSS payloads escaped.
+
+---
+
+## Phase 5 — Super-admin and onboarding
+
+**Build**
+- Platform admin: create/suspend hospitals, provision first admin
+- GCMC go-live as tenant #1
+
+**Security**
+- Super-admin: MFA (TOTP); server-side route guards
+- Impersonation (if any): time-limited, audited, banner, read-only default
+- Suspend = immediate login block + session invalidation
+- Least-privilege default permissions for new hospitals
+- **Business rules:** enforce real-world rules (who can see financial data, change statuses, approve payroll)
+
+**Verify:** Non-platform user → 403 on `/platform/*`; suspended tenant locked out.
+
+---
+
+## Phase 6 — Billing and ops
+
+**Build**
+- Manual invoicing for GCMC v1; automate later (Paystack etc.)
+
+**Security**
+- **Never trust client-sent amounts, prices, or paid status** — compute/verify server-side
+- Webhook signature verification (Paystack/Flutterwave); idempotency keys
+- No card data in DB; billing drives `hospitals.status`
+
+---
+
+## Pre-ship gate (all must pass)
+
+### Tenant isolation
+- Two-tenant abuse test; service-role paths reviewed file-by-file
+
+### Auth & session
+- Secure cookies prod; CSRF on state-changing routes; password policy
+
+### Application
+- All server actions use session + tenant guard
+- Safe user-facing errors; no stack traces/tokens leaked
+- Security headers on all routes (`securityHeaders` in middleware)
+
+### Infrastructure
+- Supabase advisors clean; RLS on all public tables
+- Service role server-only; backups tested; prod ≠ staging
+- **Secret scan:** no keys in repo or commit history — rotate if found
+- **Dependencies:** lockfile present; `npm audit`; no unvetted/unpinned packages
+
+### Compliance
+- Privacy/DPA terms; incident response doc; GCMC export/retention process
+
+### Amospikins verify layer
+- [ ] Abuse-case tests written (invalid input, wrong role, changed ID, duplicate request, large payload)
+- [ ] Static analysis + secret/dependency scan passed before merge
+- [ ] Human review completed — architecture, permissions, secrets, DB access
+
+---
+
+## Ongoing
+
+- Supabase security advisor after every migration
+- Monthly dependency audit; patch critical CVEs within 48h
+- Review `audit_log` weekly
+- **Logging:** log failed logins, permission denials, admin actions, payment events — never passwords/tokens/card data
+- **Rate limiting:** login, password reset, OTP, search, uploads, public APIs
+- **CORS:** strict origin list (no wildcard); **HSTS** in prod
+- **Crypto:** vetted libraries only; never `Math.random` for security tokens
+- New feature rule: touches tenant data → `hospital_id` + RLS + abuse test
+
+---
+
+## AI-specific (Amospikins)
+
+- If adding LLM features: separate trusted instructions from user content; validate model output before acting
+- Re-review security after **every** AI edit round — "make it secure" loops do not guarantee safety
+
+---
+
+## Red flags — stop and review
+
+- Frontend-trusted user IDs without ownership check
+- Money/status from client trusted as-is
+- Webhook without signature verification
+- Tokens in localStorage
+- Schema with no RLS/tenant scoping
+- No unauthorized-access or malicious-input tests
+- Secrets in code, commits, screenshots, or logs
+- Re-prompted AI to "secure it" without re-review
+
+---
+
+## Build workflow per feature
+
+1. Prompt for secure code (validation, auth, authz, errors, tests, rate limits)
+2. Manual review — understand logic and dangerous paths
+3. Automated scan (lint, tests, secret scan, dependency scan)
+4. Abuse-case tests
+5. Merge with ownership
+6. Monitor in production; rotate secrets on schedule

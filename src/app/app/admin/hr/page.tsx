@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import Link from "next/link";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -9,6 +10,9 @@ import { Toast, type ToastData } from "@/components/ui/toast";
 import { useAdminStore } from "@/lib/hooks/use-admin-store";
 import { DB_TO_STAFF_DEPT } from "@/lib/data/hr-store";
 import { updateLeaveStatus } from "@/lib/data/admin-store";
+import { getCurrentQuarter } from "@/lib/performance/quarters";
+import type { PerformanceReview } from "@/lib/performance/types";
+import { INTERNAL_PREFIX } from "@/lib/constants/navigation";
 
 const DEPT_STAFF: Record<string, { count: number; active: number }> = {
   Doctors: { count: 18, active: 16 }, Nurses: { count: 34, active: 31 },
@@ -29,8 +33,7 @@ const LEAVE_TYPE_STYLES: Record<string, string> = {
   Emergency: "bg-red-50 text-red-700",
 };
 
-const UPCOMING = [
-  { event: "Quarterly performance reviews due", date: "Mar 31, 2026", tag: "Review" },
+const UPCOMING_STATIC = [
   { event: "Contract renewal — Nurse Patricia", date: "Apr 15, 2026", tag: "Contract" },
   { event: "New staff orientation — 2 hires", date: "Mar 17, 2026", tag: "Onboarding" },
   { event: "Payroll processing deadline", date: "Mar 25, 2026", tag: "Payroll" },
@@ -44,6 +47,47 @@ export default function AdminHRMonitorPage() {
   const { hrLeaveRequests, metrics } = useAdminStore();
   const [leaveAction, setLeaveAction] = useState<{ id: string; action: "Approved" | "Rejected" } | null>(null);
   const [toast, setToast] = useState<ToastData | null>(null);
+  const [performanceReviews, setPerformanceReviews] = useState<PerformanceReview[]>([]);
+  const [performanceLoading, setPerformanceLoading] = useState(true);
+
+  const currentQuarter = getCurrentQuarter();
+
+  const loadPerformance = useCallback(async () => {
+    setPerformanceLoading(true);
+    try {
+      const res = await fetch("/api/performance/reviews");
+      if (res.ok) {
+        const data = await res.json();
+        setPerformanceReviews(data.reviews ?? []);
+      }
+    } finally {
+      setPerformanceLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { void loadPerformance(); }, [loadPerformance]);
+
+  const performanceStats = useMemo(() => {
+    const current = performanceReviews.filter((r) => r.period === currentQuarter.value);
+    return {
+      drafts: performanceReviews.filter((r) => r.status === "draft").length,
+      submitted: performanceReviews.filter((r) => r.status === "submitted").length,
+      acknowledged: performanceReviews.filter((r) => r.status === "acknowledged").length,
+      currentQuarterIncomplete: current.filter((r) => r.status !== "acknowledged").length,
+    };
+  }, [performanceReviews, currentQuarter.value]);
+
+  const upcomingEvents = useMemo(() => {
+    const performanceEvent = {
+      event: performanceStats.currentQuarterIncomplete > 0
+        ? `${performanceStats.currentQuarterIncomplete} performance review${performanceStats.currentQuarterIncomplete !== 1 ? "s" : ""} in progress (${currentQuarter.periodLabel})`
+        : `Quarterly performance reviews complete (${currentQuarter.periodLabel})`,
+      date: currentQuarter.endDate.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }),
+      tag: "Review" as const,
+      href: `${INTERNAL_PREFIX}/hr/performance`,
+    };
+    return [performanceEvent, ...UPCOMING_STATIC.map((item) => ({ ...item, href: undefined as string | undefined }))];
+  }, [performanceStats.currentQuarterIncomplete, currentQuarter]);
 
   function handleLeave() {
     if (!leaveAction) return;
@@ -62,12 +106,13 @@ export default function AdminHRMonitorPage() {
         <PageHeader title="HR Monitor" description="Staffing oversight — staff count by department, leave management, onboarding, and workforce compliance." />
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
         {[
           { label: "Total Staff", value: totalStaff, color: "text-slate-900" },
           { label: "Active Today", value: activeStaff, color: "text-emerald-700" },
           { label: "On Leave", value: metrics.staffOnLeave, color: metrics.staffOnLeave > 5 ? "text-amber-600" : "text-slate-500" },
           { label: "Leave Requests Pending", value: metrics.pendingLeave, color: metrics.pendingLeave > 0 ? "text-violet-700" : "text-slate-500" },
+          { label: "Reviews Awaiting Ack", value: performanceLoading ? "…" : performanceStats.submitted, color: performanceStats.submitted > 0 ? "text-amber-600" : "text-slate-500" },
         ].map((s) => (
           <Card key={s.label} className="flex items-center gap-3 px-4 py-3">
             <p className={`shrink-0 text-2xl font-bold ${s.color}`}>{s.value}</p>
@@ -163,6 +208,43 @@ export default function AdminHRMonitorPage() {
             </div>
           </Card>
 
+          <Card className="overflow-hidden p-0">
+            <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+              <h3 className="font-bold text-slate-900">Performance Reviews</h3>
+              <Link href={`${INTERNAL_PREFIX}/hr/performance`} className="text-xs font-semibold text-violet-600 hover:underline">
+                View all →
+              </Link>
+            </div>
+            {performanceLoading ? (
+              <div className="px-5 py-8 text-center text-sm text-slate-400">Loading reviews...</div>
+            ) : performanceReviews.length === 0 ? (
+              <div className="px-5 py-8 text-center text-sm text-slate-400">No performance reviews recorded yet.</div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-slate-100 bg-slate-50">
+                      {["Staff", "Department", "Period", "Status", "Rating"].map((h) => (
+                        <th key={h} className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {performanceReviews.slice(0, 8).map((r) => (
+                      <tr key={r.id} className="hover:bg-slate-50">
+                        <td className="px-4 py-3 font-semibold text-slate-900">{r.staffName}</td>
+                        <td className="px-4 py-3 text-xs text-slate-500">{departmentLabel(r.department)}</td>
+                        <td className="px-4 py-3 text-xs text-slate-500">{r.periodLabel}</td>
+                        <td className="px-4 py-3 capitalize text-xs font-semibold text-slate-600">{r.status}</td>
+                        <td className="px-4 py-3 font-bold text-amber-600">{r.overallRating ?? "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </Card>
+
           {/* Staff by department */}
           <Card className="overflow-hidden p-0">
             <div className="border-b border-slate-100 px-5 py-4">
@@ -212,9 +294,13 @@ export default function AdminHRMonitorPage() {
           <Card className="p-5">
             <h3 className="font-bold text-slate-900 mb-3">Upcoming HR Events</h3>
             <div className="space-y-2">
-              {UPCOMING.map((u) => (
+              {upcomingEvents.map((u) => (
                 <div key={u.event} className="rounded-lg bg-slate-50 px-3 py-2 text-xs">
-                  <p className="font-semibold text-slate-800">{u.event}</p>
+                  {"href" in u && u.href ? (
+                    <Link href={u.href} className="font-semibold text-slate-800 hover:text-violet-700">{u.event}</Link>
+                  ) : (
+                    <p className="font-semibold text-slate-800">{u.event}</p>
+                  )}
                   <div className="flex items-center justify-between mt-0.5">
                     <span className="text-slate-400">{u.date}</span>
                     <span className="rounded-full bg-slate-200 text-slate-600 px-2 py-0.5 text-[10px] font-bold">{u.tag}</span>

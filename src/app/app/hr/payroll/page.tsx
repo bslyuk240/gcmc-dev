@@ -292,8 +292,8 @@ export default function HRPayrollPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Payroll Management"
-        description="Create individual staff payslips by department, then generate and submit department payroll batches to Accounts."
+        title="Payroll"
+        description="Process salaries, allowances, deductions, and payroll batches."
         action={<Button onClick={() => setShowCreate(true)}>Create Payslip</Button>}
       />
 

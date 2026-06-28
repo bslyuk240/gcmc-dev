@@ -50,7 +50,18 @@ export default function HRRolesPermissionsPage() {
 
   return (
     <div className="space-y-4 sm:space-y-6">
-      <PageHeader title="Roles & Permissions" description="Manage role-based access controls for all staff." />
+      <PageHeader
+        title="Roles & Permissions"
+        description="Hospital roles are managed in Administration. Use Staff Directory to assign roles to individuals."
+      />
+
+      <Card className="border-indigo-100 bg-indigo-50/50 p-4 text-sm text-indigo-900">
+        Role-based access is configured under{" "}
+        <a href="/app/admin/settings" className="font-semibold underline">
+          Admin Settings
+        </a>
+        . This page shows a read-only overview; edits here are not persisted to the database.
+      </Card>
 
       <Card className="overflow-hidden p-0">
         <div className="border-b border-slate-100 px-4 py-3 sm:px-5 sm:py-4">

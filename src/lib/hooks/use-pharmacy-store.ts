@@ -30,8 +30,9 @@ export function usePharmacyStore() {
     const channel = supabase
       ?.channel("pharmacy-realtime")
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "prescriptions" }, () => syncPharmacyFromSupabase(true))
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "prescriptions" }, () => syncPharmacyFromSupabase(true))
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "pharmacy_bills" }, () => syncPharmacyFromSupabase(true))
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "nurse_med_requests" }, () => syncPharmacyFromSupabase(true))
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "nurse_med_requests" }, () => syncPharmacyFromSupabase(true))
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "pharmacy_restock_requests" }, () => syncPharmacyFromSupabase(true))
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "pharmacy_restock_requests" }, () => syncPharmacyFromSupabase(true))
       .on("postgres_changes", { event: "DELETE", schema: "public", table: "pharmacy_restock_requests" }, () => syncPharmacyFromSupabase(true))

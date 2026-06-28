@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useHMSSession } from "@/modules/rbac/hooks";
-import { useHRStore } from "@/lib/hooks/use-hr-store";
+import { useStaffPortalStore } from "@/lib/hooks/use-staff-portal-store";
 
 function money(value: number) {
   return `NGN ${value.toLocaleString("en-GB", { minimumFractionDigits: 2 })}`;
@@ -24,20 +24,24 @@ function formatDateTime(value?: string) {
 
 export default function PayslipsPage() {
   const session = useHMSSession();
-  const { generatedPayslips } = useHRStore();
+  const { payslips, hydrated } = useStaffPortalStore();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const currentYear = new Date().getFullYear();
 
   const myPayslips = useMemo(
     () =>
-      generatedPayslips
+      payslips
         .filter((payslip) => payslip.staffId === session?.staff_id)
         .sort((left, right) => right.monthKey.localeCompare(left.monthKey)),
-    [generatedPayslips, session?.staff_id],
+    [payslips, session?.staff_id],
   );
 
   const selected = myPayslips.find((payslip) => payslip.id === selectedId) ?? null;
   const ytdPayslips = myPayslips.filter((payslip) => payslip.paymentStatus === "Paid" && payslip.monthKey.startsWith(String(currentYear)));
+
+  if (!hydrated) {
+    return <p className="py-12 text-center text-sm text-slate-400">Loading payslips…</p>;
+  }
 
   if (selected) {
     return (
@@ -90,22 +94,21 @@ export default function PayslipsPage() {
                   <span className="font-semibold text-red-600">{money(item.amount)}</span>
                 </div>
               ))}
-              <div className="flex justify-between px-4 py-2 font-bold text-red-700">
+              <div className="flex justify-between px-4 py-2 font-bold text-slate-900">
                 <span>Total Deductions</span>
                 <span>{money(selected.totalDeductions)}</span>
               </div>
             </div>
           </div>
 
-          <div className="rounded-xl bg-indigo-50 px-4 py-3 flex justify-between items-center">
-            <p className="font-bold text-indigo-800">Net Pay</p>
-            <p className="text-xl font-black text-indigo-700">{money(selected.netPay)}</p>
+          <div className="flex items-center justify-between rounded-xl bg-emerald-50 px-4 py-3">
+            <span className="font-bold text-emerald-800">Net Pay</span>
+            <span className="text-xl font-black text-emerald-700">{money(selected.netPay)}</span>
           </div>
 
-          <p className={`text-center text-xs font-semibold ${selected.paymentStatus === "Paid" ? "text-emerald-600" : "text-amber-600"}`}>
-            {selected.paymentStatus === "Paid"
-              ? `Paid${selected.paidAt ? ` on ${formatDateTime(selected.paidAt)}` : ""}`
-              : `${selected.workflowStatus} - payment pending`}
+          <p className="text-xs text-slate-400">
+            Status: {selected.paymentStatus}
+            {selected.paidAt ? ` · Paid ${formatDateTime(selected.paidAt)}` : ""}
           </p>
         </div>
       </div>
@@ -116,53 +119,46 @@ export default function PayslipsPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-black text-slate-900">Payslips</h1>
-        <p className="mt-1 text-sm text-slate-500">View salary slips generated for your staff portal account.</p>
+        <p className="mt-1 text-sm text-slate-500">Your salary slips from HR payroll.</p>
       </div>
 
-      <div className="rounded-xl border border-slate-200 bg-white p-4">
-        <p className="text-xs font-bold uppercase tracking-wider text-slate-400">Year to Date ({currentYear})</p>
-        <div className="mt-2 grid grid-cols-1 gap-3 text-sm sm:grid-cols-3">
-          <div className="rounded-lg bg-slate-50 px-3 py-2">
-            <p className="text-slate-500">Gross Paid</p>
-            <p className="font-bold text-slate-900">{money(ytdPayslips.reduce((sum, payslip) => sum + payslip.grossPay, 0))}</p>
-          </div>
-          <div className="rounded-lg bg-slate-50 px-3 py-2">
-            <p className="text-slate-500">Total Deductions</p>
-            <p className="font-bold text-red-600">{money(ytdPayslips.reduce((sum, payslip) => sum + payslip.totalDeductions, 0))}</p>
-          </div>
-          <div className="rounded-lg bg-slate-50 px-3 py-2">
-            <p className="text-slate-500">Net Received</p>
-            <p className="font-bold text-emerald-700">{money(ytdPayslips.reduce((sum, payslip) => sum + payslip.netPay, 0))}</p>
-          </div>
+      <div className="grid gap-3 sm:grid-cols-3">
+        <div className="rounded-xl border border-slate-200 bg-white p-4">
+          <p className="text-xs font-bold uppercase text-slate-400">Available</p>
+          <p className="mt-1 text-2xl font-black text-slate-900">{myPayslips.length}</p>
+        </div>
+        <div className="rounded-xl border border-slate-200 bg-white p-4">
+          <p className="text-xs font-bold uppercase text-slate-400">Paid YTD</p>
+          <p className="mt-1 text-2xl font-black text-emerald-700">{ytdPayslips.length}</p>
+        </div>
+        <div className="rounded-xl border border-slate-200 bg-white p-4">
+          <p className="text-xs font-bold uppercase text-slate-400">Net YTD</p>
+          <p className="mt-1 text-lg font-black text-slate-900">
+            {money(ytdPayslips.reduce((sum, p) => sum + p.netPay, 0))}
+          </p>
         </div>
       </div>
 
-      <div className="space-y-2">
-        {myPayslips.map((payslip) => (
-          <button
-            key={payslip.id}
-            onClick={() => setSelectedId(payslip.id)}
-            className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-left hover:border-indigo-200 hover:bg-indigo-50 transition"
-          >
-            <div className="flex items-center justify-between">
+      {myPayslips.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-10 text-center text-sm text-slate-500">
+          No payslips published yet. They appear here after HR processes payroll.
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {myPayslips.map((payslip) => (
+            <button
+              key={payslip.id}
+              type="button"
+              onClick={() => setSelectedId(payslip.id)}
+              className="flex w-full items-center justify-between rounded-xl border border-slate-200 bg-white px-4 py-3 text-left hover:border-indigo-200 hover:bg-indigo-50/40"
+            >
               <div>
-                <p className="font-bold text-slate-900">{payslip.period}</p>
-                <p className="text-sm text-slate-500">{money(payslip.netPay)} net</p>
+                <p className="font-semibold text-slate-900">{payslip.period}</p>
+                <p className="text-xs text-slate-400">{payslip.paymentStatus}</p>
               </div>
-              <div className="text-right">
-                <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${payslip.paymentStatus === "Paid" ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>
-                  {payslip.paymentStatus === "Paid" ? "Paid" : payslip.workflowStatus}
-                </span>
-                <p className="mt-1 text-[10px] text-slate-400">{payslip.department}</p>
-              </div>
-            </div>
-          </button>
-        ))}
-      </div>
-
-      {myPayslips.length === 0 && (
-        <div className="rounded-xl border border-dashed border-slate-300 bg-white px-4 py-10 text-center text-sm text-slate-400">
-          HR has not generated any payslips for your account yet.
+              <p className="font-bold text-emerald-700">{money(payslip.netPay)}</p>
+            </button>
+          ))}
         </div>
       )}
     </div>

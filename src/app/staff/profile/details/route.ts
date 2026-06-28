@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { createTenantAdminClient } from "@/lib/supabase/admin-tenant";
 import { getStaffPortalSession } from "@/lib/auth/session";
 
 function isMissingColumnError(message: string, column: string) {
@@ -20,11 +20,12 @@ export async function POST(request: Request) {
       ? body.home_address.trim()
       : "";
 
-  const admin = createAdminClient();
-  if (!admin) {
+  const scoped = await createTenantAdminClient();
+  if (!scoped) {
     return NextResponse.json({ error: "configuration" }, { status: 500 });
   }
 
+  const { admin, hospitalId } = scoped;
   const payload: Record<string, string | null> = {
     phone: phone || null,
     home_address: homeAddress || null,
@@ -33,12 +34,14 @@ export async function POST(request: Request) {
   let { error } = await admin
     .from("staff_profiles")
     .update(payload)
+    .eq("hospital_id", hospitalId)
     .eq("id", session.staff_id);
 
   if (error && isMissingColumnError(error.message, "staff_profiles.home_address")) {
     ({ error } = await admin
       .from("staff_profiles")
       .update({ phone: payload.phone })
+      .eq("hospital_id", hospitalId)
       .eq("id", session.staff_id));
   }
 

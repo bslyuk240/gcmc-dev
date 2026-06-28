@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { createTenantAdminClient } from "@/lib/supabase/admin-tenant";
 import {
   getStaffPortalSession,
   syncStaffAvatarAcrossSessions,
@@ -45,13 +45,14 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "file_too_large" }, { status: 400 });
   }
 
-  const admin = createAdminClient();
-  if (!admin) {
+  const scoped = await createTenantAdminClient();
+  if (!scoped) {
     return NextResponse.json({ error: "configuration" }, { status: 500 });
   }
 
+  const { admin, hospitalId } = scoped;
   const ext = guessAvatarExtension(fileValue);
-  const path = `staff-avatars/${session.staff_id}/avatar.${ext}`;
+  const path = `${hospitalId}/staff-avatars/${session.staff_id}/avatar.${ext}`;
   const bytes = Buffer.from(await fileValue.arrayBuffer());
 
   const bucket = admin.storage.from(STAFF_AVATAR_BUCKET);
@@ -81,6 +82,7 @@ export async function POST(request: Request) {
   const { error: updateError } = await admin
     .from("staff_profiles")
     .update({ avatar_url: avatarUrl })
+    .eq("hospital_id", hospitalId)
     .eq("id", session.staff_id);
 
   if (updateError && !isMissingAvatarColumnError(updateError.message)) {

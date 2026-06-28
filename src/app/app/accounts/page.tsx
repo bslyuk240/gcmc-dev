@@ -185,7 +185,7 @@ export default function AccountsDashboardPage() {
                 <h3 className="font-bold text-slate-900">Doctor Consultation Fees</h3>
                 <p className="text-xs text-slate-400 mt-0.5">Fees billed by doctors after consultations</p>
               </div>
-              <Link href={`${INTERNAL_PREFIX}/accounts/consultation-fees`} className="text-sm font-semibold text-accent hover:underline">Manage →</Link>
+              <Link href={`${INTERNAL_PREFIX}/accounts/cash-desk`} className="text-sm font-semibold text-accent hover:underline">Cash desk →</Link>
             </div>
             <div className="divide-y divide-slate-100">
               {pendingCF.map((f) => (
@@ -218,7 +218,7 @@ export default function AccountsDashboardPage() {
                 <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-bold text-amber-700">
                   {metrics.labPendingCount} pending
                 </span>
-                <Link href={`${INTERNAL_PREFIX}/accounts/lab-billing`} className="text-sm font-semibold text-accent hover:underline">Open page →</Link>
+                <Link href={`${INTERNAL_PREFIX}/accounts/cash-desk?department=lab`} className="text-sm font-semibold text-accent hover:underline">Open cash desk →</Link>
               </div>
             </div>
             {/* Lab Bills summary row */}
@@ -289,17 +289,17 @@ export default function AccountsDashboardPage() {
             <h3 className="font-bold text-slate-900 mb-4">Quick Actions</h3>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               {[
-                { label: "Receive Payment", href: `${INTERNAL_PREFIX}/accounts/receive-payment` },
+                { label: "Cash Desk", href: `${INTERNAL_PREFIX}/accounts/cash-desk` },
+                { label: "Patient Accounts", href: `${INTERNAL_PREFIX}/accounts/patients` },
                 { label: "Invoices", href: `${INTERNAL_PREFIX}/accounts/invoices` },
-                { label: "Consultation Fees", href: `${INTERNAL_PREFIX}/accounts/consultation-fees` },
-                { label: "Lab Billing", href: `${INTERNAL_PREFIX}/accounts/lab-billing` },
-                { label: "Nursing Billing", href: `${INTERNAL_PREFIX}/accounts/nursing-billing` },
+                { label: "Inpatient Billing", href: `${INTERNAL_PREFIX}/accounts/inpatient-billing` },
+                { label: "Transaction Ledger", href: `${INTERNAL_PREFIX}/accounts/ledger` },
                 { label: "Supplier Payments", href: `${INTERNAL_PREFIX}/accounts/supplier-payments` },
                 { label: "Payroll", href: `${INTERNAL_PREFIX}/accounts/payroll` },
                 { label: "Staff Banking", href: `${INTERNAL_PREFIX}/accounts/staff-banking` },
                 { label: "Kiosk Revenue", href: `${INTERNAL_PREFIX}/accounts/kiosk` },
-                { label: "Expenses", href: `${INTERNAL_PREFIX}/accounts/expenses` },
-                { label: "Daily Reports", href: `${INTERNAL_PREFIX}/accounts/daily-reports` },
+                { label: "Financial Reports", href: `${INTERNAL_PREFIX}/accounts/reports` },
+                { label: "Day Close", href: `${INTERNAL_PREFIX}/accounts/day-close` },
               ].map((a) => (
                 <Link key={a.label} href={a.href}
                   className="flex items-center justify-center rounded-xl border border-slate-200 bg-white px-2 py-3.5 text-center text-xs font-semibold text-slate-700 hover:border-slate-300 hover:bg-slate-50 transition">
@@ -394,7 +394,7 @@ export default function AccountsDashboardPage() {
               </div>
             </div>
 
-            <Link href={`${INTERNAL_PREFIX}/accounts/daily-reports`}
+            <Link href={`${INTERNAL_PREFIX}/accounts/reports`}
               className="mt-4 flex items-center justify-center gap-1 rounded-lg bg-emerald-600 py-2 text-xs font-bold text-white hover:bg-emerald-700 transition">
               Full P&amp;L Report →
             </Link>

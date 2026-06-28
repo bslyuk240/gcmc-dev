@@ -90,13 +90,6 @@ const LAB_CATALOG: TestCatalogItem[] = [
   { id: "CAT-015", name: "Stool Microscopy & Culture", code: "STOOL-MC", category: "Microbiology", sampleType: "Stool", price: 60, turnaroundHours: 24, department: "Microbiology", description: "Ova, cysts and parasites; culture for enteric pathogens." },
 ];
 
-// ─── Seed Data ────────────────────────────────────────────────────────────────
-
-const SEED: LabStoreState = {
-  catalog: LAB_CATALOG,
-  tests: [],
-};
-
 // ─── Internal state ───────────────────────────────────────────────────────────
 
 const STORAGE_KEY = "hms_lab_store";
@@ -138,15 +131,57 @@ export function subscribeLabStore(fn: () => void) {
   return () => { listeners.delete(fn); };
 }
 
+// ─── Date helpers ─────────────────────────────────────────────────────────────
+
+function toTime(value?: string): number {
+  if (!value) return 0;
+  const iso = new Date(value);
+  if (!Number.isNaN(iso.getTime())) return iso.getTime();
+  const match = value.match(/(\d{1,2}:\d{2}).*?(\d{1,2}\s+\w{3}(?:\s+\d{4})?)/);
+  if (match) {
+    const parsed = new Date(`${match[2]} ${match[1]}`);
+    if (!Number.isNaN(parsed.getTime())) return parsed.getTime();
+  }
+  return 0;
+}
+
+function isRecent(value?: string, windowMs = 10 * 60 * 1000): boolean {
+  const time = toTime(value);
+  if (!time) return false;
+  return Date.now() - time <= windowMs;
+}
+
+function isToday(value?: string): boolean {
+  const text = value ?? "";
+  if (!text) return false;
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const todayLabel = new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+  const todayShort = new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+  return text.startsWith(todayIso) || text.includes(todayLabel) || text.includes(todayShort);
+}
+
+function formatDuration(ms: number): string {
+  const mins = Math.round(ms / 60_000);
+  if (mins < 1) return "<1m";
+  if (mins < 60) return `${mins}m`;
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  return m > 0 ? `${h}h ${m}m` : `${h}h`;
+}
+
+function testTimestamp(test: LabTest): string | undefined {
+  return test.completedAt ?? test.processingStartedAt ?? test.sampleCollectedAt ?? test.orderedAt;
+}
+
 // ─── Supabase sync ────────────────────────────────────────────────────────────
 
 let _lastSync = 0;
 
-function mergeById<T extends { id: string }>(remote: T[], local: T[]) {
-  const merged = new Map<string, T>();
-  for (const item of remote) merged.set(item.id, item);
-  for (const item of local) merged.set(item.id, { ...(merged.get(item.id) ?? {}), ...item });
-  return Array.from(merged.values());
+function mergeTests(remote: LabTest[], local: LabTest[]): LabTest[] {
+  if (!remote.length) return local;
+  const remoteIds = new Set(remote.map((x) => x.id));
+  const recentLocal = local.filter((row) => !remoteIds.has(row.id) && isRecent(row.orderedAt));
+  return [...remote, ...recentLocal].sort((left, right) => toTime(testTimestamp(right)) - toTime(testTimestamp(left)));
 }
 
 export async function syncLabFromSupabase(force = false) {
@@ -155,11 +190,15 @@ export async function syncLabFromSupabase(force = false) {
   if (!force && now - _lastSync < 30_000) return;
   _lastSync = now;
   try {
-    const { fetchLabTests, fetchTestCatalog } = await import("@/lib/supabase/db");
-    const [tests, catalog] = await Promise.all([fetchLabTests(), fetchTestCatalog()]);
+    const { fetchLabTests, fetchTestCatalog, seedTestCatalogIfEmpty } = await import("@/lib/supabase/db");
+    const [tests, catalogFromDb] = await Promise.all([
+      fetchLabTests(),
+      seedTestCatalogIfEmpty(LAB_CATALOG),
+    ]);
+    const catalog = catalogFromDb.length > 0 ? catalogFromDb : LAB_CATALOG;
     const current = getState();
     _state = {
-      tests: mergeById(tests, current.tests),
+      tests: mergeTests(tests, current.tests),
       catalog,
     };
     saveState(_state);
@@ -177,12 +216,14 @@ export async function addLabTest(t: LabTest) {
     const { insertLabTest } = await import("@/lib/supabase/db");
     await insertLabTest(t);
   } catch (err) {
+    mutate((s) => { s.tests = s.tests.filter((x) => x.id !== t.id); });
     console.error("[lab-store] addLabTest failed:", err);
     throw err;
   }
 }
 
 export async function updateLabTest(id: string, updates: Partial<LabTest>) {
+  const previous = getState().tests.find((t) => t.id === id);
   mutate((s) => {
     s.tests = s.tests.map((t) => t.id === id ? { ...t, ...updates } : t);
   });
@@ -190,6 +231,11 @@ export async function updateLabTest(id: string, updates: Partial<LabTest>) {
     const { upsertLabTestResult } = await import("@/lib/supabase/db");
     await upsertLabTestResult(id, updates);
   } catch (err) {
+    if (previous) {
+      mutate((s) => {
+        s.tests = s.tests.map((t) => t.id === id ? previous : t);
+      });
+    }
     console.error("[lab-store] write failed:", err);
     throw err;
   }
@@ -204,42 +250,68 @@ export async function addTestCatalogItem(item: TestCatalogItem) {
   try {
     const { upsertTestCatalogItem } = await import("@/lib/supabase/db");
     await upsertTestCatalogItem(item);
-  } catch (err) { console.error("[lab-store] addTestCatalogItem failed:", err); }
+  } catch (err) {
+    mutate((s) => { s.catalog = s.catalog.filter((c) => c.id !== item.id); });
+    console.error("[lab-store] addTestCatalogItem failed:", err);
+    throw err;
+  }
 }
 
 export async function updateTestCatalogItem(item: TestCatalogItem) {
+  const previous = getState().catalog.find((c) => c.id === item.id);
   mutate((s) => {
     s.catalog = s.catalog.map((c) => c.id === item.id ? item : c).sort((a, b) => a.name.localeCompare(b.name));
   });
   try {
     const { upsertTestCatalogItem } = await import("@/lib/supabase/db");
     await upsertTestCatalogItem(item);
-  } catch (err) { console.error("[lab-store] updateTestCatalogItem failed:", err); }
+  } catch (err) {
+    if (previous) {
+      mutate((s) => {
+        s.catalog = s.catalog.map((c) => c.id === item.id ? previous : c);
+      });
+    }
+    console.error("[lab-store] updateTestCatalogItem failed:", err);
+    throw err;
+  }
 }
 
 // ─── Metrics ─────────────────────────────────────────────────────────────────
 
 export function getLabMetrics() {
   const s = getState();
-  const today = s.tests;
-  const pending = today.filter((t) => t.status === "Pending");
-  const inProgress = today.filter((t) => t.status === "In Progress");
-  const sampleCollected = today.filter((t) => t.status === "Sample Collected");
-  const completed = today.filter((t) => t.status === "Completed");
-  const urgent = today.filter((t) => t.priority !== "Routine" && t.status !== "Completed" && t.status !== "Cancelled");
-  const pendingBills = today.filter((t) => t.billStatus === "Pending" || t.billStatus === "Billed");
+  const allTests = s.tests;
+  const pending = allTests.filter((t) => t.status === "Pending");
+  const inProgress = allTests.filter((t) => t.status === "In Progress");
+  const sampleCollected = allTests.filter((t) => t.status === "Sample Collected");
+  const completedToday = allTests.filter((t) => t.status === "Completed" && isToday(t.completedAt));
+  const orderedToday = allTests.filter((t) => isToday(t.orderedAt));
+  const urgent = allTests.filter((t) => t.priority !== "Routine" && t.status !== "Completed" && t.status !== "Cancelled");
+  const pendingBills = allTests.filter((t) => t.billStatus === "Pending" || t.billStatus === "Billed");
+
+  const turnaroundSamples = completedToday
+    .map((t) => {
+      const start = toTime(t.sampleCollectedAt ?? t.orderedAt);
+      const end = toTime(t.completedAt);
+      return start && end && end >= start ? end - start : 0;
+    })
+    .filter((ms) => ms > 0);
+
+  const avgTurnaround = turnaroundSamples.length > 0
+    ? formatDuration(turnaroundSamples.reduce((sum, ms) => sum + ms, 0) / turnaroundSamples.length)
+    : "N/A";
 
   return {
     pendingTests: pending.length,
     sampleCollectedTests: sampleCollected.length,
     inProgressTests: inProgress.length,
-    completedTests: completed.length,
+    completedTests: completedToday.length,
     urgentTests: urgent.length,
-    totalToday: today.length,
+    totalToday: orderedToday.length,
     pendingBillCount: pendingBills.length,
-    pendingBillValue: pendingBills.reduce((s, t) => s + t.price, 0),
-    revenueToday: completed.filter((t) => t.billStatus === "Paid").reduce((s, t) => s + t.price, 0),
-    avgTurnaround: completed.length > 0 ? "1h 24m" : "N/A",
+    pendingBillValue: pendingBills.reduce((sum, t) => sum + t.price, 0),
+    revenueToday: completedToday.filter((t) => t.billStatus === "Paid").reduce((sum, t) => sum + t.price, 0),
+    avgTurnaround,
   };
 }
 

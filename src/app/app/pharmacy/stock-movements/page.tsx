@@ -9,6 +9,7 @@ import { Toast, type ToastData } from "@/components/ui/toast";
 import { SearchableSelect, type SelectOption } from "@/components/ui/searchable-select";
 import { usePharmacyStore } from "@/lib/hooks/use-pharmacy-store";
 import { addPharmacyBill, type PharmacyBill } from "@/lib/data/pharmacy-store";
+import { useHMSSession } from "@/modules/rbac/hooks";
 import {
   adjustPharmacyInventoryStock,
   fetchPharmacyInventory,
@@ -91,6 +92,8 @@ function mapMovement(row: PharmacyStockMovement, inventoryById: Map<string, Phar
 
 export default function PharmacyStockMovementsPage() {
   const { bills } = usePharmacyStore();
+  const session = useHMSSession();
+  const staffName = session?.full_name ?? "Pharmacist";
   const [moves, setMoves] = useState<StockMove[]>([]);
   const [inventoryItems, setInventoryItems] = useState<PharmacyInventoryItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -137,6 +140,14 @@ export default function PharmacyStockMovementsPage() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (loading || inventoryItems.length === 0) return;
+    const walkinId = new URLSearchParams(window.location.search).get("walkin");
+    if (!walkinId || !inventoryItems.some((item) => item.id === walkinId)) return;
+    setWiDrugId(walkinId);
+    setWalkinOpen(true);
+  }, [loading, inventoryItems]);
 
   const inventoryById = useMemo(() => new Map(inventoryItems.map((item) => [item.id, item])), [inventoryItems]);
 
@@ -186,7 +197,7 @@ export default function PharmacyStockMovementsPage() {
         quantity: qty,
         sourceDestination: `Walk-in - ${wiPatient.trim()}`,
         refNo: refId,
-        createdBy: "Pharmacist (You)",
+        createdBy: staffName,
         createdAt: now,
       });
     } catch (error) {
@@ -207,20 +218,29 @@ export default function PharmacyStockMovementsPage() {
       qty: -qty,
       source: `Walk-in - ${wiPatient.trim()}`,
       ref: refId,
-      performedBy: "Pharmacist (You)",
+      performedBy: staffName,
     }, ...prev]);
 
-    addPharmacyBill({
-      id: `PBILL-${Date.now()}`,
-      prescriptionId: refId,
-      patientName: wiPatient.trim(),
-      patientId: `WI-${Date.now()}`,
-      drugs: `${item.product} × ${qty}`,
-      totalCost: total,
-      dispensedAt: displayTime,
-      billStatus: "Pending",
-      source: "walk-in",
-    } as PharmacyBill);
+    try {
+      await addPharmacyBill({
+        id: `PBILL-${Date.now()}`,
+        prescriptionId: refId,
+        patientName: wiPatient.trim(),
+        patientId: `WI-${Date.now()}`,
+        drugs: `${item.product} × ${qty}`,
+        totalCost: total,
+        dispensedAt: displayTime,
+        billStatus: "Pending",
+        source: "walk-in",
+      } as PharmacyBill);
+    } catch (error) {
+      await adjustPharmacyInventoryStock(item.id, qty).catch(() => {});
+      setToast({
+        message: `Dispense recorded but bill failed: ${error instanceof Error ? error.message : "Unknown error"}.`,
+        type: "error",
+      });
+      return;
+    }
 
     setToast({ message: `Walk-in dispense recorded. ₦${total.toFixed(2)} bill sent to Accounts.`, type: "success" });
     setWalkinOpen(false);
@@ -268,7 +288,7 @@ export default function PharmacyStockMovementsPage() {
         quantity: qty,
         sourceDestination: adjReason.trim() || "Manual adjustment",
         refNo: refId,
-        createdBy: "Pharmacist (You)",
+        createdBy: staffName,
         createdAt: now,
       });
     } catch (error) {
@@ -289,7 +309,7 @@ export default function PharmacyStockMovementsPage() {
       qty: delta,
       source: adjReason.trim() || "Manual adjustment",
       ref: refId,
-      performedBy: "Pharmacist (You)",
+      performedBy: staffName,
     }, ...prev]);
 
     setToast({ message: `Stock ${adjType === "in" ? "addition" : "adjustment"} recorded for ${item.product}.`, type: "success" });
@@ -303,7 +323,7 @@ export default function PharmacyStockMovementsPage() {
     <div className="space-y-6">
       <PageHeader
         title="Stock Movements"
-        description="Track pharmacy stock in, dispenses, adjustments, and walk-in sales."
+        description="Single place for walk-in/counter sales, stock in, dispenses, and adjustments."
       />
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4 sm:gap-4">

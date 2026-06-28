@@ -30,6 +30,7 @@ export type RotaAssignment = {
   staff_id:    string;
   department:  DepartmentKey;
   unit_id:     string | null;
+  unit_name?:  string | null;
   shift_date:  string;    // ISO date e.g. "2026-03-15"
   shift_type:  ShiftType;
   shift_start: string | null;
@@ -68,7 +69,7 @@ export type RotaSwapRequest = {
 
 export type CreateRotaPayload = Pick<
   RotaAssignment,
-  "staff_id" | "department" | "unit_id" | "shift_date" | "shift_type" | "shift_start" | "shift_end" | "notes"
+  "staff_id" | "department" | "unit_id" | "unit_name" | "shift_date" | "shift_type" | "shift_start" | "shift_end" | "notes"
 >;
 
 export type CreateRotaSwapRequestPayload = Pick<

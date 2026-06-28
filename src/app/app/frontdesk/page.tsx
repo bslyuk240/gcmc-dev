@@ -295,7 +295,7 @@ export default function FrontdeskPage() {
           <div className="rounded-xl border border-[var(--accent)]/10 bg-[var(--accent)]/5 p-4">
             <div className="mb-3 flex items-center justify-between">
               <h4 className="text-xs font-bold text-slate-900 sm:text-sm">Today&apos;s Shift</h4>
-              <Link href="/staff/rota" className="text-[10px] font-bold uppercase text-[var(--accent)] hover:underline">
+              <Link href="/staff/my-rota" className="text-[10px] font-bold uppercase text-[var(--accent)] hover:underline">
                 My Rota
               </Link>
             </div>

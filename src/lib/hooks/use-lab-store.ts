@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useReducer, useState } from "react";
+import { createClient } from "@/lib/supabase/client";
+import { ACCOUNTS_PAYMENT_UPDATED_EVENT } from "@/lib/constants/accounts-events";
 import {
   subscribeLabStore,
   syncLabFromSupabase,
@@ -18,7 +20,25 @@ export function useLabStore() {
     syncLabFromSupabase();
     const unsub = subscribeLabStore(rerender);
     const poll = setInterval(() => syncLabFromSupabase(true), 30_000);
-    return () => { window.clearTimeout(hydrationId); unsub(); clearInterval(poll); };
+    const refresh = () => { void syncLabFromSupabase(true); };
+    window.addEventListener(ACCOUNTS_PAYMENT_UPDATED_EVENT, refresh);
+
+    const supabase = createClient();
+    const channel = supabase
+      ?.channel("lab-realtime")
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "lab_tests" }, () => syncLabFromSupabase(true))
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "lab_tests" }, () => syncLabFromSupabase(true))
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "test_catalog" }, () => syncLabFromSupabase(true))
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "test_catalog" }, () => syncLabFromSupabase(true))
+      .subscribe();
+
+    return () => {
+      window.clearTimeout(hydrationId);
+      window.removeEventListener(ACCOUNTS_PAYMENT_UPDATED_EVENT, refresh);
+      unsub();
+      clearInterval(poll);
+      if (channel) supabase?.removeChannel(channel);
+    };
   }, []);
 
   if (!hydrated) {

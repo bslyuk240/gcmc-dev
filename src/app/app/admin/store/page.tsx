@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Modal, ModalFooter } from "@/components/ui/modal";
 import { Toast, type ToastData } from "@/components/ui/toast";
 import { useAdminStore } from "@/lib/hooks/use-admin-store";
-import { updatePOStatus } from "@/lib/data/admin-store";
+import { updatePurchaseOrderStatus } from "@/lib/store/client";
 
 const STOCK_STYLES: Record<string, string> = {
   OK: "bg-emerald-50 text-emerald-700",
@@ -31,21 +31,29 @@ export default function AdminStoreMonitorPage() {
   const [rejectPO, setRejectPO] = useState<string | null>(null);
   const [toast, setToast] = useState<ToastData | null>(null);
 
-  const pendingPOs = storePOs.filter((p) => p.status === "Pending Approval");
+  const pendingPOs = storePOs.filter((p) => String(p.status).toLowerCase().replace(/\s+/g, "_") === "pending_approval");
   const targetPO = storePOs.find((p) => p.id === (approvePO ?? rejectPO));
 
-  function handleApprove() {
+  async function handleApprove() {
     if (!approvePO) return;
-    updatePOStatus(approvePO, "Approved");
-    setToast({ message: `Purchase Order ${approvePO} approved.`, type: "success" });
-    setApprovePO(null);
+    try {
+      await updatePurchaseOrderStatus({ poId: approvePO, status: "approved" });
+      setToast({ message: `Purchase Order ${approvePO} approved.`, type: "success" });
+      setApprovePO(null);
+    } catch (error) {
+      setToast({ message: error instanceof Error ? error.message : "Approval failed.", type: "error" });
+    }
   }
 
-  function handleReject() {
+  async function handleReject() {
     if (!rejectPO) return;
-    updatePOStatus(rejectPO, "Rejected");
-    setToast({ message: `Purchase Order ${rejectPO} rejected.`, type: "info" });
-    setRejectPO(null);
+    try {
+      await updatePurchaseOrderStatus({ poId: rejectPO, status: "rejected" });
+      setToast({ message: `Purchase Order ${rejectPO} rejected.`, type: "info" });
+      setRejectPO(null);
+    } catch (error) {
+      setToast({ message: error instanceof Error ? error.message : "Rejection failed.", type: "error" });
+    }
   }
 
   return (

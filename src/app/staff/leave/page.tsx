@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useHMSSession } from "@/modules/rbac/hooks";
-import { useHRStore } from "@/lib/hooks/use-hr-store";
+import { useStaffPortalStore } from "@/lib/hooks/use-staff-portal-store";
+import { submitLeaveRequest } from "@/lib/staff-portal/client";
 import {
-  addLeaveRequest,
   type LeaveType,
   type LeaveStatus,
+  type LeaveRequest,
 } from "@/lib/data/hr-store";
 
 const LEAVE_TYPES: LeaveType[] = ["Annual", "Sick", "Maternity", "Paternity", "Personal", "Emergency", "Study"];
@@ -20,7 +21,9 @@ const STATUS_STYLES: Record<LeaveStatus, string> = {
 
 export default function LeavePage() {
   const session = useHMSSession();
-  const { staff, leaveRequests, leavePolicies } = useHRStore();
+  const { policies: leavePolicies } = useStaffPortalStore();
+  const [requests, setRequests] = useState<LeaveRequest[]>([]);
+  const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [type, setType] = useState<LeaveType>("Annual");
   const [startDate, setStart] = useState("");
@@ -28,26 +31,25 @@ export default function LeavePage() {
   const [reason, setReason] = useState("");
   const [toast, setToast] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const [mounted, setMounted] = useState(false);
-  const staffAuthId = session?.auth_user_id ?? session?.staff_id ?? null;
-  useEffect(() => {
-    setMounted(true);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await fetch("/api/leave/requests?mine=1");
+      if (res.ok) {
+        const data = await res.json();
+        setRequests(data.requests ?? []);
+      }
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
-  const staffRecord = session
-    ? staff.find((member) =>
-        member.id === session.staff_id
-        || member.email.toLowerCase() === session.email.toLowerCase()
-        || member.name.toLowerCase() === session.full_name.toLowerCase(),
-      ) ?? null
-    : null;
-  const staffDbId = staffRecord?.id ?? session?.staff_id ?? null;
-  const requests = leaveRequests.filter((request) => [staffDbId, staffAuthId].includes(request.staffId));
-  const visibleRequests = mounted ? requests : [];
+  useEffect(() => { void load(); }, [load]);
+
   const currentYear = new Date().getFullYear();
   const leavePolicy = leavePolicies.find((policy) => policy.year === currentYear) ?? null;
-  const visibleLeavePolicy = mounted ? leavePolicy : null;
-  const annualTotal = (visibleLeavePolicy?.annualDays ?? 21) + (visibleLeavePolicy?.carryForwardDays ?? 0);
+  const annualTotal = (leavePolicy?.annualDays ?? 21) + (leavePolicy?.carryForwardDays ?? 0);
 
   function countDays(start: string, end: string) {
     if (!start || !end) return 0;
@@ -64,21 +66,12 @@ export default function LeavePage() {
     setSaving(true);
 
     try {
-      const requestId = `LV-${crypto.randomUUID()}`;
-      await addLeaveRequest({
-        id: requestId,
-        staffId: staffDbId ?? session.staff_id,
-        staffAuthId: staffAuthId ?? undefined,
-        staffName: session.full_name,
-        department: session.department,
-        role: session.role.replace(/_/g, " "),
+      await submitLeaveRequest({
         leaveType: type,
         startDate,
         endDate,
         days: countDays(startDate, endDate),
         reason,
-        status: "Pending",
-        submittedAt: new Date().toISOString(),
       });
 
       setToast("Leave request submitted successfully.");
@@ -87,6 +80,7 @@ export default function LeavePage() {
       setEnd("");
       setReason("");
       setType("Annual");
+      await load();
       setTimeout(() => setToast(null), 3000);
     } catch (error) {
       setToast(error instanceof Error ? error.message : "Failed to submit leave request.");
@@ -95,13 +89,13 @@ export default function LeavePage() {
     }
   }
 
-  const annual = visibleRequests
+  const annual = requests
     .filter((request) =>
       request.leaveType === "Annual"
       && request.status === "Approved"
       && new Date(`${request.startDate}T00:00:00`).getFullYear() === currentYear)
     .reduce((sum, request) => sum + request.days, 0);
-  const pending = visibleRequests.filter((request) => request.status === "Pending").length;
+  const pending = requests.filter((request) => request.status === "Pending").length;
   const remaining = Math.max(0, annualTotal - annual);
   const inputCls = "w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100";
 
@@ -112,7 +106,7 @@ export default function LeavePage() {
         <p className="mt-1 text-sm text-slate-500">Apply for leave and track approval status from HR records.</p>
         <p className="mt-1 text-xs font-semibold text-indigo-600">
           {currentYear} entitlement: {annualTotal} days
-          {visibleLeavePolicy ? "" : " (default until HR sets the year policy)"}
+          {leavePolicy ? "" : " (default until HR sets the year policy)"}
         </p>
       </div>
 
@@ -177,12 +171,17 @@ export default function LeavePage() {
       <div>
         <p className="mb-3 text-xs font-bold uppercase tracking-wider text-slate-400">Leave History</p>
         <div className="space-y-2">
-          {visibleRequests.length === 0 && (
-            <div className="rounded-xl border border-dashed border-slate-200 bg-white px-4 py-8 text-center text-sm text-slate-400">
-              No leave records found in Supabase for this staff account.
+          {loading && (
+            <div className="rounded-xl border border-slate-200 bg-white px-4 py-8 text-center text-sm text-slate-400">
+              Loading leave records...
             </div>
           )}
-          {visibleRequests.map((request) => (
+          {!loading && requests.length === 0 && (
+            <div className="rounded-xl border border-dashed border-slate-200 bg-white px-4 py-8 text-center text-sm text-slate-400">
+              No leave records yet. Submit a request above.
+            </div>
+          )}
+          {requests.map((request) => (
             <div key={request.id} className="rounded-xl border border-slate-200 bg-white px-4 py-3">
               <div className="flex items-start justify-between">
                 <div>

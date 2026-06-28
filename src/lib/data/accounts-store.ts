@@ -256,13 +256,14 @@ export function subscribeAccountsStore(fn: () => void) {
 
 // ─── Supabase sync ────────────────────────────────────────────────────────────
 
-/** Local wins for existing items — remote only adds NEW records we don't have yet.
- *  This prevents in-flight Supabase syncs from overwriting optimistic UI updates. */
+/** Remote-first merge — server status wins for existing records. */
 function mergeById<T extends { id: string }>(remote: T[], local: T[]): T[] {
   if (!remote.length) return local;
-  const localIds = new Set(local.map((x) => x.id));
-  const newFromRemote = remote.filter((r) => !localIds.has(r.id));
-  return [...local, ...newFromRemote];
+  const remoteById = new Map(remote.map((item) => [item.id, item]));
+  const merged = local.map((item) => remoteById.get(item.id) ?? item);
+  const localIds = new Set(local.map((item) => item.id));
+  const newFromRemote = remote.filter((item) => !localIds.has(item.id));
+  return [...merged, ...newFromRemote];
 }
 
 let _lastSync = 0;
@@ -324,7 +325,7 @@ export function updateFrontDeskChargeStatus(
         severity: "info",
         title: "Front Desk charge sent to Accounts",
         body: `${charge.patientName} - ${charge.chargeType} (${charge.amount.toLocaleString()}) is ready for collection.`,
-        href: "/app/accounts/receive-payment",
+        href: "/app/accounts/cash-desk",
         targetDepartments: ["accounts"],
       });
     }
@@ -346,7 +347,7 @@ export async function addConsultationFee(f: ConsultationFee) {
       severity: "info",
       title: "Consultation fee billed",
       body: `${f.patientName} - ${f.consultationType} consultation (${f.fee.toLocaleString()}) was sent to Accounts.`,
-      href: "/app/accounts/consultation-fees",
+      href: "/app/accounts/cash-desk?department=doctors",
       targetDepartments: ["accounts"],
     });
   } catch (err) {
@@ -461,7 +462,7 @@ export async function addLabCharge(c: LabCharge) {
       severity: "info",
       title: "Lab bill ready",
       body: `${c.patientName} - ${c.testName} (${c.amount.toLocaleString()}) was sent to Accounts.`,
-      href: "/app/accounts/lab-billing",
+      href: "/app/accounts/cash-desk?department=lab",
       targetDepartments: ["accounts"],
     });
   } catch (err) {
@@ -474,6 +475,7 @@ export function updateLabChargeStatus(
   status: ChargeStatus,
   extra?: { paidAt?: string; paymentMethod?: LabCharge["paymentMethod"] },
 ) {
+  const charge = (getState().labCharges ?? []).find((c) => c.id === id);
   mutate((s) => {
     s.labCharges = (s.labCharges ?? []).map((c) =>
       c.id === id
@@ -487,7 +489,16 @@ export function updateLabChargeStatus(
     );
   });
   import("@/lib/supabase/db")
-    .then(({ upsertLabChargeStatus }) => upsertLabChargeStatus(id, status, extra))
+    .then(async ({ upsertLabChargeStatus }) => {
+      await upsertLabChargeStatus(id, status, extra);
+      if (charge?.testId && (status === "Paid" || status === "Waived")) {
+        const { updateLabTest } = await import("@/lib/data/lab-store");
+        await updateLabTest(charge.testId, { billStatus: status === "Paid" ? "Paid" : "Waived" });
+      }
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new Event(ACCOUNTS_PAYMENT_UPDATED_EVENT));
+      }
+    })
     .catch((err) => console.error("[accounts-store] updateLabChargeStatus failed:", err));
 }
 
@@ -504,7 +515,7 @@ export async function addNursingCharge(c: NursingCharge) {
       severity: "info",
       title: "Nursing bill ready",
       body: `${c.patientName} - ${c.procedureType} (${c.amount.toLocaleString()}) was sent to Accounts.`,
-      href: "/app/accounts/nursing-billing",
+      href: "/app/accounts/cash-desk?department=nurses",
       targetDepartments: ["accounts"],
     });
   } catch (err) {

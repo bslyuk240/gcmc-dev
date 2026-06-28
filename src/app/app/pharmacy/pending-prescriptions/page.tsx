@@ -276,7 +276,7 @@ export default function PendingPrescriptionsPage() {
                 <MobileMeta label="Department" value={row.department} />
                 <MobileMeta label="Received" value={fmtRxTime(row.createdAt)} />
                 <MobileMeta label="Drugs" value={summary ? `${summary}${extraCount}` : "No drugs listed"} />
-                <MobileMeta label="Est. Cost" value={total > 0 ? `â‚¦${total.toFixed(2)}` : "â€”"} />
+                <MobileMeta label="Est. Cost" value={total > 0 ? `₦${total.toFixed(2)}` : "—"} />
               </div>
 
               <div className="mt-4 flex flex-wrap items-center justify-between gap-3">

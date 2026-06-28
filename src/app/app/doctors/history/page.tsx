@@ -1,10 +1,14 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card } from "@/components/ui/card";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { useDoctorsStore } from "@/lib/hooks/use-doctors-store";
+import { useHMSSession } from "@/modules/rbac/hooks";
+import { canDoctorAccessConsultation } from "@/lib/utils/doctor-routing";
+import { INTERNAL_PREFIX } from "@/lib/constants/navigation";
 
 const STATUS_VARIANT: Record<string, "success" | "warning" | "destructive" | "info" | "neutral"> = {
   Completed: "success",
@@ -23,11 +27,19 @@ function MobileMeta({ label, value }: { label: string; value: string | number })
 }
 
 export default function DoctorsHistoryPage() {
-  const { consultations } = useDoctorsStore();
+  const session = useHMSSession();
+  const doctorName = session?.full_name ?? "";
+  const { consultations: storeConsultations } = useDoctorsStore();
   const [search, setSearch] = useState("");
 
+  const consultations = storeConsultations.filter((entry) =>
+    canDoctorAccessConsultation(entry, doctorName),
+  );
+
   const sorted = [...consultations].sort((a, b) => {
-    // Sort by date descending (newest first)
+    const leftTime = new Date(a.date).getTime();
+    const rightTime = new Date(b.date).getTime();
+    if (!Number.isNaN(leftTime) && !Number.isNaN(rightTime)) return rightTime - leftTime;
     return b.date.localeCompare(a.date) || b.time.localeCompare(a.time);
   });
 
@@ -35,18 +47,25 @@ export default function DoctorsHistoryPage() {
     (c) =>
       search === "" ||
       c.patientName.toLowerCase().includes(search.toLowerCase()) ||
-      c.doctorName.toLowerCase().includes(search.toLowerCase()),
+      c.patientId.toLowerCase().includes(search.toLowerCase()),
   );
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Consultation History" description="All consultation records sorted by date, newest first." />
+      <PageHeader
+        title="Consultation History"
+        description={
+          doctorName
+            ? `Your consultation records for ${doctorName}, newest first.`
+            : "Your consultation records, newest first."
+        }
+      />
 
       <Card>
         <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center">
           <input
             type="search"
-            placeholder="Search by patient or doctor name..."
+            placeholder="Search by patient name or ID..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="w-full rounded-lg border border-[var(--border)] bg-white px-3 py-2 text-sm sm:min-w-[240px]"
@@ -83,12 +102,8 @@ export default function DoctorsHistoryPage() {
                     <StatusBadge variant={STATUS_VARIANT[row.status] ?? "neutral"}>{row.status}</StatusBadge>
                   </div>
                   <div className="grid grid-cols-1 gap-2 text-xs sm:grid-cols-2">
-                    <MobileMeta label="Doctor" value={row.doctorName} />
                     <MobileMeta label="Type" value={row.consultType} />
-                  </div>
-                  <div className="grid grid-cols-1 gap-2 text-xs sm:grid-cols-2">
                     <MobileMeta label="Date" value={row.date} />
-                    <MobileMeta label="Fee" value={`N${row.consultFee.toLocaleString()}`} />
                   </div>
                   <div
                     className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold ${
@@ -97,6 +112,12 @@ export default function DoctorsHistoryPage() {
                   >
                     {row.feePaid ? "Paid" : "Pending"}
                   </div>
+                  <Link
+                    href={`${INTERNAL_PREFIX}/doctors/consultations/${row.id}`}
+                    className="inline-block text-xs font-semibold text-violet-600 hover:underline"
+                  >
+                    View details
+                  </Link>
                 </div>
               ))}
             </div>
@@ -105,12 +126,12 @@ export default function DoctorsHistoryPage() {
                 <thead>
                   <tr className="border-b border-[var(--border)]">
                     <th className="pb-3 font-semibold text-slate-500">Patient</th>
-                    <th className="pb-3 font-semibold text-slate-500">Doctor</th>
                     <th className="pb-3 font-semibold text-slate-500">Type</th>
                     <th className="pb-3 font-semibold text-slate-500">Date</th>
                     <th className="pb-3 font-semibold text-slate-500">Status</th>
                     <th className="pb-3 font-semibold text-slate-500">Fee</th>
                     <th className="pb-3 font-semibold text-slate-500">Payment</th>
+                    <th className="pb-3 font-semibold text-slate-500" />
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[var(--border)]">
@@ -120,7 +141,6 @@ export default function DoctorsHistoryPage() {
                         <p className="font-medium text-slate-900">{row.patientName}</p>
                         <p className="text-xs text-slate-400">{row.patientId}</p>
                       </td>
-                      <td className="py-3 text-slate-600">{row.doctorName}</td>
                       <td className="py-3 text-slate-600">{row.consultType}</td>
                       <td className="py-3 text-slate-600">
                         <span>{row.date}</span>
@@ -129,7 +149,7 @@ export default function DoctorsHistoryPage() {
                       <td className="py-3">
                         <StatusBadge variant={STATUS_VARIANT[row.status] ?? "neutral"}>{row.status}</StatusBadge>
                       </td>
-                      <td className="py-3 font-medium text-slate-700">â‚¦{row.consultFee.toLocaleString()}</td>
+                      <td className="py-3 font-medium text-slate-700">₦{row.consultFee.toLocaleString()}</td>
                       <td className="py-3">
                         <span
                           className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${
@@ -138,6 +158,14 @@ export default function DoctorsHistoryPage() {
                         >
                           {row.feePaid ? "Paid" : "Pending"}
                         </span>
+                      </td>
+                      <td className="py-3 text-right">
+                        <Link
+                          href={`${INTERNAL_PREFIX}/doctors/consultations/${row.id}`}
+                          className="text-xs font-semibold text-violet-600 hover:underline"
+                        >
+                          View
+                        </Link>
                       </td>
                     </tr>
                   ))}

@@ -6,18 +6,13 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Toast, type ToastData } from "@/components/ui/toast";
 import { useHMSSession } from "@/modules/rbac/hooks";
-import {
-  fetchLeaveRequestsByDept,
-  reviewLeaveRequestByHOD,
-} from "@/lib/supabase/db";
+import { canReviewLeaveForDepartment, isHodOwnLeaveRequest } from "@/lib/leave/access";
 import { DB_TO_STAFF_DEPT } from "@/lib/data/hr-store";
 import type { LeaveRequest } from "@/lib/data/hr-store";
 import { cn } from "@/lib/utils/cn";
 import type { DBDepartmentKey } from "@/lib/constants/navigation";
 
 type FilterTab = "All" | "Pending" | "Approved" | "Rejected";
-
-const ALLOWED_ROLES = ["hod", "hr_manager", "hr_staff", "admin"];
 
 export function HodLeavePage({ department }: { department: DBDepartmentKey }) {
   const session = useHMSSession();
@@ -34,14 +29,22 @@ export function HodLeavePage({ department }: { department: DBDepartmentKey }) {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const data = await fetchLeaveRequestsByDept(department);
-    setRequests(data);
-    setLoading(false);
+    try {
+      const res = await fetch(`/api/leave/requests?department=${encodeURIComponent(department)}`);
+      if (res.ok) {
+        const data = await res.json();
+        setRequests(data.requests ?? []);
+      } else {
+        setRequests([]);
+      }
+    } finally {
+      setLoading(false);
+    }
   }, [department]);
 
   useEffect(() => { void load(); }, [load]);
 
-  if (!session || !ALLOWED_ROLES.includes(session.role)) {
+  if (!session || !canReviewLeaveForDepartment(session, department)) {
     return (
       <div className="flex min-h-[60vh] items-center justify-center">
         <div className="text-center">
@@ -60,15 +63,61 @@ export function HodLeavePage({ department }: { department: DBDepartmentKey }) {
   };
   const departmentLabel = DB_TO_STAFF_DEPT[department] ?? department;
 
+  function renderReviewActions(r: LeaveRequest) {
+    if (r.status !== "Pending") {
+      return r.hrNotes ? <span className="text-xs text-slate-400 italic">{r.hrNotes}</span> : null;
+    }
+    if (session && isHodOwnLeaveRequest(session, r.staffId)) {
+      return (
+        <span className="text-xs font-medium text-violet-600">
+          Your request — awaiting HR review
+        </span>
+      );
+    }
+    return (
+      <div className="flex gap-1.5">
+        <button
+          type="button"
+          onClick={() => { setReviewing(r); setReviewAction("Approved"); setReviewNote(""); }}
+          className="rounded-lg bg-green-50 px-2.5 py-1 text-xs font-semibold text-green-700 transition hover:bg-green-100"
+        >
+          Approve
+        </button>
+        <button
+          type="button"
+          onClick={() => { setReviewing(r); setReviewAction("Rejected"); setReviewNote(""); }}
+          className="rounded-lg bg-red-50 px-2.5 py-1 text-xs font-semibold text-red-700 transition hover:bg-red-100"
+        >
+          Reject
+        </button>
+      </div>
+    );
+  }
+
   async function handleReview() {
     if (!reviewing || !session) return;
     setSaving(true);
     try {
-      await reviewLeaveRequestByHOD(reviewing.id, reviewAction, session.full_name, reviewNote);
+      const res = await fetch("/api/leave/requests", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          requestId: reviewing.id,
+          status: reviewAction,
+          notes: reviewNote,
+        }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        throw new Error(data?.error ?? "Failed to update leave request.");
+      }
       setToast({ type: "success", message: `Leave request ${reviewAction.toLowerCase()} successfully.` });
       await load();
-    } catch {
-      setToast({ type: "error", message: "Failed to update leave request." });
+    } catch (error) {
+      setToast({
+        type: "error",
+        message: error instanceof Error ? error.message : "Failed to update leave request.",
+      });
     } finally {
       setSaving(false);
       setReviewing(null);
@@ -166,25 +215,7 @@ export function HodLeavePage({ department }: { department: DBDepartmentKey }) {
                     />
                   </div>
                   <div className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600">{r.reason}</div>
-                  {r.status !== "Pending" && r.hrNotes && <p className="text-xs italic text-slate-400">{r.hrNotes}</p>}
-                  {r.status === "Pending" && (
-                    <div className="flex gap-1.5">
-                      <button
-                        type="button"
-                        onClick={() => { setReviewing(r); setReviewAction("Approved"); setReviewNote(""); }}
-                        className="rounded-lg bg-green-50 px-2.5 py-1 text-xs font-semibold text-green-700 transition hover:bg-green-100"
-                      >
-                        Approve
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => { setReviewing(r); setReviewAction("Rejected"); setReviewNote(""); }}
-                        className="rounded-lg bg-red-50 px-2.5 py-1 text-xs font-semibold text-red-700 transition hover:bg-red-100"
-                      >
-                        Reject
-                      </button>
-                    </div>
-                  )}
+                  {renderReviewActions(r)}
                 </div>
               ))}
             </div>
@@ -217,23 +248,7 @@ export function HodLeavePage({ department }: { department: DBDepartmentKey }) {
                     </td>
                     <td className="px-4 py-3"><span className={statusChip(r.status)}>{r.status}</span></td>
                     <td className="px-4 py-3">
-                      {r.status === "Pending" && (
-                        <div className="flex gap-1.5">
-                          <button type="button"
-                            onClick={() => { setReviewing(r); setReviewAction("Approved"); setReviewNote(""); }}
-                            className="rounded-lg bg-green-50 px-2.5 py-1 text-xs font-semibold text-green-700 hover:bg-green-100 transition">
-                            Approve
-                          </button>
-                          <button type="button"
-                            onClick={() => { setReviewing(r); setReviewAction("Rejected"); setReviewNote(""); }}
-                            className="rounded-lg bg-red-50 px-2.5 py-1 text-xs font-semibold text-red-700 hover:bg-red-100 transition">
-                            Reject
-                          </button>
-                        </div>
-                      )}
-                      {r.status !== "Pending" && r.hrNotes && (
-                        <span className="text-xs text-slate-400 italic">{r.hrNotes}</span>
-                      )}
+                      {renderReviewActions(r)}
                     </td>
                   </tr>
                 ))}

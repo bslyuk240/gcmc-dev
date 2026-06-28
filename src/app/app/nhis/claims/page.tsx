@@ -9,12 +9,12 @@ import { Modal, ModalFooter } from "@/components/ui/modal";
 import { Toast, type ToastData } from "@/components/ui/toast";
 import { useNhisStore } from "@/lib/hooks/use-nhis-store";
 import {
-  syncNhisFromSupabase,
-  addHmoClaim,
-  updateHmoClaimStatus,
-  type HmoClaim,
-  type HmoClaimService,
-} from "@/lib/data/nhis-store";
+  buildHmoClaimApi,
+  fetchUnclaimedHmoCharges,
+  transitionHmoClaimApi,
+} from "@/lib/nhis/client";
+import type { UnclaimedHmoCharge } from "@/modules/nhis/types";
+import { type HmoClaim } from "@/lib/data/nhis-store";
 
 type ClaimTab = "draft" | "submitted" | "approved" | "rejected" | "paid";
 
@@ -28,16 +28,6 @@ const STATUS_STYLES: Record<string, string> = {
   paid: "bg-emerald-50 text-emerald-700",
   partial: "bg-amber-50 text-amber-700",
 };
-
-type ServiceRow = {
-  type: string;
-  description: string;
-  amount: string;
-  hmoAmount: string;
-  copay: string;
-};
-
-const EMPTY_SERVICE: ServiceRow = { type: "consultation", description: "", amount: "", hmoAmount: "", copay: "" };
 
 function formatDate(iso?: string) {
   if (!iso) return "—";
@@ -66,19 +56,18 @@ function MobileMeta({
 }
 
 export default function NhisClaimsPage() {
-  const { enrollments, claims, hydrated } = useNhisStore();
+  const { enrollments, claims, hydrated, reload } = useNhisStore();
   const [toast, setToast] = useState<ToastData | null>(null);
   const [activeTab, setActiveTab] = useState<ClaimTab>("draft");
 
-  // New claim modal
   const [showNewClaim, setShowNewClaim] = useState(false);
-  // selectedEnrollmentId drives everything — patient UUID + scheme are derived from it
   const [selectedEnrollmentId, setSelectedEnrollmentId] = useState("");
   const [newClaimNotes, setNewClaimNotes] = useState("");
+  const [unclaimedCharges, setUnclaimedCharges] = useState<UnclaimedHmoCharge[]>([]);
+  const [selectedChargeIds, setSelectedChargeIds] = useState<Set<string>>(new Set());
+  const [loadingCharges, setLoadingCharges] = useState(false);
 
-  // Derived from selected enrollment
   const selectedEnrollment = enrollments.find((e) => e.id === selectedEnrollmentId) ?? null;
-  const [services, setServices] = useState<ServiceRow[]>([{ ...EMPTY_SERVICE }]);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
@@ -90,9 +79,20 @@ export default function NhisClaimsPage() {
   const [actionSaving, setActionSaving] = useState(false);
 
   useEffect(() => {
-    syncNhisFromSupabase();
-  }, []);
-
+    if (!selectedEnrollment) {
+      setUnclaimedCharges([]);
+      setSelectedChargeIds(new Set());
+      return;
+    }
+    setLoadingCharges(true);
+    fetchUnclaimedHmoCharges(selectedEnrollment.patientDisplayId || selectedEnrollment.patientId)
+      .then((charges) => {
+        setUnclaimedCharges(charges);
+        setSelectedChargeIds(new Set());
+      })
+      .catch(() => setUnclaimedCharges([]))
+      .finally(() => setLoadingCharges(false));
+  }, [selectedEnrollment]);
 
   const tabClaims = claims.filter((c) => c.status === activeTab);
 
@@ -100,75 +100,59 @@ export default function NhisClaimsPage() {
     ? tabClaims.reduce((sum, c) => sum + c.hmoAmount, 0)
     : null;
 
-  // ── New claim ──────────────────────────────────────────────────────────────
+  // ── New claim from charge lines ───────────────────────────────────────────
 
-  function addServiceRow() {
-    setServices((prev) => [...prev, { ...EMPTY_SERVICE }]);
+  const selectedCharges = unclaimedCharges.filter((c) => selectedChargeIds.has(c.id));
+  const totals = selectedCharges.reduce(
+    (acc, c) => ({
+      totalCost: acc.totalCost + c.totalAmount,
+      hmoAmount: acc.hmoAmount + (c.hmoAmount ?? 0),
+      copayAmount: acc.copayAmount + (c.copayAmount ?? 0),
+    }),
+    { totalCost: 0, hmoAmount: 0, copayAmount: 0 },
+  );
+
+  function toggleCharge(id: string) {
+    setSelectedChargeIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   }
-
-  function removeServiceRow(idx: number) {
-    setServices((prev) => prev.filter((_, i) => i !== idx));
-  }
-
-  function updateService(idx: number, key: keyof ServiceRow, value: string) {
-    setServices((prev) => prev.map((row, i) => i === idx ? { ...row, [key]: value } : row));
-  }
-
-  function calcTotals() {
-    const totalCost = services.reduce((s, r) => s + (parseFloat(r.amount) || 0), 0);
-    const hmoAmount = services.reduce((s, r) => s + (parseFloat(r.hmoAmount) || 0), 0);
-    const copayAmount = services.reduce((s, r) => s + (parseFloat(r.copay) || 0), 0);
-    return { totalCost, hmoAmount, copayAmount };
-  }
-
-  const totals = calcTotals();
 
   async function handleSaveDraft() {
     if (!selectedEnrollmentId || !selectedEnrollment) {
       setFormError("Please select an enrolled patient.");
       return;
     }
-    if (services.length === 0 || !services.some((r) => r.description.trim())) {
-      setFormError("At least one service with a description is required.");
+    if (selectedChargeIds.size === 0) {
+      setFormError("Select at least one HMO charge line with copay collected.");
+      return;
+    }
+    const notReady = selectedCharges.filter((c) => !c.copayCollected);
+    if (notReady.length) {
+      setFormError(`${notReady.length} selected charge(s) still need copay collection at Accounts.`);
       return;
     }
 
     setSaving(true);
     setFormError(null);
     try {
-      const claimServices: HmoClaimService[] = services
-        .filter((r) => r.description.trim())
-        .map((r, idx) => ({
-          type: r.type,
-          chargeId: `SVC-${Date.now()}-${idx}`,
-          description: r.description.trim(),
-          amount: parseFloat(r.amount) || 0,
-          hmoAmount: parseFloat(r.hmoAmount) || 0,
-          copay: parseFloat(r.copay) || 0,
-        }));
+      const result = await buildHmoClaimApi({
+        patientRef: selectedEnrollment.patientDisplayId || selectedEnrollment.patientId,
+        enrollmentId: selectedEnrollment.id,
+        chargeLineIds: Array.from(selectedChargeIds),
+        notes: newClaimNotes.trim() || undefined,
+      });
 
-      await addHmoClaim(
-        {
-          schemeId: selectedEnrollment.schemeId,
-          patientId: selectedEnrollment.patientId, // UUID — correct FK
-          enrollmentId: selectedEnrollment.id,
-          services: claimServices,
-          totalCost: totals.totalCost,
-          copayAmount: totals.copayAmount,
-          hmoAmount: totals.hmoAmount,
-          status: "draft",
-          notes: newClaimNotes.trim() || undefined,
-        },
-        selectedEnrollment.schemeName,
-        selectedEnrollment.patientName,
-      );
-
-      setToast({ message: "Claim saved as draft.", type: "success" });
+      setToast({ message: `Claim ${result.claimNumber} created as draft.`, type: "success" });
       setShowNewClaim(false);
       setSelectedEnrollmentId("");
       setNewClaimNotes("");
-      setServices([{ ...EMPTY_SERVICE }]);
+      setSelectedChargeIds(new Set());
       setActiveTab("draft");
+      await reload();
     } catch (err) {
       const msg = err instanceof Error ? err.message : "An unexpected error occurred";
       setFormError(msg);
@@ -183,11 +167,9 @@ export default function NhisClaimsPage() {
   async function handleSubmit(claim: HmoClaim) {
     setActionSaving(true);
     try {
-      await updateHmoClaimStatus(claim.id, {
-        status: "submitted",
-        submittedAt: new Date().toISOString(),
-      });
+      await transitionHmoClaimApi(claim.id, { action: "submit" });
       setToast({ message: `Claim ${claim.claimNumber} submitted to HMO.`, type: "success" });
+      await reload();
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Failed to submit claim";
       setToast({ message: msg, type: "error" });
@@ -199,11 +181,9 @@ export default function NhisClaimsPage() {
   async function handleApprove(claim: HmoClaim) {
     setActionSaving(true);
     try {
-      await updateHmoClaimStatus(claim.id, {
-        status: "approved",
-        approvedAt: new Date().toISOString(),
-      });
+      await transitionHmoClaimApi(claim.id, { action: "approve" });
       setToast({ message: `Claim ${claim.claimNumber} marked as approved.`, type: "success" });
+      await reload();
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Failed to approve claim";
       setToast({ message: msg, type: "error" });
@@ -217,14 +197,14 @@ export default function NhisClaimsPage() {
     if (!rejectionReason.trim()) return;
     setActionSaving(true);
     try {
-      await updateHmoClaimStatus(rejectTarget.id, {
-        status: "rejected",
-        rejectedAt: new Date().toISOString(),
+      await transitionHmoClaimApi(rejectTarget.id, {
+        action: "reject",
         rejectionReason: rejectionReason.trim(),
       });
       setToast({ message: `Claim ${rejectTarget.claimNumber} rejected.`, type: "info" });
       setRejectTarget(null);
       setRejectionReason("");
+      await reload();
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Failed to reject claim";
       setToast({ message: msg, type: "error" });
@@ -243,14 +223,14 @@ export default function NhisClaimsPage() {
     setActionSaving(true);
     try {
       const isPartial = paid < payTarget.hmoAmount;
-      await updateHmoClaimStatus(payTarget.id, {
-        status: isPartial ? "partial" : "paid",
-        paidAt: new Date().toISOString(),
+      await transitionHmoClaimApi(payTarget.id, {
+        action: isPartial ? "mark_partial" : "mark_paid",
         amountPaid: paid,
       });
       setToast({ message: `Payment of ${fmt(paid)} recorded for claim ${payTarget.claimNumber}.`, type: "success" });
       setPayTarget(null);
       setAmountPaid("");
+      await reload();
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Failed to record payment";
       setToast({ message: msg, type: "error" });
@@ -440,7 +420,7 @@ export default function NhisClaimsPage() {
                 onChange={setSelectedEnrollmentId}
                 placeholder="— Search by name, patient ID, or scheme —"
                 options={enrollments
-                  .filter((e) => e.isActive)
+                  .filter((e) => e.isActive && e.verificationStatus === "verified")
                   .map((e) => ({
                     value: e.id,
                     label: e.patientName,
@@ -461,64 +441,49 @@ export default function NhisClaimsPage() {
               )}
             </div>
 
-            {/* Services */}
+            {/* Unclaimed HMO charge lines */}
             <div>
-              <div className="mb-2 flex items-center justify-between">
-                <label className="text-xs font-semibold text-slate-600">Services *</label>
-                <button onClick={addServiceRow} className="text-xs font-semibold text-accent hover:underline">+ Add Row</button>
-              </div>
-              <div className="space-y-2">
-                {services.map((row, idx) => (
-                  <div key={idx} className="grid gap-2 grid-cols-5 items-end">
-                    <div>
-                      <label className="mb-1 block text-[10px] font-semibold text-slate-500">Type</label>
-                      <select
-                        className="w-full rounded border border-slate-200 px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-accent"
-                        value={row.type}
-                        onChange={(e) => updateService(idx, "type", e.target.value)}
-                      >
-                        {["consultation", "lab", "pharmacy", "nursing", "procedure", "admission", "other"].map((t) => (
-                          <option key={t} value={t}>{t}</option>
-                        ))}
-                      </select>
-                    </div>
-                    <div className="col-span-2">
-                      <label className="mb-1 block text-[10px] font-semibold text-slate-500">Description</label>
+              <label className="mb-2 block text-xs font-semibold text-slate-600">
+                Billable charge lines (copay must be collected first) *
+              </label>
+              {loadingCharges ? (
+                <p className="text-sm text-slate-400">Loading charge lines…</p>
+              ) : !selectedEnrollment ? (
+                <p className="text-sm text-slate-400">Select a patient to load their HMO charges.</p>
+              ) : unclaimedCharges.length === 0 ? (
+                <p className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-500">
+                  No unclaimed HMO charges. HMO pricing auto-applies on verified enrollments; use Cash Desk “Retry HMO” if a line was missed.
+                </p>
+              ) : (
+                <div className="max-h-56 space-y-2 overflow-y-auto rounded-lg border border-slate-200 p-2">
+                  {unclaimedCharges.map((charge) => (
+                    <label
+                      key={charge.id}
+                      className={`flex cursor-pointer items-start gap-3 rounded-lg border px-3 py-2 text-xs ${
+                        selectedChargeIds.has(charge.id) ? "border-accent bg-accent/5" : "border-slate-100"
+                      }`}
+                    >
                       <input
-                        className="w-full rounded border border-slate-200 px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-accent"
-                        value={row.description}
-                        onChange={(e) => updateService(idx, "description", e.target.value)}
-                        placeholder="Service description"
+                        type="checkbox"
+                        className="mt-0.5"
+                        checked={selectedChargeIds.has(charge.id)}
+                        onChange={() => toggleCharge(charge.id)}
+                        disabled={!charge.copayCollected}
                       />
-                    </div>
-                    <div>
-                      <label className="mb-1 block text-[10px] font-semibold text-slate-500">Total (₦)</label>
-                      <input
-                        className="w-full rounded border border-slate-200 px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-accent"
-                        type="number"
-                        min="0"
-                        value={row.amount}
-                        onChange={(e) => updateService(idx, "amount", e.target.value)}
-                      />
-                    </div>
-                    <div className="flex gap-1">
-                      <div className="flex-1">
-                        <label className="mb-1 block text-[10px] font-semibold text-slate-500">HMO (₦)</label>
-                        <input
-                          className="w-full rounded border border-slate-200 px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-accent"
-                          type="number"
-                          min="0"
-                          value={row.hmoAmount}
-                          onChange={(e) => updateService(idx, "hmoAmount", e.target.value)}
-                        />
+                      <div className="min-w-0 flex-1">
+                        <p className="font-medium text-slate-900">{charge.description}</p>
+                        <p className="text-slate-500">{charge.department} · {formatDate(charge.billableAt)}</p>
+                        <p className="mt-1">
+                          Copay {fmt(charge.copayAmount ?? 0)} · HMO {fmt(charge.hmoAmount ?? 0)}
+                          {!charge.copayCollected && (
+                            <span className="ml-2 font-semibold text-amber-600">Copay pending</span>
+                          )}
+                        </p>
                       </div>
-                      {services.length > 1 && (
-                        <button onClick={() => removeServiceRow(idx)} className="mt-5 text-red-400 hover:text-red-600 text-xs px-1">✕</button>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
+                    </label>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* Totals */}

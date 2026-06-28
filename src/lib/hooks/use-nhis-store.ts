@@ -1,62 +1,65 @@
 "use client";
 
-import { useEffect, useReducer, useState } from "react";
-import { createClient } from "@/lib/supabase/client";
+import { useCallback, useEffect, useState } from "react";
 import {
-  subscribeNhisStore,
-  syncNhisFromSupabase,
-  getNhisSchemes,
-  getNhisTariffs,
-  getNhisEnrollments,
-  getNhisClaims,
-  getNhisRegistrations,
-} from "@/lib/data/nhis-store";
+  NHIS_UPDATED_EVENT,
+  fetchHmoClaims,
+  fetchHmoEnrollments,
+  fetchHmoSchemes,
+  fetchHmoTariffs,
+  fetchPendingHmoRegistrations,
+} from "@/lib/nhis/client";
+import type { HmoClaim, HmoEnrollment, HmoRegistration, HmoScheme, HmoTariff } from "@/modules/nhis/types";
 
 export function useNhisStore() {
-  const [, rerender] = useReducer((x: number) => x + 1, 0);
   const [hydrated, setHydrated] = useState(false);
+  const [schemes, setSchemes] = useState<HmoScheme[]>([]);
+  const [tariffs, setTariffs] = useState<HmoTariff[]>([]);
+  const [enrollments, setEnrollments] = useState<HmoEnrollment[]>([]);
+  const [claims, setClaims] = useState<HmoClaim[]>([]);
+  const [hmoRegistrations, setHmoRegistrations] = useState<HmoRegistration[]>([]);
 
-  useEffect(() => {
-    const hydrationId = window.setTimeout(() => setHydrated(true), 0);
-    syncNhisFromSupabase();
-    const unsub = subscribeNhisStore(rerender);
-    const poll = setInterval(() => syncNhisFromSupabase(true), 30_000);
-
-    const supabase = createClient();
-    const channel = supabase
-      ?.channel("nhis-realtime")
-      .on("postgres_changes", { event: "*", schema: "public", table: "hmo_schemes" }, () => syncNhisFromSupabase(true))
-      .on("postgres_changes", { event: "*", schema: "public", table: "hmo_tariffs" }, () => syncNhisFromSupabase(true))
-      .on("postgres_changes", { event: "*", schema: "public", table: "patient_hmo_enrollments" }, () => syncNhisFromSupabase(true))
-      .on("postgres_changes", { event: "*", schema: "public", table: "patient_registrations" }, () => syncNhisFromSupabase(true))
-      .on("postgres_changes", { event: "*", schema: "public", table: "hmo_claims" }, () => syncNhisFromSupabase(true))
-      .subscribe();
-
-    return () => {
-      window.clearTimeout(hydrationId);
-      unsub();
-      clearInterval(poll);
-      if (channel) supabase?.removeChannel(channel);
-    };
+  const reload = useCallback(async () => {
+    try {
+      const [s, t, e, c, r] = await Promise.all([
+        fetchHmoSchemes(),
+        fetchHmoTariffs(),
+        fetchHmoEnrollments(),
+        fetchHmoClaims(),
+        fetchPendingHmoRegistrations(),
+      ]);
+      setSchemes(s);
+      setTariffs(t);
+      setEnrollments(e);
+      setClaims(c);
+      setHmoRegistrations(r);
+    } catch (err) {
+      console.error("[useNhisStore]", err);
+    } finally {
+      setHydrated(true);
+    }
   }, []);
 
-  if (!hydrated) {
-    return {
-      hydrated: false,
-      schemes: [],
-      tariffs: [],
-      enrollments: [],
-      claims: [],
-      hmoRegistrations: [],
+  useEffect(() => {
+    void reload();
+    const onUpdate = () => { void reload(); };
+    window.addEventListener(NHIS_UPDATED_EVENT, onUpdate);
+    const poll = setInterval(reload, 30_000);
+    return () => {
+      window.removeEventListener(NHIS_UPDATED_EVENT, onUpdate);
+      clearInterval(poll);
     };
-  }
+  }, [reload]);
 
-  return {
-    hydrated: true,
-    schemes: getNhisSchemes(),
-    tariffs: getNhisTariffs(),
-    enrollments: getNhisEnrollments(),
-    claims: getNhisClaims(),
-    hmoRegistrations: getNhisRegistrations(),
-  };
+  return { hydrated, schemes, tariffs, enrollments, claims, hmoRegistrations, reload };
 }
+
+// Re-export types for pages that import from nhis-store
+export type {
+  HmoScheme,
+  HmoTariff,
+  HmoEnrollment,
+  HmoClaim,
+  HmoClaimService,
+  HmoRegistration,
+} from "@/modules/nhis/types";

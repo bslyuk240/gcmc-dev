@@ -7,8 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Modal, ModalFooter } from "@/components/ui/modal";
 import { Toast, type ToastData } from "@/components/ui/toast";
 import { useNhisStore } from "@/lib/hooks/use-nhis-store";
+import { verifyHmoEnrollmentApi } from "@/lib/nhis/client";
 import {
-  syncNhisFromSupabase,
   addHmoEnrollment,
   updateHmoEnrollment,
   type HmoEnrollment,
@@ -57,7 +57,7 @@ function MobileMeta({ label, value }: { label: string; value: string }) {
 }
 
 export default function NhisPatientsPage() {
-  const { schemes, enrollments, hydrated } = useNhisStore();
+  const { schemes, enrollments, hydrated, reload } = useNhisStore();
   const [toast, setToast] = useState<ToastData | null>(null);
   const [showModal, setShowModal] = useState(false);
   const [editTarget, setEditTarget] = useState<HmoEnrollment | null>(null);
@@ -68,8 +68,24 @@ export default function NhisPatientsPage() {
   const [schemeFilter, setSchemeFilter] = useState("all");
 
   useEffect(() => {
-    syncNhisFromSupabase();
+    /* data loaded by useNhisStore */
   }, []);
+
+  async function handleVerify(enrollment: HmoEnrollment, action: "verify" | "reject") {
+    try {
+      if (action === "reject") {
+        const reason = window.prompt("Rejection reason:");
+        if (!reason?.trim()) return;
+        await verifyHmoEnrollmentApi(enrollment.id, { action: "reject", rejectionReason: reason.trim() });
+      } else {
+        await verifyHmoEnrollmentApi(enrollment.id, { action: "verify" });
+      }
+      setToast({ message: `Enrollment ${action === "verify" ? "verified" : "rejected"}.`, type: "success" });
+      await reload();
+    } catch (err) {
+      setToast({ message: err instanceof Error ? err.message : "Action failed", type: "error" });
+    }
+  }
 
   function field<K extends keyof EnrollmentFormData>(key: K, value: EnrollmentFormData[K]) {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -154,6 +170,7 @@ export default function NhisPatientsPage() {
         setToast({ message: `Patient ${form.patientId} enrolled in ${schemeName}.`, type: "success" });
       }
       closeModal();
+      await reload();
     } catch (err) {
       const msg = err instanceof Error ? err.message : "An unexpected error occurred";
       setError(msg);
@@ -237,8 +254,12 @@ export default function NhisPatientsPage() {
                         <p className="truncate text-sm font-semibold text-slate-900">{e.patientName || e.patientDisplayId || e.patientId}</p>
                         <p className="mt-0.5 text-[11px] text-slate-500">{e.schemeName}</p>
                       </div>
-                      <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${e.isActive ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>
-                        {e.isActive ? "Active" : "Inactive"}
+                      <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${
+                        (e.verificationStatus ?? "pending") === "verified" ? "bg-emerald-50 text-emerald-700"
+                        : (e.verificationStatus ?? "pending") === "pending" ? "bg-amber-50 text-amber-700"
+                        : "bg-slate-100 text-slate-500"
+                      }`}>
+                        {e.verificationStatus ?? "pending"}
                       </span>
                     </div>
                     <div className="grid grid-cols-1 gap-2 p-4 sm:grid-cols-2 sm:p-5">
@@ -250,6 +271,12 @@ export default function NhisPatientsPage() {
                       <MobileMeta label="Scheme" value={e.schemeName} />
                     </div>
                     <div className="flex gap-2 border-t border-slate-100 px-4 py-3">
+                      {(e.verificationStatus ?? "pending") === "pending" ? (
+                        <>
+                          <Button size="sm" onClick={() => void handleVerify(e, "verify")} className="flex-1">Verify</Button>
+                          <Button size="sm" variant="outline" onClick={() => void handleVerify(e, "reject")} className="flex-1">Reject</Button>
+                        </>
+                      ) : null}
                       <Button size="sm" variant="ghost" onClick={() => openEdit(e)} className="flex-1">Edit</Button>
                       {e.isActive ? (
                         <Button size="sm" variant="ghost" onClick={() => handleDeactivate(e)} className="flex-1">Deactivate</Button>

@@ -203,6 +203,12 @@ export const dashboardNavigation: Array<{
         description: "HMO schemes, patient enrollments, and claims processing.",
         department: "nhis",
       },
+      {
+        href: `${INTERNAL_PREFIX}/non_clinical`,
+        label: "Workforce",
+        description: "Non-clinical staff — transport, security, cleaning, and support units.",
+        department: "non_clinical",
+      },
     ],
   },
 ];
@@ -222,7 +228,7 @@ export const departmentThemes: Record<
   admin: { label: "Admin", chipClass: "bg-slate-100 text-slate-700" },
   hr: { label: "HR", chipClass: "bg-violet-50 text-violet-700" },
   it: { label: "IT", chipClass: "bg-cyan-50 text-cyan-800" },
-  non_clinical: { label: "Non-Clinical", chipClass: "bg-lime-50 text-lime-700" },
+  non_clinical: { label: "Workforce", chipClass: "bg-lime-50 text-lime-700" },
   nhis: { label: "NHIS", chipClass: "bg-blue-50 text-blue-700" },
   support: { label: "Support", chipClass: "bg-blue-50 text-blue-700" },
   notifications: {
@@ -353,7 +359,7 @@ export const sidebarNavigationByDepartment: Record<
       items: [
         { label: "Dashboard", href: `${INTERNAL_PREFIX}/lab`, icon: "dashboard" },
         { label: "Test Requests", href: `${INTERNAL_PREFIX}/lab/test-requests`, icon: "queue" },
-        { label: "Sample Collection", href: `${INTERNAL_PREFIX}/lab/sample-collection`, icon: "hospital" },
+        { label: "Sample Handover", href: `${INTERNAL_PREFIX}/lab/sample-collection`, icon: "hospital" },
         { label: "Lab Processing", href: `${INTERNAL_PREFIX}/lab/processing`, icon: "play" },
         { label: "Results Entry", href: `${INTERNAL_PREFIX}/lab/results-entry`, icon: "plus" },
         { label: "Results", href: `${INTERNAL_PREFIX}/lab/results`, icon: "reports" },
@@ -368,21 +374,31 @@ export const sidebarNavigationByDepartment: Record<
   ],
   accounts: [
     {
-      section: "Accounts",
+      section: "Cash & Collections",
       items: [
         { label: "Dashboard", href: `${INTERNAL_PREFIX}/accounts`, icon: "dashboard" },
+        { label: "Cash Desk", href: `${INTERNAL_PREFIX}/accounts/cash-desk`, icon: "billing" },
+        { label: "Patient Accounts", href: `${INTERNAL_PREFIX}/accounts/patients`, icon: "patients" },
         { label: "Invoices", href: `${INTERNAL_PREFIX}/accounts/invoices`, icon: "money" },
-        { label: "Receive Payment", href: `${INTERNAL_PREFIX}/accounts/receive-payment`, icon: "billing" },
-        { label: "Consultation Fees", href: `${INTERNAL_PREFIX}/accounts/consultation-fees`, icon: "billing" },
-        { label: "Lab Billing", href: `${INTERNAL_PREFIX}/accounts/lab-billing`, icon: "view" },
-        { label: "Nursing Billing", href: `${INTERNAL_PREFIX}/accounts/nursing-billing`, icon: "hospital" },
-        { label: "Pharmacy Billing", href: `${INTERNAL_PREFIX}/accounts/pharmacy-billing`, icon: "pharmacy" },
-        { label: "Payments History", href: `${INTERNAL_PREFIX}/accounts/payments-history`, icon: "reports" },
+        { label: "Inpatient Billing", href: `${INTERNAL_PREFIX}/accounts/inpatient-billing`, icon: "hospital" },
+      ],
+    },
+    {
+      section: "Payables",
+      items: [
         { label: "Expenses", href: `${INTERNAL_PREFIX}/accounts/expenses`, icon: "money" },
         { label: "Supplier Payments", href: `${INTERNAL_PREFIX}/accounts/supplier-payments`, icon: "money" },
         { label: "Payroll", href: `${INTERNAL_PREFIX}/accounts/payroll`, icon: "billing" },
+        { label: "Staff Banking", href: `${INTERNAL_PREFIX}/accounts/staff-banking`, icon: "money" },
         { label: "Kiosk Revenue", href: `${INTERNAL_PREFIX}/accounts/kiosk`, icon: "reports" },
-        { label: "Daily Reports", href: `${INTERNAL_PREFIX}/accounts/daily-reports`, icon: "reports" },
+      ],
+    },
+    {
+      section: "Finance Control",
+      items: [
+        { label: "Transaction Ledger", href: `${INTERNAL_PREFIX}/accounts/ledger`, icon: "reports" },
+        { label: "Financial Reports", href: `${INTERNAL_PREFIX}/accounts/reports`, icon: "reports" },
+        { label: "Day Close", href: `${INTERNAL_PREFIX}/accounts/day-close`, icon: "calendar" },
         { label: "Rota Management", href: `${INTERNAL_PREFIX}/accounts/rota`, icon: "calendar" },
         { label: "Leave Requests", href: `${INTERNAL_PREFIX}/accounts/leave`, icon: "calendar" },
         { label: "Staff Performance", href: `${INTERNAL_PREFIX}/accounts/performance`, icon: "reports" },
@@ -397,8 +413,11 @@ export const sidebarNavigationByDepartment: Record<
           items: [
             { label: "Dashboard", href: `${INTERNAL_PREFIX}/store`, icon: "dashboard" },
             { label: "Inventory", href: `${INTERNAL_PREFIX}/store/inventory`, icon: "billing" },
-            { label: "Requests", href: `${INTERNAL_PREFIX}/store/requests`, icon: "queue" },
+            { label: "Requisitions", href: `${INTERNAL_PREFIX}/store/requisitions`, icon: "queue" },
+            { label: "Stock Ledger", href: `${INTERNAL_PREFIX}/store/movements`, icon: "view" },
             { label: "Procurement", href: `${INTERNAL_PREFIX}/store/procurement`, icon: "reports" },
+            { label: "GRN / Receipt", href: `${INTERNAL_PREFIX}/store/procurement/grn`, icon: "billing" },
+            { label: "Reports", href: `${INTERNAL_PREFIX}/store/reports`, icon: "reports" },
             { label: "Rota Management", href: `${INTERNAL_PREFIX}/store/rota`, icon: "calendar" },
             { label: "Leave Requests", href: `${INTERNAL_PREFIX}/store/leave`, icon: "calendar" },
             { label: "Staff Performance", href: `${INTERNAL_PREFIX}/store/performance`, icon: "reports" },
@@ -409,94 +428,70 @@ export const sidebarNavigationByDepartment: Record<
     : [],
   admin: [
     {
-      section: "Overview",
+      section: "Admin Portal",
       items: [
         { label: "Dashboard", href: `${INTERNAL_PREFIX}/admin`, icon: "dashboard" },
         { label: "Department Overview", href: `${INTERNAL_PREFIX}/admin/department-monitoring`, icon: "group" },
-        { label: "Approvals", href: `${INTERNAL_PREFIX}/admin/approvals`, icon: "queue" },
-        { label: "Reports", href: `${INTERNAL_PREFIX}/admin/reports`, icon: "reports" },
-        { label: "Audit Logs", href: `${INTERNAL_PREFIX}/admin/audit-logs`, icon: "reports" },
-        { label: "Data Export", href: `${INTERNAL_PREFIX}/admin/data-export`, icon: "reports" },
-      ],
-    },
-    {
-      section: "Department Monitors",
-      items: [
-        { label: "Front Desk", href: `${INTERNAL_PREFIX}/admin/frontdesk`, icon: "patients" },
-        { label: "Doctors", href: `${INTERNAL_PREFIX}/admin/doctors`, icon: "hospital" },
-        { label: "Nurses Bay", href: `${INTERNAL_PREFIX}/admin/nurses`, icon: "group" },
-        { label: "Pharmacy", href: `${INTERNAL_PREFIX}/admin/pharmacy`, icon: "billing" },
-        { label: "Laboratory", href: `${INTERNAL_PREFIX}/admin/lab`, icon: "view" },
-        { label: "Accounts", href: `${INTERNAL_PREFIX}/admin/accounts`, icon: "money" },
-        { label: "Store", href: `${INTERNAL_PREFIX}/admin/store`, icon: "reports" },
-        { label: "HR", href: `${INTERNAL_PREFIX}/admin/hr`, icon: "group" },
-        { label: "IT", href: `${INTERNAL_PREFIX}/admin/it`, icon: "support" },
-      ],
-    },
-    {
-      section: "Admin",
-      items: [
+        { label: "Workforce Overview", href: `${INTERNAL_PREFIX}/admin/workforce`, icon: "hospital" },
+        { label: "Staff & Roles", href: `${INTERNAL_PREFIX}/admin/staff-roles`, icon: "patients" },
+        { label: "Departments", href: `${INTERNAL_PREFIX}/admin/departments`, icon: "hospital" },
+        { label: "Subscription & Billing", href: `${INTERNAL_PREFIX}/admin/billing`, icon: "billing" },
+        { label: "Inventory Overview", href: `${INTERNAL_PREFIX}/admin/inventory`, icon: "reports" },
+        { label: "Store Monitor", href: `${INTERNAL_PREFIX}/admin/store`, icon: "queue" },
+        { label: "Reports & Analytics", href: `${INTERNAL_PREFIX}/admin/reports`, icon: "reports" },
+        { label: "Audit Logs", href: `${INTERNAL_PREFIX}/admin/audit-logs`, icon: "view" },
         { label: "Settings", href: `${INTERNAL_PREFIX}/admin/settings`, icon: "settings" },
-        { label: "Chat to IT", href: `${INTERNAL_PREFIX}/admin/chat`, icon: "support" },
       ],
     },
   ],
   hr: [
     {
-      section: "HR Overview",
+      section: "HR Portal",
       items: [
         { label: "Dashboard", href: `${INTERNAL_PREFIX}/hr`, icon: "dashboard" },
-        { label: "Staff Directory", href: `${INTERNAL_PREFIX}/hr/staff-directory`, icon: "patients" },
-        { label: "Department Staffing", href: `${INTERNAL_PREFIX}/hr/department-staffing`, icon: "group" },
-      ],
-    },
-      {
-      section: "HR Operations",
-      items: [
-        { label: "Attendance", href: `${INTERNAL_PREFIX}/hr/attendance`, icon: "status" },
+        { label: "Staff Management", href: `${INTERNAL_PREFIX}/hr/staff-management`, icon: "patients" },
+        { label: "Departments", href: `${INTERNAL_PREFIX}/hr/departments`, icon: "group" },
+        { label: "Attendance & Shifts", href: `${INTERNAL_PREFIX}/hr/attendance-shifts`, icon: "status" },
+        { label: "Payroll", href: `${INTERNAL_PREFIX}/hr/payroll`, icon: "billing" },
         { label: "Leave Management", href: `${INTERNAL_PREFIX}/hr/leave-management`, icon: "queue" },
-        { label: "Leave Settings", href: `${INTERNAL_PREFIX}/hr/leave-settings`, icon: "settings" },
-        { label: "Notifications", href: `${INTERNAL_PREFIX}/hr/notifications`, icon: "bell" },
-        { label: "Onboarding & Exit", href: `${INTERNAL_PREFIX}/hr/onboarding`, icon: "hospital" },
-        { label: "Payroll Preparation", href: `${INTERNAL_PREFIX}/hr/payroll`, icon: "billing" },
-        { label: "Payslips", href: `${INTERNAL_PREFIX}/hr/payslips`, icon: "reports" },
-        { label: "Roles & Permissions", href: `${INTERNAL_PREFIX}/hr/roles-permissions`, icon: "settings" },
-      ],
-    },
-    {
-      section: "HR Admin",
-      items: [
-        { label: "Rota Management", href: `${INTERNAL_PREFIX}/hr/rota`, icon: "calendar" },
-        { label: "Leave Requests", href: `${INTERNAL_PREFIX}/hr/leave`, icon: "calendar" },
-        { label: "Staff Performance", href: `${INTERNAL_PREFIX}/hr/performance`, icon: "reports" },
-        { label: "Chat Inbox", href: `${INTERNAL_PREFIX}/hr/chat`, icon: "support" },
+        { label: "Leave Settings",   href: `${INTERNAL_PREFIX}/hr/leave-settings`, icon: "settings" },
+        { label: "Performance", href: `${INTERNAL_PREFIX}/hr/performance`, icon: "reports" },
+        { label: "Onboarding",  href: `${INTERNAL_PREFIX}/hr/onboarding`, icon: "user-add" },
+        { label: "Payslips",    href: `${INTERNAL_PREFIX}/hr/payslips`, icon: "money" },
+        { label: "Staff Directory", href: `${INTERNAL_PREFIX}/hr/staff-directory`, icon: "patients" },
+        { label: "Discipline Records", href: `${INTERNAL_PREFIX}/hr/discipline`, icon: "view" },
+        { label: "Settings", href: `${INTERNAL_PREFIX}/hr/settings`, icon: "settings" },
       ],
     },
   ],
   it: [
     {
-      section: "IT",
+      section: "IT Helpdesk",
       items: [
         { label: "Dashboard", href: `${INTERNAL_PREFIX}/it`, icon: "dashboard" },
+        { label: "Support Tickets", href: `${INTERNAL_PREFIX}/it/tickets`, icon: "queue" },
+        { label: "Chat Inbox", href: `${INTERNAL_PREFIX}/it/chat`, icon: "support" },
+        { label: "Onboarding Queue", href: `${INTERNAL_PREFIX}/it/onboarding-queue`, icon: "queue" },
+        { label: "User Access", href: `${INTERNAL_PREFIX}/it/user-access`, icon: "patients" },
+        { label: "Audit Logs", href: `${INTERNAL_PREFIX}/it/audit-logs`, icon: "reports" },
         { label: "Rota Management", href: `${INTERNAL_PREFIX}/it/rota`, icon: "calendar" },
         { label: "Leave Requests", href: `${INTERNAL_PREFIX}/it/leave`, icon: "calendar" },
         { label: "Staff Performance", href: `${INTERNAL_PREFIX}/it/performance`, icon: "reports" },
-        { label: "Chat Inbox", href: `${INTERNAL_PREFIX}/it/chat`, icon: "support" },
-        { label: "Onboarding Queue", href: `${INTERNAL_PREFIX}/it/onboarding-queue`, icon: "queue" },
-        { label: "Tickets", href: `${INTERNAL_PREFIX}/it/tickets`, icon: "queue" },
-        { label: "User Access", href: `${INTERNAL_PREFIX}/it/user-access`, icon: "patients" },
-        { label: "System Logs", href: `${INTERNAL_PREFIX}/it/system-logs`, icon: "reports" },
-        { label: "Data Export", href: `${INTERNAL_PREFIX}/admin/data-export`, icon: "reports" },
-        { label: "System", href: `${INTERNAL_PREFIX}/it/system`, icon: "settings" },
       ],
     },
   ],
   non_clinical: [
     {
-      section: "Overview",
+      section: "Workforce Portal",
       items: [
-        { label: "Overview", href: `${INTERNAL_PREFIX}/non_clinical`, icon: "dashboard" },
-        { label: "Unit Rota", href: `${INTERNAL_PREFIX}/non_clinical/rota`, icon: "calendar" },
+        { label: "Dashboard", href: `${INTERNAL_PREFIX}/non_clinical/dashboard`, icon: "dashboard" },
+        { label: "My Department", href: `${INTERNAL_PREFIX}/non_clinical/my-department`, icon: "hospital" },
+        { label: "My Team", href: `${INTERNAL_PREFIX}/non_clinical/my-team`, icon: "group" },
+        { label: "Attendance & Rota", href: `${INTERNAL_PREFIX}/non_clinical/attendance-rota`, icon: "calendar" },
+        { label: "Leave Management", href: `${INTERNAL_PREFIX}/non_clinical/leave`, icon: "queue" },
+        { label: "Tasks / Assignments", href: `${INTERNAL_PREFIX}/non_clinical/tasks`, icon: "play" },
+        { label: "Reports", href: `${INTERNAL_PREFIX}/non_clinical/reports`, icon: "reports" },
+        { label: "Settings", href: `${INTERNAL_PREFIX}/non_clinical/settings`, icon: "settings" },
         { label: "Chat to IT", href: `${INTERNAL_PREFIX}/non_clinical/chat`, icon: "support" },
       ],
     },
@@ -515,6 +510,8 @@ export const sidebarNavigationByDepartment: Record<
         { label: "HMO Schemes",        href: `${INTERNAL_PREFIX}/nhis/schemes`,      icon: "billing" },
         { label: "Enrolled Patients",  href: `${INTERNAL_PREFIX}/nhis/patients`,     icon: "patients" },
         { label: "Claims",             href: `${INTERNAL_PREFIX}/nhis/claims`,       icon: "reports" },
+        { label: "Pre-authorizations", href: `${INTERNAL_PREFIX}/nhis/preauth`,      icon: "status" },
+        { label: "Remittances",        href: `${INTERNAL_PREFIX}/nhis/remittances`, icon: "money" },
         { label: "Tariffs",            href: `${INTERNAL_PREFIX}/nhis/tariffs`,      icon: "money" },
         { label: "Chat to IT",         href: `${INTERNAL_PREFIX}/nhis/chat`,         icon: "support" },
       ],
@@ -668,6 +665,16 @@ export function getDepartmentFromPath(pathname?: string | null): DepartmentKey {
     return "dashboard";
   }
 
+  const prefixMatches = Object.entries(departmentHomePaths)
+    .filter(([dept]) => dept !== "dashboard" && dept !== "support" && dept !== "notifications" && dept !== "profile")
+    .sort(([, a], [, b]) => b.length - a.length);
+
+  for (const [dept, home] of prefixMatches) {
+    if (normalizedPath === home || normalizedPath.startsWith(`${home}/`)) {
+      return dept as DepartmentKey;
+    }
+  }
+
   const directMatch = getAllNavigationItems().find(
     (item) => normalizedPath === item.href || normalizedPath.startsWith(`${item.href}/`),
   );
@@ -698,12 +705,51 @@ export const departmentHomePaths: Record<DepartmentKey, string> = {
   admin: `${INTERNAL_PREFIX}/admin`,
   hr: `${INTERNAL_PREFIX}/hr`,
   it: `${INTERNAL_PREFIX}/it`,
-  non_clinical: `${INTERNAL_PREFIX}/non_clinical`,
+  non_clinical: `${INTERNAL_PREFIX}/non_clinical/dashboard`,
   nhis: `${INTERNAL_PREFIX}/nhis`,
   support: `${INTERNAL_PREFIX}/chat`,
   notifications: `${INTERNAL_PREFIX}/notifications`,
   profile: `${INTERNAL_PREFIX}/profile`,
 };
+
+/** Legacy or redirect paths → canonical nav href for active-state matching */
+const sidebarNavAliases: Record<string, string> = {
+  [`${INTERNAL_PREFIX}/store/requests`]: `${INTERNAL_PREFIX}/store/requisitions`,
+};
+
+export function normalizeSidebarPath(pathname: string): string {
+  for (const [from, to] of Object.entries(sidebarNavAliases)) {
+    if (pathname === from || pathname.startsWith(`${from}/`)) {
+      return pathname.replace(from, to);
+    }
+  }
+  return pathname;
+}
+
+export function resolveSidebarActiveHref(
+  pathname: string,
+  items: Array<{ href?: string }>,
+): string | undefined {
+  const normalized = normalizeSidebarPath(pathname);
+  const exactOnlyHomes = new Set(Object.values(departmentHomePaths));
+
+  const matches = items.filter((item) => {
+    if (!item.href) return false;
+    if (exactOnlyHomes.has(item.href)) return normalized === item.href;
+    return normalized === item.href || normalized.startsWith(`${item.href}/`);
+  });
+
+  if (!matches.length) return undefined;
+
+  matches.sort((left, right) => {
+    const leftExact = normalized === left.href ? 1 : 0;
+    const rightExact = normalized === right.href ? 1 : 0;
+    if (leftExact !== rightExact) return rightExact - leftExact;
+    return (right.href?.length ?? 0) - (left.href?.length ?? 0);
+  });
+
+  return matches[0]?.href;
+}
 
 export const sharedProtectedPrefixes = [
   `${INTERNAL_PREFIX}/chat`,

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { defaultPresetAmount } from "@/lib/billing/preset-catalog";
 import {
   fetchBillingPresets,
   upsertBillingPreset,
@@ -55,10 +56,9 @@ export function useBillingPresets() {
 
   /** Lookup the amount for a specific category+name, with optional fallback */
   function getAmount(category: string, name: string, fallback = 0): number {
-    return (
-      presets.find((p) => p.category === category && p.name === name && p.isActive)
-        ?.amount ?? fallback
-    );
+    const fromPreset = presets.find((p) => p.category === category && p.name === name && p.isActive)?.amount;
+    if (fromPreset != null) return fromPreset;
+    return defaultPresetAmount(category, name) ?? fallback;
   }
 
   /** Save (create or update) a preset, then refresh all consumers */

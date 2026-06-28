@@ -225,7 +225,7 @@ export default function NursesProcedureChargesPage() {
       </Card>
 
       <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-500">
-        <strong className="text-slate-700">Flow:</strong> Nurse performs procedure -&gt; records it in Ward/Emergency/ICU -&gt; charge appears here with &quot;Pending&quot; status -&gt; nurse sends it to Accounts -&gt; Accounts payment or waiver flows update both the Accounts charge and the nurse procedure status.
+        <strong className="text-slate-700">Flow:</strong> Nurse performs procedure in Ward, Emergency, or ICU -&gt; charge is sent to Accounts immediately from the unit page -&gt; the procedure also appears here as &quot;Billed&quot; for tracking -&gt; Accounts collects payment on the Nursing Billing screen.
       </div>
 
       <Toast toast={toast} onDismiss={() => setToast(null)} />

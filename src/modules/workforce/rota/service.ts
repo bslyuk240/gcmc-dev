@@ -6,7 +6,7 @@
  */
 
 import { createClient } from "@/lib/supabase/server";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { createTenantAdminClient } from "@/lib/supabase/admin-tenant";
 import type { DepartmentKey } from "@/lib/constants/navigation";
 import type {
   RotaAssignment,
@@ -183,10 +183,15 @@ function mapRotaSwapRequest(row: Record<string, unknown>): RotaSwapRequest {
 }
 
 export async function getRotaSwapRequests(department?: DepartmentKey): Promise<RotaSwapRequest[]> {
-  const sb = createAdminClient();
-  if (!sb) return [];
+  const scoped = await createTenantAdminClient();
+  if (!scoped) return [];
 
-  let query = sb.from("rota_swap_requests").select("*").order("created_at", { ascending: false });
+  const { admin, hospitalId } = scoped;
+  let query = admin
+    .from("rota_swap_requests")
+    .select("*")
+    .eq("hospital_id", hospitalId)
+    .order("created_at", { ascending: false });
   if (department) query = query.eq("department", department);
 
   const { data, error } = await query;
@@ -199,12 +204,14 @@ export async function getRotaSwapRequests(department?: DepartmentKey): Promise<R
 }
 
 export async function getMyRotaSwapRequests(staffId: string): Promise<RotaSwapRequest[]> {
-  const sb = createAdminClient();
-  if (!sb) return [];
+  const scoped = await createTenantAdminClient();
+  if (!scoped) return [];
 
-  const { data, error } = await sb
+  const { admin, hospitalId } = scoped;
+  const { data, error } = await admin
     .from("rota_swap_requests")
     .select("*")
+    .eq("hospital_id", hospitalId)
     .eq("staff_id", staffId)
     .order("created_at", { ascending: false });
 
@@ -219,12 +226,14 @@ export async function getMyRotaSwapRequests(staffId: string): Promise<RotaSwapRe
 export async function createRotaSwapRequest(
   payload: CreateRotaSwapRequestPayload,
 ): Promise<RotaSwapRequest | null> {
-  const sb = createAdminClient();
-  if (!sb) return null;
+  const scoped = await createTenantAdminClient();
+  if (!scoped) return null;
 
-  const { data, error } = await sb
+  const { admin, hospitalId } = scoped;
+  const { data, error } = await admin
     .from("rota_swap_requests")
     .insert({
+      hospital_id: hospitalId,
       assignment_id: payload.assignmentId,
       staff_id: payload.staffId,
       staff_name: payload.staffName,
@@ -255,10 +264,11 @@ export async function reviewRotaSwapRequest(
   reviewerId: string,
   reviewNote?: string,
 ): Promise<RotaSwapRequest | null> {
-  const sb = createAdminClient();
-  if (!sb) return null;
+  const scoped = await createTenantAdminClient();
+  if (!scoped) return null;
 
-  const { data, error } = await sb
+  const { admin, hospitalId } = scoped;
+  const { data, error } = await admin
     .from("rota_swap_requests")
     .update({
       status,
@@ -267,6 +277,7 @@ export async function reviewRotaSwapRequest(
       review_note: reviewNote ?? null,
       updated_at: new Date().toISOString(),
     })
+    .eq("hospital_id", hospitalId)
     .eq("id", requestId)
     .select("*")
     .single();
@@ -277,6 +288,115 @@ export async function reviewRotaSwapRequest(
   }
 
   return mapRotaSwapRequest(data as Record<string, unknown>);
+}
+
+function mapRotaAssignmentRow(row: Record<string, unknown>): RotaAssignment {
+  const shiftStart = row.shift_start != null ? String(row.shift_start).slice(0, 5) : null;
+  const shiftEnd = row.shift_end != null ? String(row.shift_end).slice(0, 5) : null;
+  return {
+    id: String(row.id),
+    staff_id: String(row.staff_id),
+    department: row.department as RotaAssignment["department"],
+    unit_id: row.unit_id != null ? String(row.unit_id) : null,
+    unit_name: row.unit_name != null ? String(row.unit_name) : null,
+    shift_date: String(row.shift_date).slice(0, 10),
+    shift_type: row.shift_type as RotaAssignment["shift_type"],
+    shift_start: shiftStart,
+    shift_end: shiftEnd,
+    status: row.status as RotaAssignment["status"],
+    notes: row.notes != null ? String(row.notes) : null,
+    created_at: String(row.created_at),
+    created_by: row.created_by != null ? String(row.created_by) : null,
+  };
+}
+
+/** Tenant-scoped rota reads for HOD/HR management APIs. */
+export async function getRotaByDepartmentAdmin(
+  department: DepartmentKey,
+  from: string,
+  to: string,
+  unitName?: string,
+): Promise<RotaAssignment[]> {
+  const scoped = await createTenantAdminClient();
+  if (!scoped) return [];
+
+  const { admin, hospitalId } = scoped;
+  let query = admin
+    .from("rota_assignments")
+    .select("*")
+    .eq("hospital_id", hospitalId)
+    .eq("department", department)
+    .gte("shift_date", from)
+    .lte("shift_date", to)
+    .order("shift_date")
+    .order("shift_start");
+
+  if (unitName) query = query.eq("unit_name", unitName);
+
+  const { data, error } = await query;
+
+  if (error) {
+    console.error("[getRotaByDepartmentAdmin]", error.message);
+    return [];
+  }
+
+  return (data ?? []).map((row) => mapRotaAssignmentRow(row as Record<string, unknown>));
+}
+
+export async function createRotaAssignmentAdmin(
+  payload: CreateRotaPayload,
+  createdBy: string,
+): Promise<{ id: string } | { error: string }> {
+  const scoped = await createTenantAdminClient();
+  if (!scoped) return { error: "Service not configured." };
+
+  const { admin, hospitalId } = scoped;
+  const { data, error } = await admin
+    .from("rota_assignments")
+    .insert({
+      hospital_id: hospitalId,
+      staff_id: payload.staff_id,
+      department: payload.department,
+      unit_id: payload.unit_id ?? null,
+      unit_name: payload.unit_name ?? null,
+      shift_date: payload.shift_date,
+      shift_type: payload.shift_type,
+      shift_start: payload.shift_start,
+      shift_end: payload.shift_end,
+      notes: payload.notes ?? null,
+      status: "scheduled",
+      created_by: createdBy,
+    })
+    .select("id")
+    .single();
+
+  if (error || !data) {
+    console.error("[createRotaAssignmentAdmin]", error?.message ?? "Unknown error");
+    return { error: error?.message ?? "Could not create shift." };
+  }
+
+  return { id: String(data.id) };
+}
+
+export async function deleteRotaAssignmentAdmin(
+  assignmentId: string,
+): Promise<{ ok: true } | { error: string }> {
+  const scoped = await createTenantAdminClient();
+  if (!scoped) return { error: "Service not configured." };
+
+  const { admin, hospitalId } = scoped;
+  const { error } = await admin
+    .from("rota_assignments")
+    .delete()
+    .eq("hospital_id", hospitalId)
+    .eq("id", assignmentId);
+
+  if (error) {
+    console.error("[deleteRotaAssignmentAdmin]", error.message);
+    return { error: error.message };
+  }
+
+  return { ok: true };
 }
 
 function getWeekMonday(isoDate: string): string {

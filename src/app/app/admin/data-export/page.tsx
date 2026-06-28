@@ -13,8 +13,8 @@ import { usePharmacyStore } from "@/lib/hooks/use-pharmacy-store";
 import { useNursesStore } from "@/lib/hooks/use-nurses-store";
 import { useDoctorsStore } from "@/lib/hooks/use-doctors-store";
 import { downloadReceiptHTML } from "@/lib/utils/print-receipt";
-
-const HOSPITAL = "Group Christian Medical Centre";
+import { escapeHtml } from "@/lib/utils/print-receipt";
+import { useTenantBranding } from "@/modules/tenant/tenant-context";
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 function csvEsc(v: unknown): string {
@@ -33,31 +33,35 @@ function timestamp() {
 }
 
 // ─── Patient visit HTML builder ───────────────────────────────────────────────
-function buildPatientHTML(name: string, id: string, visits: Record<string, unknown>[]): string {
+function buildPatientHTML(hospital: string, name: string, id: string, visits: Record<string, unknown>[]): string {
+  const safeHospital = escapeHtml(hospital);
+  const safeName = escapeHtml(name);
+  const safeId = escapeHtml(id);
   const rows = visits.map((v, i) => `
     <tr style="background:${i % 2 === 0 ? "#f8fafc" : "#fff"}">
-      <td style="padding:8px 12px;border:1px solid #e2e8f0">${v.date ?? v.visitDate ?? v.createdAt ?? "—"}</td>
-      <td style="padding:8px 12px;border:1px solid #e2e8f0">${v.department ?? v.type ?? "—"}</td>
-      <td style="padding:8px 12px;border:1px solid #e2e8f0">${v.description ?? v.items ?? v.test ?? v.procedure ?? v.drug ?? "—"}</td>
-      <td style="padding:8px 12px;border:1px solid #e2e8f0">${v.amount != null ? `₦${Number(v.amount).toLocaleString()}` : (v.status ?? "—")}</td>
+      <td style="padding:8px 12px;border:1px solid #e2e8f0">${escapeHtml(String(v.date ?? v.visitDate ?? v.createdAt ?? "—"))}</td>
+      <td style="padding:8px 12px;border:1px solid #e2e8f0">${escapeHtml(String(v.department ?? v.type ?? "—"))}</td>
+      <td style="padding:8px 12px;border:1px solid #e2e8f0">${escapeHtml(String(v.description ?? v.items ?? v.test ?? v.procedure ?? v.drug ?? "—"))}</td>
+      <td style="padding:8px 12px;border:1px solid #e2e8f0">${v.amount != null ? escapeHtml(`₦${Number(v.amount).toLocaleString()}`) : escapeHtml(String(v.status ?? "—"))}</td>
     </tr>`).join("");
   return `<!DOCTYPE html><html><head><meta charset="UTF-8"/>
-    <title>${name} — Patient Visit Report</title>
+    <title>${safeName} — Patient Visit Report</title>
     <style>body{font-family:Arial,sans-serif;padding:24px;color:#0f172a}h1{font-size:20px}h2{font-size:14px;color:#64748b;font-weight:normal;margin:0}table{width:100%;border-collapse:collapse;margin-top:16px}th{background:#1e3a5f;color:#fff;padding:8px 12px;text-align:left;font-size:13px}td{font-size:13px}.footer{margin-top:24px;font-size:11px;color:#94a3b8}</style>
     </head><body>
-    <h1>${HOSPITAL}</h1>
+    <h1>${safeHospital}</h1>
     <h2>Patient Visit Report — Confidential</h2>
     <hr style="margin:12px 0;border:none;border-top:2px solid #1e3a5f"/>
-    <p><strong>Patient:</strong> ${name} &nbsp;|&nbsp; <strong>ID:</strong> ${id} &nbsp;|&nbsp; <strong>Generated:</strong> ${new Date().toLocaleString("en-GB")}</p>
+    <p><strong>Patient:</strong> ${safeName} &nbsp;|&nbsp; <strong>ID:</strong> ${safeId} &nbsp;|&nbsp; <strong>Generated:</strong> ${escapeHtml(new Date().toLocaleString("en-GB"))}</p>
     ${visits.length === 0 ? "<p style='color:#94a3b8;margin-top:16px'>No visit records found.</p>" : `
     <table><thead><tr><th>Date</th><th>Department</th><th>Description</th><th>Amount / Status</th></tr></thead>
     <tbody>${rows}</tbody></table>`}
-    <p class="footer">This document is for internal hospital use only. ${HOSPITAL} · ${new Date().getFullYear()}</p>
+    <p class="footer">This document is for internal hospital use only. ${safeHospital} · ${new Date().getFullYear()}</p>
     </body></html>`;
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
 export default function DataExportPage() {
+  const branding = useTenantBranding();
   const { consultationFees, labCharges, nursingCharges } = useAccountsStore();
   const { tests: labTests } = useLabStore();
   const { prescriptions, bills: pharmBills } = usePharmacyStore();
@@ -111,13 +115,15 @@ export default function DataExportPage() {
 
   // ── Print any department ────────────────────────────────────────────────────
   function printDepartmentReport(dept: string, headers: string[], rows: unknown[][]): void {
-    const tableRows = rows.map((r) => `<tr>${r.map((v) => `<td style="padding:6px 10px;border:1px solid #e2e8f0;font-size:13px">${v ?? "—"}</td>`).join("")}</tr>`).join("");
-    const th = headers.map((h) => `<th style="padding:8px 10px;background:#1e3a5f;color:#fff;text-align:left;font-size:12px">${h}</th>`).join("");
-    const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"/><title>${dept} Report</title>
+    const safeHospital = escapeHtml(branding.name);
+    const safeDept = escapeHtml(dept);
+    const tableRows = rows.map((r) => `<tr>${r.map((v) => `<td style="padding:6px 10px;border:1px solid #e2e8f0;font-size:13px">${escapeHtml(String(v ?? "—"))}</td>`).join("")}</tr>`).join("");
+    const th = headers.map((h) => `<th style="padding:8px 10px;background:#1e3a5f;color:#fff;text-align:left;font-size:12px">${escapeHtml(h)}</th>`).join("");
+    const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"/><title>${safeDept} Report</title>
       <style>body{font-family:Arial,sans-serif;padding:24px;color:#0f172a}@media print{body{padding:0}}</style>
       </head><body>
-      <h2 style="margin:0">${HOSPITAL}</h2>
-      <p style="color:#64748b;margin:4px 0 16px">${dept} Activity Report · ${new Date().toLocaleString("en-GB")}</p>
+      <h2 style="margin:0">${safeHospital}</h2>
+      <p style="color:#64748b;margin:4px 0 16px">${safeDept} Activity Report · ${escapeHtml(new Date().toLocaleString("en-GB"))}</p>
       <table style="width:100%;border-collapse:collapse"><thead><tr>${th}</tr></thead><tbody>${tableRows}</tbody></table>
       <p style="margin-top:20px;font-size:11px;color:#94a3b8">Printed by Admin/IT · ${new Date().getFullYear()}</p>
       <script>window.onload=function(){window.print()}<\/script>
@@ -154,7 +160,7 @@ export default function DataExportPage() {
     let count = 0;
     patientMap.forEach(({ name, id, visits }) => {
       const safeName = name.replace(/[^a-z0-9]/gi, "_").slice(0, 40);
-      const html = buildPatientHTML(name, id, visits);
+      const html = buildPatientHTML(branding.name, name, id, visits);
       zip.file(`patients/${safeName}_${id || count}.html`, html);
       count++;
     });
@@ -169,10 +175,10 @@ export default function DataExportPage() {
 
     // Add readme
     zip.file("README.txt",
-      `GCMC Patient Visits Export\n=========================\nGenerated: ${new Date().toLocaleString("en-GB")}\nPatients: ${patientMap.size}\nTotal visit records: ${[...patientMap.values()].reduce((s, p) => s + p.visits.length, 0)}\n\nEach HTML file = one patient's full visit history.\nOpen in any browser; use Print > Save as PDF for archiving.\n`);
+      `${branding.shortName} Patient Visits Export\n=========================\nGenerated: ${new Date().toLocaleString("en-GB")}\nPatients: ${patientMap.size}\nTotal visit records: ${[...patientMap.values()].reduce((s, p) => s + p.visits.length, 0)}\n\nEach HTML file = one patient's full visit history.\nOpen in any browser; use Print > Save as PDF for archiving.\n`);
 
     const blob = await zip.generateAsync({ type: "blob" });
-    saveAs(blob, `GCMC_patient_visits_${timestamp()}.zip`);
+    saveAs(blob, `${branding.slug}_patient_visits_${timestamp()}.zip`);
     setExporting(null);
     setToast({ message: `Patient visits exported — ${patientMap.size} patient files in ZIP.`, type: "success" });
   }

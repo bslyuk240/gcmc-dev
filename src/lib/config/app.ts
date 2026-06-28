@@ -11,6 +11,8 @@ export const appConfig = {
     process.env.NEXT_PUBLIC_APP_NAME ?? "Group Christian Medical Centre",
   appShortName: process.env.NEXT_PUBLIC_APP_SHORT_NAME ?? "GCMC",
   appUrl: process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000",
+  /** Base domain for subdomain tenant resolution (e.g. hospitalapp.com → gcmc.hospitalapp.com) */
+  appDomain: process.env.NEXT_PUBLIC_APP_DOMAIN,
   logLevel: process.env.LOG_LEVEL ?? "info",
   privateBucketName:
     process.env.PRIVATE_BUCKET_NAME ?? "private-documents",

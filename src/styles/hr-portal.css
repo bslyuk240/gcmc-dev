@@ -1,0 +1,78 @@
+/* Hospital HR portal — dark sidebar + violet accent */
+[data-department="hr"] {
+  --accent: #7c3aed;
+  --accent-soft: #ede9fe;
+  --accent-foreground: #5b21b6;
+  --radius-button: 0;
+}
+
+[data-department="hr"] .hr-sidebar {
+  border-color: #1e293b;
+  background: #0f172a;
+}
+
+[data-department="hr"] .hr-sidebar-inner {
+  background: #0f172a;
+}
+
+[data-department="hr"] .hr-sidebar-brand {
+  background: #0f172a;
+  border-bottom: 1px solid #1e293b;
+}
+
+[data-department="hr"] .hr-sidebar-nav {
+  background: #0f172a;
+}
+
+[data-department="hr"] .hr-sidebar-brand h1 {
+  color: #f8fafc;
+}
+
+[data-department="hr"] .hr-sidebar-brand p {
+  color: #64748b;
+}
+
+[data-department="hr"] .hr-sidebar-nav .hr-nav-link {
+  border-radius: 0;
+  color: #cbd5e1;
+}
+
+[data-department="hr"] .hr-sidebar-nav .hr-nav-link:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: #f8fafc;
+}
+
+[data-department="hr"] .hr-sidebar-nav .hr-nav-link[data-active="true"] {
+  background: rgba(124, 58, 237, 0.25);
+  color: #ffffff;
+  font-weight: 600;
+}
+
+[data-department="hr"] .hr-sidebar-nav .hr-nav-link[data-active="true"] .hr-nav-icon {
+  color: #ffffff;
+}
+
+[data-department="hr"] .hr-sidebar-footer {
+  border-color: #1e293b;
+  background: #0f172a;
+}
+
+[data-department="hr"] .hr-sidebar-footer button,
+[data-department="hr"] .hr-sidebar-footer a {
+  border-radius: 0;
+  border-color: #334155;
+  background: transparent;
+  color: #cbd5e1;
+}
+
+[data-department="hr"] .hr-sidebar-footer button:hover,
+[data-department="hr"] .hr-sidebar-footer a:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: #f8fafc;
+}
+
+[data-department="hr"] .hr-sidebar-footer .hr-logout:hover {
+  border-color: #7f1d1d;
+  background: rgba(239, 68, 68, 0.12);
+  color: #fca5a5;
+}

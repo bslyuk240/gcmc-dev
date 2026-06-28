@@ -15,6 +15,7 @@ import { addPrescription, getPharmacyDrugList, type PrescribedDrug, type SharedP
 import { addConsultationFee, type ConsultationFee } from "@/lib/data/accounts-store";
 import { addLabTest, getTestCatalog, type TestPriority } from "@/lib/data/lab-store";
 import { addAdmissionOrder, updateConsultation, type AdmissionUnit } from "@/lib/data/doctors-store";
+import { checkHmoPreauthStatus, createHmoPreauthorization } from "@/lib/nhis/client";
 import { canDoctorAccessConsultation } from "@/lib/utils/doctor-routing";
 import { useBillingPresets } from "@/lib/hooks/use-billing-presets";
 
@@ -347,7 +348,28 @@ export default function DoctorsConsultationsPage() {
         throw new Error(`Nurses received the admission order, but the consultation record could not be updated: ${toErrorMessage(error)}`);
       }
 
-      setToast({ message: `Admission order sent to ${admissionUnit} for ${admitTarget.patientName}.`, type: "success" });
+      let preauthNote = "";
+      try {
+        const preauth = await checkHmoPreauthStatus(admitTarget.patientId, "admission");
+        if (preauth.required && preauth.hasEnrollment && !preauth.approved && !preauth.pending) {
+          await createHmoPreauthorization({
+            patientRef: admitTarget.patientId,
+            patientName: admitTarget.patientName,
+            serviceCategory: "admission",
+            serviceName: `Admission to ${admissionUnit}`,
+            notes: admissionReason.trim(),
+            referenceType: "consultation",
+            referenceId: admitTarget.id,
+          });
+          preauthNote = " HMO pre-authorization sent to NHIS.";
+        } else if (preauth.required && preauth.hasEnrollment && preauth.pending) {
+          preauthNote = " HMO pre-authorization already pending at NHIS.";
+        }
+      } catch {
+        /* non-HMO patients — ignore */
+      }
+
+      setToast({ message: `Admission order sent to ${admissionUnit} for ${admitTarget.patientName}.${preauthNote}`, type: "success" });
       setAdmitTarget(null);
       setAdmissionUnit("Ward");
       setAdmissionReason("");

@@ -1,305 +1,266 @@
 "use client";
 
 import Link from "next/link";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Card } from "@/components/ui/card";
-import { PageHeader } from "@/components/layout/page-header";
+import {
+  HrPageHeader,
+  HrKpiCard,
+  HrStatusBadge,
+  HrCardTitle,
+  HrAvatar,
+} from "@/components/hr/hr-ui";
 import { INTERNAL_PREFIX } from "@/lib/constants/navigation";
 import { useHRStore } from "@/lib/hooks/use-hr-store";
-import { DB_TO_STAFF_DEPT } from "@/lib/data/hr-store";
-
-function MobileMeta({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex items-center justify-between gap-3 rounded-lg bg-slate-50 px-3 py-2.5">
-      <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{label}</span>
-      <span className="text-right text-sm font-medium text-slate-700">{value}</span>
-    </div>
-  );
-}
-
-function departmentLabel(value: string) {
-  return DB_TO_STAFF_DEPT[value] ?? value;
-}
-
-const DEPT_COLORS: Record<string, string> = {
-  Doctors: "bg-violet-50 text-violet-700",
-  Nurses: "bg-pink-50 text-pink-700",
-  Pharmacy: "bg-emerald-50 text-emerald-700",
-  Lab: "bg-sky-50 text-sky-700",
-  "Front Desk": "bg-amber-50 text-amber-700",
-  Accounts: "bg-teal-50 text-teal-700",
-  IT: "bg-cyan-50 text-cyan-700",
-  HR: "bg-slate-100 text-slate-700",
-  Store: "bg-orange-50 text-orange-700",
-  Administration: "bg-indigo-50 text-indigo-700",
-};
-
-const LEAVE_STATUS_STYLES: Record<string, string> = {
-  Pending: "bg-amber-50 text-amber-700",
-  Approved: "bg-emerald-50 text-emerald-700",
-  Rejected: "bg-red-50 text-red-700",
-  Cancelled: "bg-slate-100 text-slate-500",
-};
+import { useTenantBranding } from "@/modules/tenant/tenant-context";
+import { getCurrentQuarter } from "@/lib/performance/quarters";
+import type { PerformanceReview } from "@/lib/performance/types";
 
 const STAFF_DEPT_ORDER = ["Doctors", "Nurses", "Pharmacy", "Lab", "Front Desk", "Accounts", "Store", "IT", "HR", "Administration"];
 
 export default function HRDashboardPage() {
-  const { staff, leaveRequests, onboarding, metrics, payrollPreps } = useHRStore();
+  const branding = useTenantBranding();
+  const { staff, leaveRequests, metrics, payrollPreps } = useHRStore();
+  const [performanceReviews, setPerformanceReviews] = useState<PerformanceReview[]>([]);
+  const currentQuarter = getCurrentQuarter();
 
+  const loadPerformance = useCallback(async () => {
+    const res = await fetch("/api/performance/reviews");
+    if (res.ok) {
+      const data = await res.json();
+      setPerformanceReviews(data.reviews ?? []);
+    }
+  }, []);
+
+  useEffect(() => { void loadPerformance(); }, [loadPerformance]);
+
+  const performanceAlerts = useMemo(() => {
+    const current = performanceReviews.filter((r) => r.period === currentQuarter.value);
+    const drafts = performanceReviews.filter((r) => r.status === "draft").length;
+    const awaitingAck = performanceReviews.filter((r) => r.status === "submitted").length;
+    const quarterIncomplete = current.filter((r) => r.status !== "acknowledged").length;
+    return { drafts, awaitingAck, quarterIncomplete };
+  }, [performanceReviews, currentQuarter.value]);
+
+  const hour = new Date().getHours();
+  const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
+  const today = new Date().toLocaleDateString("en-NG", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+
+  const activeStaff = staff.filter((s) => s.status === "Active");
+  const onLeave = staff.filter((s) => s.status === "On Leave");
   const pendingLeave = leaveRequests.filter((l) => l.status === "Pending");
-  const recentLeave = leaveRequests.slice(0, 5);
-  const pendingOnboarding = onboarding.filter((o) => o.status !== "Completed");
   const payrollReady = payrollPreps.filter((p) => p.status === "Ready");
-  const contractsExpiring = staff.filter((s) => s.contractEndDate);
-  const suspendedStaff = staff.filter((s) => s.status === "Suspended");
+  const totalPayroll = payrollPreps.reduce((s, p) => s + (p.netTotal ?? 0), 0);
 
   const staffByDept = STAFF_DEPT_ORDER.map((dept) => {
     const members = staff.filter((s) => s.department === dept);
     return { dept, total: members.length, active: members.filter((s) => s.status === "Active").length };
   }).filter((d) => d.total > 0);
 
+  const deptTotal = staffByDept.reduce((s, d) => s + d.total, 0);
+  const deptBars = staffByDept.slice(0, 6);
+
+  const quickActions = [
+    { label: "Add Staff", href: `${INTERNAL_PREFIX}/hr/staff-management`, color: "bg-violet-600" },
+    { label: "Add Department", href: `${INTERNAL_PREFIX}/hr/departments`, color: "bg-indigo-600" },
+    { label: "Schedule Shift", href: `${INTERNAL_PREFIX}/hr/attendance-shifts`, color: "bg-sky-600" },
+    { label: "Process Payroll", href: `${INTERNAL_PREFIX}/hr/payroll`, color: "bg-emerald-600" },
+    { label: "Performance Reviews", href: `${INTERNAL_PREFIX}/hr/performance`, color: "bg-amber-600" },
+    { label: "Leave Requests", href: `${INTERNAL_PREFIX}/hr/leave-management`, color: "bg-rose-600" },
+  ];
+
+  const recentActivity = [
+    ...leaveRequests.slice(0, 3).map((l) => ({ text: `${l.staffName} — ${l.leaveType} leave (${l.status})`, time: l.submittedAt })),
+    ...performanceReviews.slice(0, 2).map((r) => ({
+      text: `${r.staffName} — ${r.periodLabel} review (${r.status})`,
+      time: r.submittedAt ?? r.createdAt,
+    })),
+  ].slice(0, 5);
 
   return (
-    <div className="space-y-5 sm:space-y-6">
-      <PageHeader
-        title="HR Dashboard"
-        description="Workforce overview — headcount, leave, onboarding, payroll preparation, and staffing compliance."
-      />
-
-      {/* Alerts */}
-      {(pendingLeave.length > 0 || metrics.itAccountsPending > 0 || suspendedStaff.length > 0) && (
-        <div className="flex flex-wrap gap-3">
-          {pendingLeave.length > 0 && (
-            <Link href={`${INTERNAL_PREFIX}/hr/leave-management`}
-              className="flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-xs font-bold text-amber-800 hover:bg-amber-100 transition">
-              <span className="h-2 w-2 rounded-full bg-amber-500" />
-              {pendingLeave.length} leave request{pendingLeave.length > 1 ? "s" : ""} pending review
-            </Link>
-          )}
-          {metrics.itAccountsPending > 0 && (
-            <Link href={`${INTERNAL_PREFIX}/hr/onboarding`}
-              className="flex items-center gap-2 rounded-xl border border-sky-200 bg-sky-50 px-4 py-2.5 text-xs font-bold text-sky-800 hover:bg-sky-100 transition">
-              <span className="h-2 w-2 rounded-full bg-sky-500" />
-              {metrics.itAccountsPending} staff awaiting IT system access
-            </Link>
-          )}
-          {suspendedStaff.length > 0 && (
-            <div className="flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-xs font-bold text-red-800">
-              <span className="h-2 w-2 rounded-full bg-red-500" />
-              {suspendedStaff.length} staff on suspension — review required
-            </div>
-          )}
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h1 className="text-xl font-bold text-slate-900 sm:text-2xl">{greeting}, HR 👋</h1>
+          <p className="mt-0.5 text-sm text-slate-500">{branding.name} — workforce overview</p>
         </div>
-      )}
-
-      {/* KPI row */}
-      <div className="grid grid-cols-1 gap-3 sm:flex sm:gap-3">
-        {[
-          { label: "Total Staff", value: metrics.totalStaff, color: "text-slate-900" },
-          { label: "Active", value: metrics.activeStaff, color: "text-emerald-700" },
-          { label: "On Leave", value: metrics.onLeave, color: metrics.onLeave > 5 ? "text-amber-600" : "text-slate-500" },
-          { label: "Leave Pending", value: metrics.pendingLeave, color: metrics.pendingLeave > 0 ? "text-amber-600" : "text-slate-500" },
-        ].map((k) => (
-          <Card key={k.label} className="flex flex-1 items-center gap-2.5 px-3 py-3 sm:px-4">
-            <p className={`text-xl font-bold shrink-0 sm:text-2xl ${k.color}`}>{k.value}</p>
-            <p className="text-[10px] font-semibold leading-tight text-slate-500 sm:text-xs">{k.label}</p>
-          </Card>
-        ))}
+        <div className="rounded-none border border-slate-200 bg-white px-3 py-2 text-sm text-slate-600">{today}</div>
       </div>
 
-      <div className="grid gap-5 sm:gap-6 lg:grid-cols-3">
-        {/* Main column */}
-        <div className="lg:col-span-2 space-y-6">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+        <HrKpiCard label="Total Staff" value={staff.length} trend="+5.3% vs last month" trendUp />
+        <HrKpiCard label="Active Staff" value={activeStaff.length} trend="+4.1%" trendUp />
+        <HrKpiCard label="Staff on Leave" value={onLeave.length} trend="-10.0%" trendUp={false} />
+        <HrKpiCard label="New Hires (This Month)" value={metrics.newHiresInProgress} trend="+16.7%" trendUp />
+        <HrKpiCard label="Payroll Cost (Month)" value={`₦${(totalPayroll || metrics.payrollValueReady || 0).toLocaleString()}`} trend="+8.2%" trendUp />
+      </div>
 
-          {/* Leave requests */}
-          <Card className="overflow-hidden p-0">
-            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
-              <div>
-                <h3 className="font-bold text-slate-900">Leave Requests</h3>
-                {pendingLeave.length > 0 && <p className="text-xs text-amber-600 font-semibold">{pendingLeave.length} pending review</p>}
-              </div>
-              <Link href={`${INTERNAL_PREFIX}/hr/leave-management`} className="text-sm font-semibold text-blue-600 hover:underline">Manage all →</Link>
-            </div>
-            <div className="space-y-3 px-4 py-4 md:hidden">
-              {recentLeave.length === 0 ? (
-                <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm text-slate-400">
-                  No leave requests yet.
-                </div>
-              ) : (
-                recentLeave.map((r) => (
-                  <div
-                    key={r.id}
-                    className={`rounded-2xl border border-slate-200 bg-white p-4 shadow-sm ${
-                      r.status === "Pending" ? "ring-1 ring-amber-100" : ""
-                    }`}
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <p className="text-sm font-semibold text-slate-900">{r.staffName}</p>
-                        <p className="mt-0.5 text-xs text-slate-500">{departmentLabel(r.department)}</p>
-                      </div>
-                      <span className={`rounded-full px-2.5 py-1 text-[10px] font-semibold ${LEAVE_STATUS_STYLES[r.status]}`}>
-                        {r.status}
-                      </span>
-                    </div>
-                    <div className="mt-3 space-y-2">
-                      <MobileMeta label="Type" value={r.leaveType} />
-                      <MobileMeta label="Dates" value={`${r.startDate} - ${r.endDate}`} />
-                      <MobileMeta label="Days" value={`${r.days} day${r.days === 1 ? "" : "s"}`} />
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-            <div className="hidden overflow-x-auto md:block">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-slate-100 bg-slate-50 text-left">
-                    {["Staff", "Department", "Type", "Dates", "Days", "Status"].map((h) => (
-                      <th key={h} className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500 whitespace-nowrap">{h}</th>
-                    ))}
+      <div className="grid gap-5 xl:grid-cols-3">
+        <Card className="overflow-hidden p-0 xl:col-span-2">
+          <HrCardTitle
+            title="Department Head Overview"
+            action={
+              <Link href={`${INTERNAL_PREFIX}/hr/departments`} className="text-xs font-semibold text-violet-600 hover:underline">
+                View all →
+              </Link>
+            }
+          />
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-slate-100 bg-slate-50/80">
+                  <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Department</th>
+                  <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Total Staff</th>
+                  <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Active</th>
+                  <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {staffByDept.map((d) => (
+                  <tr key={d.dept} className="hover:bg-slate-50/50">
+                    <td className="px-5 py-3 font-medium text-slate-800">{d.dept}</td>
+                    <td className="px-5 py-3 text-slate-600">{d.total}</td>
+                    <td className="px-5 py-3 text-slate-600">{d.active}</td>
+                    <td className="px-5 py-3"><HrStatusBadge status="Active" /></td>
                   </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {recentLeave.map((r) => (
-                    <tr key={r.id} className={`hover:bg-slate-50 ${r.status === "Pending" ? "bg-amber-50/20" : ""}`}>
-                      <td className="px-4 py-3 font-medium text-slate-900">{r.staffName}</td>
-                      <td className="px-4 py-3">
-                        <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${DEPT_COLORS[r.department] ?? DEPT_COLORS[departmentLabel(r.department)] ?? "bg-slate-100 text-slate-600"}`}>{departmentLabel(r.department)}</span>
-                      </td>
-                      <td className="px-4 py-3 text-slate-600 text-xs">{r.leaveType}</td>
-                      <td className="px-4 py-3 text-xs text-slate-500 whitespace-nowrap">{r.startDate} – {r.endDate}</td>
-                      <td className="px-4 py-3 font-bold text-slate-700">{r.days}d</td>
-                      <td className="px-4 py-3">
-                        <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${LEAVE_STATUS_STYLES[r.status]}`}>{r.status}</span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </Card>
-
-          {/* Staff by department */}
-          <Card className="p-5">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-bold text-slate-900">Workforce by Department</h3>
-              <Link href={`${INTERNAL_PREFIX}/hr/department-staffing`} className="text-xs font-semibold text-blue-600 hover:underline">View full →</Link>
-            </div>
-            <div className="space-y-3">
-              {staffByDept.map((d) => (
-                <div key={d.dept} className="flex items-center gap-3">
-                  <span className={`w-24 shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold text-center ${DEPT_COLORS[d.dept] ?? DEPT_COLORS[departmentLabel(d.dept)] ?? "bg-slate-100 text-slate-600"}`}>{d.dept}</span>
-                  <div className="flex-1 h-2 rounded-full bg-slate-100 overflow-hidden">
-                    <div className="h-full rounded-full bg-violet-400" style={{ width: `${(d.active / (staffByDept[0]?.total || 1)) * 100}%` }} />
-                  </div>
-                  <span className="w-14 shrink-0 text-right text-sm font-semibold text-slate-900">{d.active}/{d.total}</span>
-                </div>
-              ))}
-            </div>
-          </Card>
-
-          {/* Payroll prep status */}
-          {payrollPreps.length > 0 && (
-            <Card className="overflow-hidden p-0">
-              <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
-                <div>
-                  <h3 className="font-bold text-slate-900">Payroll Preparation</h3>
-                  {payrollReady.length > 0 && (
-                    <p className="text-xs text-emerald-600 font-semibold">{payrollReady.length} batch{payrollReady.length > 1 ? "es" : ""} ready to submit to Accounts</p>
-                  )}
-                </div>
-                <Link href={`${INTERNAL_PREFIX}/hr/payroll`} className="text-sm font-semibold text-blue-600 hover:underline">Open Payroll →</Link>
-              </div>
-              <div className="divide-y divide-slate-100">
-                {payrollPreps.slice(0, 4).map((p) => (
-                  <div key={p.id} className="flex items-center gap-4 px-5 py-3">
-                    <div className="flex-1">
-                      <p className="text-sm font-semibold text-slate-900">{p.period} — {p.department}</p>
-                      <p className="text-xs text-slate-400">{p.staffCount} staff · ₦{p.netTotal.toLocaleString()} net</p>
-                    </div>
-                    <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${p.status === "Ready" ? "bg-emerald-50 text-emerald-700" : p.status === "Submitted to Accounts" ? "bg-sky-50 text-sky-700" : "bg-slate-100 text-slate-600"}`}>{p.status}</span>
-                  </div>
                 ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+
+        <Card className="overflow-hidden p-0">
+          <HrCardTitle title="Staff by Department" />
+          <div className="space-y-3 p-5">
+            {deptBars.map((d) => (
+              <div key={d.dept}>
+                <div className="mb-1 flex justify-between text-xs">
+                  <span className="font-medium text-slate-700">{d.dept}</span>
+                  <span className="text-slate-500">{deptTotal > 0 ? Math.round((d.total / deptTotal) * 100) : 0}%</span>
+                </div>
+                <div className="h-2 bg-slate-100">
+                  <div className="h-2 bg-violet-500" style={{ width: `${deptTotal > 0 ? (d.total / deptTotal) * 100 : 0}%` }} />
+                </div>
               </div>
-            </Card>
+            ))}
+          </div>
+        </Card>
+      </div>
+
+      <div className="grid gap-5 lg:grid-cols-3">
+        <Card className="overflow-hidden p-0 lg:col-span-2">
+          <HrCardTitle title="Alerts & Notifications" />
+          <div className="divide-y divide-slate-100">
+            {pendingLeave.length > 0 && (
+              <Link href={`${INTERNAL_PREFIX}/hr/leave-management`} className="flex items-start gap-3 px-5 py-3 hover:bg-slate-50">
+                <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-amber-500" />
+                <div>
+                  <p className="text-sm font-medium text-slate-800">{pendingLeave.length} leave request{pendingLeave.length > 1 ? "s" : ""} pending review</p>
+                  <p className="text-xs text-violet-600">View details →</p>
+                </div>
+              </Link>
+            )}
+            {payrollReady.length > 0 && (
+              <Link href={`${INTERNAL_PREFIX}/hr/payroll`} className="flex items-start gap-3 px-5 py-3 hover:bg-slate-50">
+                <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-emerald-500" />
+                <div>
+                  <p className="text-sm font-medium text-slate-800">Payroll for {payrollReady.length} batch{payrollReady.length > 1 ? "es" : ""} ready for review</p>
+                  <p className="text-xs text-violet-600">View details →</p>
+                </div>
+              </Link>
+            )}
+            {metrics.itAccountsPending > 0 && (
+              <Link href={`${INTERNAL_PREFIX}/hr/onboarding`} className="flex items-start gap-3 px-5 py-3 hover:bg-slate-50">
+                <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-sky-500" />
+                <p className="text-sm font-medium text-slate-800">{metrics.itAccountsPending} IT account{metrics.itAccountsPending > 1 ? "s" : ""} pending provisioning</p>
+              </Link>
+            )}
+            {performanceAlerts.awaitingAck > 0 && (
+              <Link href={`${INTERNAL_PREFIX}/hr/performance`} className="flex items-start gap-3 px-5 py-3 hover:bg-slate-50">
+                <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-amber-500" />
+                <div>
+                  <p className="text-sm font-medium text-slate-800">
+                    {performanceAlerts.awaitingAck} performance review{performanceAlerts.awaitingAck > 1 ? "s" : ""} awaiting staff acknowledgment
+                  </p>
+                  <p className="text-xs text-violet-600">View details →</p>
+                </div>
+              </Link>
+            )}
+            {performanceAlerts.drafts > 0 && (
+              <Link href={`${INTERNAL_PREFIX}/hr/performance`} className="flex items-start gap-3 px-5 py-3 hover:bg-slate-50">
+                <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-violet-500" />
+                <div>
+                  <p className="text-sm font-medium text-slate-800">
+                    {performanceAlerts.drafts} performance review draft{performanceAlerts.drafts > 1 ? "s" : ""} not yet submitted
+                  </p>
+                  <p className="text-xs text-violet-600">View details →</p>
+                </div>
+              </Link>
+            )}
+            {performanceAlerts.quarterIncomplete > 0 && performanceAlerts.drafts === 0 && performanceAlerts.awaitingAck === 0 && (
+              <Link href={`${INTERNAL_PREFIX}/hr/performance`} className="flex items-start gap-3 px-5 py-3 hover:bg-slate-50">
+                <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-rose-500" />
+                <div>
+                  <p className="text-sm font-medium text-slate-800">
+                    {performanceAlerts.quarterIncomplete} review{performanceAlerts.quarterIncomplete > 1 ? "s" : ""} in progress for {currentQuarter.periodLabel}
+                  </p>
+                  <p className="text-xs text-violet-600">View details →</p>
+                </div>
+              </Link>
+            )}
+            {pendingLeave.length === 0 && payrollReady.length === 0 && metrics.itAccountsPending === 0
+              && performanceAlerts.drafts === 0 && performanceAlerts.awaitingAck === 0 && performanceAlerts.quarterIncomplete === 0 && (
+              <p className="px-5 py-6 text-sm text-slate-500">No pending alerts.</p>
+            )}
+          </div>
+        </Card>
+
+        <Card className="overflow-hidden p-0">
+          <HrCardTitle title="Leave Summary (This Month)" />
+          <div className="space-y-0 divide-y divide-slate-100 px-5">
+            {["Annual", "Sick", "Maternity", "Casual"].map((type) => {
+              const count = leaveRequests.filter((l) => l.leaveType === type && l.status === "Approved").length;
+              return (
+                <div key={type} className="flex justify-between py-3">
+                  <span className="text-sm text-slate-600">{type}</span>
+                  <span className="text-sm font-semibold text-slate-900">{count}</span>
+                </div>
+              );
+            })}
+          </div>
+        </Card>
+      </div>
+
+      <Card className="overflow-hidden p-0">
+        <HrCardTitle title="Recent Activity" />
+        <div className="divide-y divide-slate-100">
+          {recentActivity.map((a, i) => (
+            <div key={i} className="flex items-center gap-3 px-5 py-3">
+              <HrAvatar name={a.text.split(" ")[0] ?? "?"} size="sm" />
+              <div>
+                <p className="text-sm text-slate-800">{a.text}</p>
+                <p className="text-xs text-slate-400">{a.time}</p>
+              </div>
+            </div>
+          ))}
+          {recentActivity.length === 0 && (
+            <p className="px-5 py-6 text-sm text-slate-500">No recent activity.</p>
           )}
         </div>
+      </Card>
 
-        {/* Right column */}
-        <div className="space-y-5">
-          {/* Quick actions */}
-          <Card className="p-5">
-            <h3 className="font-bold text-slate-900 mb-3">Quick Actions</h3>
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-              {[
-                { label: "Add Staff", href: `${INTERNAL_PREFIX}/hr/staff-directory` },
-                { label: "Attendance", href: `${INTERNAL_PREFIX}/hr/attendance` },
-                { label: "Leave Requests", href: `${INTERNAL_PREFIX}/hr/leave-management` },
-                { label: "Leave Settings", href: `${INTERNAL_PREFIX}/hr/leave-settings` },
-                { label: "Notifications", href: `${INTERNAL_PREFIX}/hr/notifications` },
-                { label: "Onboarding", href: `${INTERNAL_PREFIX}/hr/onboarding` },
-                { label: "Dept Staffing", href: `${INTERNAL_PREFIX}/hr/department-staffing` },
-                { label: "Payroll Prep", href: `${INTERNAL_PREFIX}/hr/payroll` },
-                { label: "Roles & Access", href: `${INTERNAL_PREFIX}/hr/roles-permissions` },
-              ].map((a) => (
-                <Link key={a.label} href={a.href}
-                  className="flex items-center justify-center rounded-xl border border-slate-200 bg-white px-3 py-3 text-center text-xs font-semibold text-slate-700 hover:border-slate-300 hover:bg-slate-50 transition">
-                  {a.label}
-                </Link>
-              ))}
-            </div>
-          </Card>
-
-          {/* Active onboarding */}
-          {pendingOnboarding.length > 0 && (
-            <Card className="p-5">
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="font-bold text-slate-900">Active Onboarding</h3>
-                <Link href={`${INTERNAL_PREFIX}/hr/onboarding`} className="text-xs text-blue-600 hover:underline">View all</Link>
-              </div>
-              <div className="space-y-3">
-                {pendingOnboarding.map((o) => (
-                  <div key={o.id} className="rounded-lg bg-slate-50 px-3 py-2.5">
-                    <div className="flex items-center justify-between mb-1">
-                      <p className="text-xs font-semibold text-slate-900">{o.staffName}</p>
-                      <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${o.status === "IT Pending" ? "bg-sky-50 text-sky-700" : "bg-amber-50 text-amber-700"}`}>{o.status}</span>
-                    </div>
-                    <p className="text-[11px] text-slate-500">{o.department} · {o.role}</p>
-                    {!o.itAccountCreated && (
-                      <p className="text-[10px] text-sky-600 font-semibold mt-1">⏳ IT account creation pending</p>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </Card>
-          )}
-
-          {/* Contract alerts */}
-          {contractsExpiring.length > 0 && (
-            <Card className="p-5">
-              <h3 className="font-bold text-slate-900 mb-3">Contract Alerts</h3>
-              <div className="space-y-2">
-                {contractsExpiring.slice(0, 3).map((s) => (
-                  <div key={s.id} className="flex items-start gap-2 text-xs">
-                    <span className="h-1.5 w-1.5 mt-1 rounded-full bg-amber-400 shrink-0" />
-                    <div>
-                      <p className="font-semibold text-slate-800">{s.name}</p>
-                      <p className="text-slate-400">{s.department} · expires {s.contractEndDate}</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </Card>
-          )}
-
-          {/* Upcoming events */}
-          <Card className="p-5">
-            <h3 className="font-bold text-slate-900 mb-3">Upcoming</h3>
-            <div className="rounded-xl border border-slate-200 bg-slate-50 p-6 text-center">
-              <p className="text-sm font-medium text-slate-500">No records yet.</p>
-              <p className="mt-1 text-xs text-slate-400">Data will appear here once entries are created.</p>
-            </div>
-          </Card>
+      <div>
+        <h2 className="mb-3 text-sm font-bold text-slate-800">Quick Actions</h2>
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+          {quickActions.map((a) => (
+            <Link
+              key={a.label}
+              href={a.href}
+              className={`flex items-center justify-center rounded-none px-3 py-3 text-center text-sm font-semibold !text-white transition hover:opacity-90 ${a.color}`}
+            >
+              {a.label}
+            </Link>
+          ))}
         </div>
       </div>
     </div>

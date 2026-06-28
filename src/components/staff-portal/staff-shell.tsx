@@ -5,14 +5,20 @@ import { usePathname } from "next/navigation";
 import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils/cn";
 import type { HMSSession } from "@/lib/auth/session";
+import { PlatformEntryBanner } from "@/components/platform/platform-entry-banner";
+import { useTenantBranding } from "@/modules/tenant/tenant-context";
+import { useNotificationStore } from "@/lib/hooks/use-notification-store";
 
 // â”€â”€â”€ nav items â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const NAV = [
   { href: "/staff/dashboard",    label: "Dashboard",    icon: HomeIcon },
   { href: "/staff/my-rota",      label: "My Rota",      icon: CalIcon },
   { href: "/staff/attendance",   label: "Attendance",   icon: ClockIcon },
+  { href: "/staff/tasks",        label: "My Tasks",     icon: ChartIcon },
   { href: "/staff/leave",        label: "Leave",        icon: PlaneIcon },
+  { href: "/staff/performance",  label: "Performance",  icon: ChartIcon },
   { href: "/staff/payslips",     label: "Payslips",     icon: MoneyIcon },
+  { href: "/staff/documents",    label: "Documents",    icon: DocIcon },
   { href: "/staff/chat",         label: "Chat to HR",   icon: ChatIcon },
   { href: "/staff/notifications",label: "Notifications",icon: BellIcon },
   { href: "/staff/profile",      label: "Profile",      icon: UserIcon },
@@ -31,6 +37,7 @@ const DEPT_LABELS: Record<string, string> = {
   frontdesk: "Front Desk", doctors: "Doctors", nurses: "Nurses Bay",
   pharmacy: "Pharmacy", lab: "Laboratory", accounts: "Accounts",
   store: "Store", admin: "Admin", hr: "HR", it: "IT",
+  non_clinical: "Workforce",
 };
 
 // â”€â”€â”€ SVG Icons â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -64,11 +71,25 @@ function PlaneIcon({ active }: { active: boolean }) {
     </svg>
   );
 }
+function ChartIcon({ active }: { active: boolean }) {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={active ? 2.5 : 2} strokeLinecap="round" strokeLinejoin="round">
+      <line x1="18" y1="20" x2="18" y2="10" /><line x1="12" y1="20" x2="12" y2="4" /><line x1="6" y1="20" x2="6" y2="14" />
+    </svg>
+  );
+}
 function MoneyIcon({ active }: { active: boolean }) {
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={active ? 2.5 : 2} strokeLinecap="round" strokeLinejoin="round">
       <rect x="2" y="5" width="20" height="14" rx="2" />
       <line x1="2" y1="10" x2="22" y2="10" />
+    </svg>
+  );
+}
+function DocIcon({ active }: { active: boolean }) {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={active ? 2.5 : 2} strokeLinecap="round" strokeLinejoin="round">
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" />
     </svg>
   );
 }
@@ -212,7 +233,8 @@ export function StaffPortalShell({
   children: React.ReactNode;
 }) {
   const pathname = usePathname() ?? "";
-  const [notifCount, setNotifCount] = useState(0);
+  const branding = useTenantBranding();
+  const { unreadCount: notifCount } = useNotificationStore(session.department);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 
   useEffect(() => {
@@ -220,23 +242,6 @@ export function StaffPortalShell({
     window.addEventListener("hms:open-mobile-sidebar", openSidebar);
     return () => window.removeEventListener("hms:open-mobile-sidebar", openSidebar);
   }, []);
-
-  useEffect(() => {
-    const run = () => {
-      try {
-        const raw = localStorage.getItem("hms_notifications");
-        if (raw) {
-          const all = JSON.parse(raw) as Array<{ read?: boolean; targetDepartment?: string }>;
-          const mine = all.filter(
-            (n) => !n.read && (!n.targetDepartment || n.targetDepartment === session.department),
-          );
-          setNotifCount(mine.length);
-        }
-      } catch { /* ignore */ }
-    };
-    const id = setTimeout(run, 0);
-    return () => clearTimeout(id);
-  }, [session.department, pathname]);
 
   // Close mobile sidebar when route changes
   useEffect(() => {
@@ -257,7 +262,9 @@ export function StaffPortalShell({
   const avatarUrl = session.avatar_url?.trim() ?? null;
 
   return (
-    <div className="flex min-h-screen bg-slate-50">
+    <div className="flex min-h-screen flex-col bg-slate-50">
+      <PlatformEntryBanner />
+      <div className="flex min-h-0 flex-1">
 
       {/* â•â• DESKTOP SIDEBAR (hidden on mobile) â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */}
       <aside className="hidden lg:fixed lg:inset-y-0 lg:z-30 lg:flex lg:w-64 lg:min-h-0 lg:flex-col lg:overflow-hidden">
@@ -272,7 +279,7 @@ export function StaffPortalShell({
             </div>
             <div>
               <p className="text-sm font-black text-slate-900 leading-tight">Staff Portal</p>
-              <p className="text-[10px] text-slate-400 leading-tight">GCMC Self-Service</p>
+              <p className="text-[10px] text-slate-400 leading-tight">{branding.shortName} Self-Service</p>
             </div>
           </div>
 
@@ -506,6 +513,7 @@ export function StaffPortalShell({
             })}
           </div>
         </nav>
+      </div>
       </div>
     </div>
   );

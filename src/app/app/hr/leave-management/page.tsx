@@ -1,13 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Modal, ModalFooter } from "@/components/ui/modal";
 import { Toast, type ToastData } from "@/components/ui/toast";
-import { useHRStore } from "@/lib/hooks/use-hr-store";
+import { useHMSSession } from "@/modules/rbac/hooks";
 import { DB_TO_STAFF_DEPT, updateLeaveStatus, type LeaveRequest } from "@/lib/data/hr-store";
 import { INTERNAL_PREFIX } from "@/lib/constants/navigation";
 
@@ -63,15 +63,35 @@ function departmentLabel(value: string) {
 }
 
 export default function LeaveManagementPage() {
-  const { leaveRequests, metrics } = useHRStore();
+  const session = useHMSSession();
+  const [leaveRequests, setLeaveRequests] = useState<LeaveRequest[]>([]);
+  const [loading, setLoading] = useState(true);
   const [filterStatus, setFilterStatus] = useState<"All" | "Pending" | "Approved" | "Rejected">("All");
   const [filterDept, setFilterDept] = useState("All");
   const [reviewTarget, setReviewTarget] = useState<LeaveRequest | null>(null);
   const [action, setAction] = useState<"Approved" | "Rejected" | null>(null);
-  const [reviewerName, setReviewerName] = useState("HR Manager");
   const [hrNotes, setHrNotes] = useState("");
   const [toast, setToast] = useState<ToastData | null>(null);
   const [saving, setSaving] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await fetch("/api/leave/requests");
+      if (res.ok) {
+        const data = await res.json();
+        setLeaveRequests(data.requests ?? []);
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { void load(); }, [load]);
+
+  const metrics = {
+    pendingLeave: leaveRequests.filter((l) => l.status === "Pending").length,
+  };
 
   const allDepts = ["All", ...Array.from(new Set(leaveRequests.map((l) => l.department)))];
 
@@ -91,12 +111,16 @@ export default function LeaveManagementPage() {
     if (!reviewTarget || !action) return;
     setSaving(true);
     try {
-      await updateLeaveStatus(reviewTarget.id, action, reviewerName, hrNotes);
+      await updateLeaveStatus(reviewTarget.id, action, session?.full_name ?? "HR", hrNotes);
       setToast({ message: `${reviewTarget.staffName}'s leave request ${action.toLowerCase()}.`, type: action === "Approved" ? "success" : "info" });
       setReviewTarget(null);
       setAction(null);
-    } catch {
-      setToast({ message: "Failed to update leave request.", type: "error" });
+      await load();
+    } catch (error) {
+      setToast({
+        message: error instanceof Error ? error.message : "Failed to update leave request.",
+        type: "error",
+      });
     } finally {
       setSaving(false);
     }
@@ -135,7 +159,6 @@ export default function LeaveManagementPage() {
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-5 py-4">
           <h3 className="font-bold text-slate-900">All Leave Requests</h3>
           <div className="flex flex-wrap gap-2">
-            {/* Status filter */}
             <div className="flex gap-1.5">
               {(["All", "Pending", "Approved", "Rejected"] as const).map((f) => (
                 <button key={f} onClick={() => setFilterStatus(f)}
@@ -144,7 +167,6 @@ export default function LeaveManagementPage() {
                 </button>
               ))}
             </div>
-            {/* Dept filter */}
             <select value={filterDept} onChange={(e) => setFilterDept(e.target.value)}
               className="rounded-lg border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 outline-none">
               {allDepts.map((d) => <option key={d} value={d}>{d === "All" ? "All" : departmentLabel(d)}</option>)}
@@ -152,6 +174,10 @@ export default function LeaveManagementPage() {
           </div>
         </div>
 
+        {loading ? (
+          <div className="px-6 py-10 text-center text-sm text-slate-400">Loading leave requests...</div>
+        ) : (
+        <>
         <div className="space-y-3 p-3 md:hidden">
           {filtered.map((l) => (
             <div key={l.id} className={`rounded-xl border border-slate-200 bg-white p-4 shadow-sm ${l.status === "Pending" ? "ring-1 ring-amber-100" : ""}`}>
@@ -231,6 +257,8 @@ export default function LeaveManagementPage() {
             </tbody>
           </table>
         </div>
+        </>
+        )}
       </Card>
 
       {/* Review Modal */}
@@ -245,11 +273,7 @@ export default function LeaveManagementPage() {
               <div className="flex justify-between"><span className="text-slate-500">Reason</span><span className="text-right max-w-[200px]">{reviewTarget.reason}</span></div>
             </div>
             <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-1">Reviewed By</label>
-              <input value={reviewerName} onChange={(e) => setReviewerName(e.target.value)} className={inputCls} />
-            </div>
-            <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-1">HR Notes (optional)</label>
+              <label className="block text-xs font-semibold text-slate-600 mb-1">HR Notes {action === "Rejected" ? "(required for rejection)" : "(optional)"}</label>
               <textarea rows={2} value={hrNotes} onChange={(e) => setHrNotes(e.target.value)}
                 placeholder="Add review notes..." className={inputCls} />
             </div>
@@ -262,7 +286,7 @@ export default function LeaveManagementPage() {
         )}
         <ModalFooter>
           <Button variant="ghost" size="md" onClick={() => setReviewTarget(null)}>Cancel</Button>
-          <Button size="md" onClick={() => void handleReview()} disabled={saving}>
+          <Button size="md" onClick={() => void handleReview()} disabled={saving || (action === "Rejected" && !hrNotes.trim())}>
             {saving ? "Saving..." : action === "Approved" ? "Approve Leave" : "Reject Leave"}
           </Button>
         </ModalFooter>

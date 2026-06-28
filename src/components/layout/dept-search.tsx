@@ -56,7 +56,7 @@ export function searchForDept(dept: string, query: string): SearchResult[] {
           id: c.id,
           title: `FD ${c.id} — ${c.patientName}`,
           subtitle: `${c.chargeType} · ₦${c.amount.toLocaleString()} · ${c.status}`,
-          href: `${INTERNAL_PREFIX}/accounts/receive-payment`,
+          href: `${INTERNAL_PREFIX}/accounts/cash-desk`,
           type: "Charge",
         }),
       );
@@ -75,7 +75,7 @@ export function searchForDept(dept: string, query: string): SearchResult[] {
           id: c.id,
           title: `CONS ${c.id} — ${c.patientName}`,
           subtitle: `${c.doctorName} · ₦${c.fee.toLocaleString()} · ${c.status}`,
-          href: `${INTERNAL_PREFIX}/accounts/consultation-fees`,
+          href: `${INTERNAL_PREFIX}/accounts/cash-desk?department=doctors`,
           type: "Consultation",
         }),
       );
@@ -93,7 +93,7 @@ export function searchForDept(dept: string, query: string): SearchResult[] {
           id: c.id,
           title: `LAB ${c.id} — ${c.patientName}`,
           subtitle: `${c.testName} · ₦${c.amount.toLocaleString()} · ${c.status}`,
-          href: `${INTERNAL_PREFIX}/accounts/lab-billing`,
+          href: `${INTERNAL_PREFIX}/accounts/cash-desk?department=lab`,
           type: "Lab Charge",
         }),
       );

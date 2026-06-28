@@ -9,14 +9,7 @@ import { Toast, type ToastData } from "@/components/ui/toast";
 import { useAdminStore } from "@/lib/hooks/use-admin-store";
 import { updateITTicket } from "@/lib/data/admin-store";
 
-const SYSTEMS = [
-  { name: "EMR System", status: "Operational", uptime: "99.9%", color: "bg-emerald-400" },
-  { name: "Billing Module", status: "Operational", uptime: "99.8%", color: "bg-emerald-400" },
-  { name: "Pharmacy System", status: "Degraded", uptime: "97.1%", color: "bg-amber-400" },
-  { name: "Network / LAN", status: "Operational", uptime: "100%", color: "bg-emerald-400" },
-  { name: "File Server", status: "Operational", uptime: "99.7%", color: "bg-emerald-400" },
-  { name: "Backup Service", status: "Operational", uptime: "100%", color: "bg-emerald-400" },
-];
+const SYSTEMS: { name: string; status: string; uptime: string; color: string }[] = [];
 
 const PRIORITY_STYLES: Record<string, string> = {
   Critical: "bg-red-50 text-red-700 font-bold",
@@ -54,16 +47,26 @@ export default function AdminITMonitorPage() {
 
   function handleEscalate() {
     if (!escalateTarget) return;
-    updateITTicket(escalateTarget, { priority: "Critical" });
-    setToast({ message: `Ticket ${escalateTarget} escalated to Critical.`, type: "info" });
-    setEscalateTarget(null);
+    void updateITTicket(escalateTarget, { priority: "Critical" })
+      .then(() => {
+        setToast({ message: `Ticket escalated to Critical.`, type: "info" });
+        setEscalateTarget(null);
+      })
+      .catch((error: Error) => {
+        setToast({ message: error.message, type: "error" });
+      });
   }
 
   function handleClose() {
     if (!closeTarget) return;
-    updateITTicket(closeTarget, { status: "Closed" });
-    setToast({ message: `Ticket ${closeTarget} closed.`, type: "success" });
-    setCloseTarget(null);
+    void updateITTicket(closeTarget, { status: "Closed" })
+      .then(() => {
+        setToast({ message: `Ticket closed.`, type: "success" });
+        setCloseTarget(null);
+      })
+      .catch((error: Error) => {
+        setToast({ message: error.message, type: "error" });
+      });
   }
 
   return (
@@ -94,7 +97,7 @@ export default function AdminITMonitorPage() {
           { label: "Open Tickets", value: openTickets.length, color: openTickets.length > 3 ? "text-amber-600" : "text-slate-900" },
           { label: "Critical / Urgent", value: metrics.criticalITTickets, color: metrics.criticalITTickets > 0 ? "text-red-700" : "text-slate-500" },
           { label: "Resolved Today", value: resolved.length, color: "text-emerald-700" },
-          { label: "System Health", value: `${SYSTEMS.filter((s) => s.status === "Operational").length}/${SYSTEMS.length}`, color: degradedSystems.length > 0 ? "text-amber-600" : "text-emerald-700" },
+          { label: "System Health", value: SYSTEMS.length ? `${SYSTEMS.filter((s) => s.status === "Operational").length}/${SYSTEMS.length}` : "—", color: "text-slate-500" },
         ].map((s) => (
           <Card key={s.label} className="flex items-center gap-3 px-4 py-3">
             <p className={`shrink-0 text-2xl font-bold ${s.color}`}>{s.value}</p>
@@ -115,7 +118,7 @@ export default function AdminITMonitorPage() {
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <p className="truncate font-semibold text-slate-900">{t.title}</p>
-                      <p className="text-xs font-mono text-slate-500">{t.id}</p>
+                      <p className="text-xs font-mono text-slate-500">{t.ticketRef ?? t.id}</p>
                     </div>
                     <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${STATUS_STYLES[t.status]}`}>{t.status}</span>
                   </div>

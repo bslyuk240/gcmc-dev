@@ -10,12 +10,18 @@ import {
   getSessionDepartment,
   getHMSSession,
   getStaffPortalHMSSession,
+  getPendingHMSSession,
   hasManagementSession,
   hasStaffPortalSession,
+  clearPortalSessionsOnResponse,
+  setTenantSlugCookie,
+  validateSessionTenant,
 } from "@/lib/auth/guards";
 import { updateSession } from "@/lib/supabase/middleware";
 import { securityHeaders } from "@/lib/security/headers";
 import { hmsPendingSessionCookieName } from "@/lib/auth/constants";
+import { resolveTenantSlug, resolveTenantSlugFromHost, sessionMatchesTenant } from "@/lib/tenant/resolve";
+import { isTenantSessionAllowed } from "@/lib/tenant/hospital-access";
 
 function applySecurityHeaders(response: NextResponse): NextResponse {
   Object.entries(securityHeaders).forEach(([key, value]) => {
@@ -24,90 +30,184 @@ function applySecurityHeaders(response: NextResponse): NextResponse {
   return response;
 }
 
+function redirectWithTenantCookie(url: URL, tenantSlug: string): NextResponse {
+  const response = NextResponse.redirect(url);
+  setTenantSlugCookie(response, tenantSlug);
+  return applySecurityHeaders(response);
+}
+
+function nextWithTenantHeaders(
+  base: NextResponse,
+  tenantSlug: string,
+  session: {
+    staff_id: string;
+    department: string;
+    role: string;
+    full_name: string;
+    permissions: string[];
+    hospital_id: string;
+    hospital_slug: string;
+  } | null,
+  sessionDepartment: string | null,
+): NextResponse {
+  setTenantSlugCookie(base, tenantSlug);
+  base.headers.set("x-hms-hospital-slug", tenantSlug);
+  if (session) {
+    base.headers.set("x-hms-hospital-id", session.hospital_id);
+    base.headers.set("x-hms-staff-id", session.staff_id);
+    base.headers.set("x-hms-department", session.department);
+    base.headers.set("x-hms-role", session.role);
+    base.headers.set("x-hms-full-name", session.full_name);
+    base.headers.set("x-hms-permissions", session.permissions.join(","));
+  } else if (sessionDepartment) {
+    base.headers.set("x-hms-department", sessionDepartment);
+  }
+  return applySecurityHeaders(base);
+}
+
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
-
-  // ── Step 1: Refresh Supabase auth token ──────────────────────────────────
+  const tenantSlug = resolveTenantSlug(request);
   const supabaseResponse = await updateSession(request);
 
-  // ── Step 2: Parse HMS sessions (one per portal) ───────────────────────────
-  const mgmtSession       = getHMSSession(request);
-  const staffSession      = getStaffPortalHMSSession(request);
-  const sessionDepartment = getSessionDepartment(request);
+  // ── Hospital-signup must only work on the root/platform domain ───────────
+  // Redirect gcmc.skolahq.com/hospital-signup → skolahq.com/hospital-signup
+  if (pathname.startsWith("/hospital-signup")) {
+    const host = request.headers.get("host") ?? "";
+    const isOnTenantSubdomain = resolveTenantSlugFromHost(host) !== null;
+    if (isOnTenantSubdomain) {
+      const appDomain = process.env.NEXT_PUBLIC_APP_DOMAIN;
+      const rootUrl = appDomain
+        ? new URL(pathname, `https://${appDomain}`)
+        : new URL(pathname, request.url);
+      return NextResponse.redirect(rootUrl);
+    }
+  }
 
-  // ── Step 3: Handle first-login forced password change ────────────────────
+  // Platform console — auth enforced in (platform)/layout via Supabase session + role
+  if (pathname === "/platform" || pathname.startsWith("/platform/")) {
+    if (pathname === "/platform") {
+      const response = NextResponse.redirect(new URL("/platform/dashboard", request.url));
+      clearPortalSessionsOnResponse(response);
+      return applySecurityHeaders(response);
+    }
+    const response = supabaseResponse ?? NextResponse.next();
+    clearPortalSessionsOnResponse(response);
+    return applySecurityHeaders(response);
+  }
+
+  // Root / platform domain (no subdomain resolved) — pass through without tenant processing.
+  // The public layout and login page already handle the null-tenant case by showing
+  // platform branding. No HMS session cookies apply here.
+  if (tenantSlug === null) {
+    return applySecurityHeaders(supabaseResponse ?? NextResponse.next());
+  }
+
+  const mgmtSession = await getHMSSession(request);
+  const staffSession = await getStaffPortalHMSSession(request);
+  const pendingSession = await getPendingHMSSession(request);
+  const sessionDepartment = await getSessionDepartment(request);
+
+  // Tenant mismatch — force re-login (prevents cross-tenant cookie tampering)
+  const mgmtTenantOk = await validateSessionTenant(mgmtSession, tenantSlug);
+  const staffTenantOk = await validateSessionTenant(staffSession, tenantSlug);
+  const pendingTenantOk = pendingSession ? sessionMatchesTenant(pendingSession, tenantSlug) : true;
+
+  if (!mgmtTenantOk || !staffTenantOk || !pendingTenantOk) {
+    const loginPath = pathname.startsWith("/staff/") ? "/staff/login" : "/login";
+    const response = redirectWithTenantCookie(
+      new URL(`${loginPath}?error=tenant`, request.url),
+      tenantSlug,
+    );
+    clearPortalSessionsOnResponse(response);
+    return response;
+  }
+
+  // Suspended tenant or revoked sessions — force re-login
+  if (mgmtSession && !(await isTenantSessionAllowed(mgmtSession))) {
+    const response = redirectWithTenantCookie(
+      new URL("/login?error=suspended", request.url),
+      tenantSlug,
+    );
+    clearPortalSessionsOnResponse(response);
+    return response;
+  }
+
+  if (staffSession && !(await isTenantSessionAllowed(staffSession))) {
+    const response = redirectWithTenantCookie(
+      new URL("/staff/login?error=suspended", request.url),
+      tenantSlug,
+    );
+    clearPortalSessionsOnResponse(response);
+    return response;
+  }
+
+  if (pendingSession && !(await isTenantSessionAllowed(pendingSession))) {
+    const response = redirectWithTenantCookie(
+      new URL("/login?error=suspended", request.url),
+      tenantSlug,
+    );
+    clearPortalSessionsOnResponse(response);
+    return response;
+  }
+
   const hasPendingSession = request.cookies.has(hmsPendingSessionCookieName);
 
   if (hasPendingSession && pathname !== "/change-password") {
-    // User must set a new password before doing anything else
-    return applySecurityHeaders(
-      NextResponse.redirect(new URL("/change-password", request.url)),
-    );
+    return redirectWithTenantCookie(new URL("/change-password", request.url), tenantSlug);
   }
 
   if (pathname === "/change-password" && !hasPendingSession) {
-    // No pending session — either already changed or came here directly
-    if (hasManagementSession(request) && sessionDepartment && sessionDepartment in departmentHomePaths) {
-      return applySecurityHeaders(
-        NextResponse.redirect(
-          new URL(departmentHomePaths[sessionDepartment as keyof typeof departmentHomePaths], request.url),
-        ),
-      );
-    }
-    return applySecurityHeaders(NextResponse.redirect(new URL("/login", request.url)));
-  }
-
-  // If on /change-password with a valid pending session → fall through and serve the page
-
-  // ── Step 3a: Redirect authenticated management users away from /login ─────
-  if (pathname === "/login" && hasManagementSession(request) && sessionDepartment) {
-    if (sessionDepartment in departmentHomePaths) {
-      const response = NextResponse.redirect(
+    if ((await hasManagementSession(request)) && sessionDepartment && sessionDepartment in departmentHomePaths) {
+      return redirectWithTenantCookie(
         new URL(
           departmentHomePaths[sessionDepartment as keyof typeof departmentHomePaths],
           request.url,
         ),
+        tenantSlug,
       );
-      return applySecurityHeaders(response);
+    }
+    return redirectWithTenantCookie(new URL("/login", request.url), tenantSlug);
+  }
+
+  if (pathname === "/login" && (await hasManagementSession(request)) && sessionDepartment) {
+    if (sessionDepartment in departmentHomePaths) {
+      return redirectWithTenantCookie(
+        new URL(
+          departmentHomePaths[sessionDepartment as keyof typeof departmentHomePaths],
+          request.url,
+        ),
+        tenantSlug,
+      );
     }
   }
 
-  // ── Step 3b: Redirect authenticated staff users away from /staff/login ────
-  // Having a management session does NOT redirect here — portals are independent.
-  if (pathname === "/staff/login" && hasStaffPortalSession(request)) {
-    const response = NextResponse.redirect(
-      new URL("/staff/dashboard", request.url),
-    );
-    return applySecurityHeaders(response);
+  if (pathname === "/staff/login" && (await hasStaffPortalSession(request))) {
+    return redirectWithTenantCookie(new URL("/staff/dashboard", request.url), tenantSlug);
   }
 
-  // ── Step 4: Guard protected paths — portal-specific ────────────────────────
-  // /app/* requires the management portal session (hms-session-v2)
   if (
     (pathname === INTERNAL_PREFIX || pathname.startsWith(`${INTERNAL_PREFIX}/`)) &&
-    !hasManagementSession(request)
+    !(await hasManagementSession(request))
   ) {
     const loginUrl = new URL("/login", request.url);
     loginUrl.searchParams.set("next", pathname);
-    return applySecurityHeaders(NextResponse.redirect(loginUrl));
+    return redirectWithTenantCookie(loginUrl, tenantSlug);
   }
 
-  // /staff/* (except /staff/login) requires the staff portal session (hms-staff-session).
-  // Being logged into /app/* does NOT grant access here.
   if (
     pathname !== "/staff/login" &&
     (pathname === "/staff" || pathname.startsWith("/staff/")) &&
-    !hasStaffPortalSession(request)
+    !(await hasStaffPortalSession(request))
   ) {
     const loginUrl = new URL("/staff/login", request.url);
     loginUrl.searchParams.set("next", pathname);
-    return applySecurityHeaders(NextResponse.redirect(loginUrl));
+    return redirectWithTenantCookie(loginUrl, tenantSlug);
   }
 
-  // ── Step 5: Department isolation for /app/* ───────────────────────────────
   if (sessionDepartment && pathname.startsWith(`${INTERNAL_PREFIX}/`)) {
     const routeDepartment = getDepartmentFromPath(pathname);
-    const isSharedRoute   = sharedProtectedPrefixes.some(
+    const isSharedRoute = sharedProtectedPrefixes.some(
       (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
     );
 
@@ -116,63 +216,53 @@ export async function middleware(request: NextRequest) {
       routeDepartment === "dashboard" &&
       sessionDepartment !== "dashboard"
     ) {
-      const response = NextResponse.redirect(
+      return redirectWithTenantCookie(
         new URL(
           departmentHomePaths[sessionDepartment as keyof typeof departmentHomePaths],
           request.url,
         ),
+        tenantSlug,
       );
-      return applySecurityHeaders(response);
     }
 
-    // Redirect user to their own department if they try to access another
     if (
       !isSharedRoute &&
       routeDepartment !== "dashboard" &&
       routeDepartment !== sessionDepartment
     ) {
-      const response = NextResponse.redirect(
+      return redirectWithTenantCookie(
         new URL(
           departmentHomePaths[sessionDepartment as keyof typeof departmentHomePaths],
           request.url,
         ),
+        tenantSlug,
       );
-      return applySecurityHeaders(response);
     }
 
-    // Redirect /app and /app/dashboard to the user's department home
     if (
       pathname === `${INTERNAL_PREFIX}` ||
       pathname === `${INTERNAL_PREFIX}/` ||
       pathname === `${INTERNAL_PREFIX}/dashboard`
     ) {
-      const response = NextResponse.redirect(
+      return redirectWithTenantCookie(
         new URL(
           departmentHomePaths[sessionDepartment as keyof typeof departmentHomePaths],
           request.url,
         ),
+        tenantSlug,
       );
-      return applySecurityHeaders(response);
     }
   }
 
-  // ── Step 6: Forward session fields as headers for Server Components ────────
   const requestWithHeaders = supabaseResponse ?? NextResponse.next({ request });
-
-  // Use the portal-appropriate session for the request headers
   const activeSession = pathname.startsWith("/staff/") ? staffSession : mgmtSession;
 
-  if (activeSession) {
-    requestWithHeaders.headers.set("x-hms-staff-id",    activeSession.staff_id);
-    requestWithHeaders.headers.set("x-hms-department",  activeSession.department);
-    requestWithHeaders.headers.set("x-hms-role",        activeSession.role);
-    requestWithHeaders.headers.set("x-hms-full-name",   activeSession.full_name);
-    requestWithHeaders.headers.set("x-hms-permissions", activeSession.permissions.join(","));
-  } else if (sessionDepartment) {
-    requestWithHeaders.headers.set("x-hms-department", sessionDepartment);
-  }
-
-  return applySecurityHeaders(requestWithHeaders);
+  return nextWithTenantHeaders(
+    requestWithHeaders,
+    tenantSlug,
+    activeSession,
+    sessionDepartment,
+  );
 }
 
 export const config = {

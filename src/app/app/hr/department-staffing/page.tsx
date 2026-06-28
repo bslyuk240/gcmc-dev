@@ -10,6 +10,7 @@ import { Toast, type ToastData } from "@/components/ui/toast";
 import { INTERNAL_PREFIX } from "@/lib/constants/navigation";
 import { useHRStore } from "@/lib/hooks/use-hr-store";
 import { formatStaffDisplayId } from "@/lib/staff-id";
+import { assignDepartmentHeadAction } from "@/server/actions/hr/assign-department-head";
 import {
   updateStaffStatus,
   setDepartmentHead,
@@ -103,12 +104,23 @@ export default function DepartmentStaffingPage() {
     setHodModalOpen(true);
   }
 
-  function handleHodConfirm() {
+  async function handleHodConfirm() {
     const selectedStaff = deptStaff.find((s) => s.id === hodSelectedId);
     if (!selectedStaff) return;
+
+    const result = await assignDepartmentHeadAction({
+      department: activeDept,
+      staffId: hodSelectedId,
+    });
+
+    if (!result.success) {
+      setToast({ message: result.error, type: "error" });
+      return;
+    }
+
     setDepartmentHead(activeDept, hodSelectedId, "HR Manager");
     setToast({
-      message: `${selectedStaff.name} assigned as HOD for ${activeDept}. HOD permissions applied.`,
+      message: `${selectedStaff.name} assigned as HOD for ${activeDept}. They must sign in again for rota access.`,
       type: "success",
     });
     setHodModalOpen(false);
@@ -133,8 +145,8 @@ export default function DepartmentStaffingPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Department Staffing"
-        description="View and manage staff headcount across all departments. Assign HODs, update roles, and monitor compliance."
+        title="Departments"
+        description="Manage hospital departments and assign Heads of Department."
       />
 
       {/* Department picker */}

@@ -6,6 +6,7 @@ export type StaffProfileRecord = {
   email: string;
   department: string;
   role: string;
+  hospital_id?: string | null;
   avatar_url?: string | null;
   is_active?: boolean;
   must_change_password?: boolean;
@@ -16,14 +17,17 @@ function isMissingColumnError(error: { code?: string; message?: string }) {
   return error.code === "42703" || message.includes("column") && message.includes("does not exist");
 }
 
+const PROFILE_SELECTS = [
+  "id, full_name, email, department, role, hospital_id, avatar_url, is_active, must_change_password",
+  "id, full_name, email, department, role, hospital_id, is_active, must_change_password",
+  "id, full_name, email, department, role, avatar_url, is_active, must_change_password",
+  "id, full_name, email, department, role, is_active",
+] as const;
 export async function resolveStaffProfile(
   supabase: SupabaseClient,
   userId: string,
   email: string,
-  selects: string | string[] = [
-    "id, full_name, email, department, role, avatar_url, is_active, must_change_password",
-    "id, full_name, email, department, role, is_active",
-  ],
+  selects: string | readonly string[] = PROFILE_SELECTS,
 ): Promise<StaffProfileRecord | null> {
   const selectList = Array.isArray(selects) ? selects : [selects];
 

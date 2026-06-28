@@ -93,6 +93,7 @@ export default function DoctorsDashboardPage() {
   const session = useHMSSession();
 
   const doctorName = session?.full_name ?? "";
+  const isPlatformOperator = session?.platform_entry === true;
   const today = new Date();
   const todayLabel = today.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
   const doctorProfile = doctors.find((entry) => matchesDoctorName(entry.name, doctorName));
@@ -140,19 +141,19 @@ export default function DoctorsDashboardPage() {
     });
 
   const dashboardAlerts = [
-    !doctorName
+    !doctorName && !isPlatformOperator
       ? {
           type: "error" as const,
           message: "Doctor session is missing a display name. Dashboard data may not route correctly until the session is fixed.",
         }
       : null,
-    doctorName && !doctorProfile
+    doctorName && !doctorProfile && !isPlatformOperator
       ? {
           type: "error" as const,
           message: `Doctor profile for ${doctorName} was not found in the active staff list. Direct/specialty routing may be incomplete.`,
         }
       : null,
-    doctorProfile && !doctorSpecialty
+    doctorProfile && !doctorSpecialty && !isPlatformOperator
       ? {
           type: "info" as const,
           message: `${doctorName} has no normalized specialty set yet. Only directly assigned patients are guaranteed to appear.`,

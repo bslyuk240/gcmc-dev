@@ -412,31 +412,37 @@ export function subscribeHRStore(fn: () => void) {
 
 // ─── Supabase sync ────────────────────────────────────────────────────────────
 
-let _synced = false;
 export async function syncHRFromSupabase() {
-  if (typeof window === "undefined" || _synced) return;
+  if (typeof window === "undefined") return;
   try {
-    const {
-      fetchStaffMembers,
-      fetchLeaveRequests,
-    } = await import("@/lib/supabase/db");
-    const [staffResult, leaveResult] = await Promise.allSettled([
+    const { fetchStaffMembers, fetchGeneratedPayslips, fetchLeaveYearPolicies } = await import("@/lib/supabase/db");
+    const [staffResult, leaveResult, payslipResult, policyResult] = await Promise.allSettled([
       fetchStaffMembers(),
-      fetchLeaveRequests(),
+      (async () => {
+        const res = await fetch("/api/leave/requests");
+        if (!res.ok) return null;
+        return res.json();
+      })(),
+      fetchGeneratedPayslips(),
+      fetchLeaveYearPolicies(),
     ]);
     const staff = staffResult.status === "fulfilled" ? staffResult.value : [];
-    const leaveRequests = leaveResult.status === "fulfilled" ? leaveResult.value : [];
+    const leaveRequests = leaveResult.status === "fulfilled" && leaveResult.value?.requests
+      ? leaveResult.value.requests as LeaveRequest[]
+      : null;
+    const generatedPayslips = payslipResult.status === "fulfilled" ? payslipResult.value : null;
+    const leavePolicies = policyResult.status === "fulfilled" ? policyResult.value : null;
     const current = getState();
     _state = {
       ...current,
-      staff: mergeById(staff, current.staff),
-      leaveRequests: mergeById(leaveRequests, current.leaveRequests),
-      payrollPreps: buildPayrollPrepsFromPayslips(current.generatedPayslips),
+      staff: staffResult.status === "fulfilled" ? mergeById(staff, current.staff) : current.staff,
+      leaveRequests: leaveRequests ?? current.leaveRequests,
+      generatedPayslips: generatedPayslips ?? current.generatedPayslips,
+      leavePolicies: leavePolicies ?? current.leavePolicies,
+      payrollPreps: buildPayrollPrepsFromPayslips(generatedPayslips ?? current.generatedPayslips),
     };
     saveState(_state);
     listeners.forEach((l) => l());
-    _synced = staffResult.status === "fulfilled"
-      && leaveResult.status === "fulfilled";
   } catch { /* keep local state */ }
 }
 
@@ -584,29 +590,46 @@ export function getLeavePolicies(): LeaveYearPolicy[] { return [...getState().le
 export function getLeavePolicy(year: number): LeaveYearPolicy | null {
   return getState().leavePolicies.find((policy) => policy.year === year) ?? null;
 }
-export async function addLeaveRequest(l: LeaveRequest) {
-  const { insertLeaveRequest } = await import("@/lib/supabase/db");
-  await insertLeaveRequest(l);
-  mutate((state) => { state.leaveRequests = [l, ...state.leaveRequests]; });
+export async function addLeaveRequest(input: Omit<LeaveRequest, "id" | "status" | "submittedAt">) {
+  const res = await fetch("/api/leave/requests", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      leaveType: input.leaveType,
+      startDate: input.startDate,
+      endDate: input.endDate,
+      days: input.days,
+      reason: input.reason,
+    }),
+  });
+  const data = await res.json().catch(() => null);
+  if (!res.ok) {
+    throw new Error(data?.error ?? "Could not submit leave request.");
+  }
+  const request = data.request as LeaveRequest;
+  mutate((state) => { state.leaveRequests = [request, ...state.leaveRequests]; });
+  return request;
 }
 export async function updateLeaveStatus(id: string, status: "Approved" | "Rejected", reviewedBy: string, notes?: string) {
-  const now = new Date().toISOString();
-  const { reviewLeaveRequestByHOD } = await import("@/lib/supabase/db");
-  await reviewLeaveRequestByHOD(id, status, reviewedBy, notes ?? "");
+  const res = await fetch("/api/leave/requests", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ requestId: id, status, notes: notes ?? "" }),
+  });
+  const data = await res.json().catch(() => null);
+  if (!res.ok) {
+    throw new Error(data?.error ?? "Could not update leave request.");
+  }
+  const updated = data.request as LeaveRequest;
   mutate((state) => {
-    state.leaveRequests = state.leaveRequests.map((l) =>
-      l.id === id ? { ...l, status, reviewedBy, reviewedAt: now, hrNotes: notes ?? l.hrNotes } : l
-    );
-    // Update staff status for approved/rejected leave
-    const req = state.leaveRequests.find((l) => l.id === id);
-    if (req) {
+    state.leaveRequests = state.leaveRequests.map((l) => (l.id === id ? updated : l));
+    if (status === "Approved") {
       state.staff = state.staff.map((s) =>
-        (s.id === req.staffId || s.id === req.staffAuthId)
-          ? { ...s, status: status === "Approved" ? "On Leave" : s.status }
-          : s
+        s.id === updated.staffId ? { ...s, status: "On Leave" } : s,
       );
     }
   });
+  return updated;
 }
 
 export async function setLeavePolicy(policy: LeaveYearPolicy) {

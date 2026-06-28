@@ -12,7 +12,7 @@ export const metadata: Metadata = {
     "Secure hospital operations platform for front desk, clinical, pharmacy, accounts, HR, and support teams.",
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;

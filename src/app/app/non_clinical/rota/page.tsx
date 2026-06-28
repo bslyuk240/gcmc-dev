@@ -7,6 +7,7 @@ import { RotaBuilder } from "@/components/non-clinical/rota-builder";
 import { useHMSSession } from "@/modules/rbac/hooks";
 import { fetchNonClinicalUnits, fetchMyNcUnit, type NcUnit } from "@/lib/supabase/db";
 import { INTERNAL_PREFIX } from "@/lib/constants/navigation";
+import { isWorkforceAdmin, isWorkforceUnitHod } from "@/lib/workforce/access";
 
 export default function NonClinicalRotaPage() {
   const session = useHMSSession();
@@ -16,10 +17,10 @@ export default function NonClinicalRotaPage() {
   const [activeUnit, setActiveUnit] = useState<string | null>(null);
   const [loading, setLoading]     = useState(true);
 
-  const isHod   = session?.role === "hod";
+  const isHod   = isWorkforceUnitHod(session!);
   const isHR    = session?.role === "hr_manager" || session?.role === "hr_staff";
   const isAdmin = session?.role === "admin";
-  const canManageAll = isHR || isAdmin;
+  const canManageAll = isWorkforceAdmin(session!) || isAdmin;
 
   useEffect(() => {
     if (!session) return;
@@ -56,7 +57,7 @@ export default function NonClinicalRotaPage() {
   if (isHod && !myUnit) {
     return (
       <div className="space-y-6">
-        <PageHeader title="Unit Rota" description="Manage shift schedules for your unit." />
+        <PageHeader title="Attendance & Rota" description="Manage shift schedules for your unit." />
         <div className="rounded-xl border border-amber-200 bg-amber-50 px-5 py-5">
           <p className="font-semibold text-amber-900">No unit assigned yet</p>
           <p className="mt-1 text-sm text-amber-700">
@@ -105,11 +106,11 @@ export default function NonClinicalRotaPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Unit Rota"
+        title="Attendance & Rota"
         description={
           isHod && myUnit
             ? `Managing shifts for ${myUnit}`
-            : "Manage shift schedules across all non-clinical units."
+            : "Manage shift schedules across all workforce units."
         }
       />
 

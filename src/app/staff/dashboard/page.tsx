@@ -3,8 +3,11 @@
 import Link from "next/link";
 import { useState, useEffect, useRef } from "react";
 import { useHMSSession } from "@/modules/rbac/hooks";
-import { fetchStaffShifts, fetchLeaveRequests, fetchLeaveYearPolicies, type StaffShift } from "@/lib/supabase/db";
+import { useNotificationStore } from "@/lib/hooks/use-notification-store";
+import { fetchStaffShifts, type StaffShift } from "@/lib/supabase/db";
 import type { AttendanceRecord } from "@/modules/workforce/attendance/types";
+import { fetchStaffDashboard } from "@/lib/staff-portal/client";
+import type { StaffDashboardSummary } from "@/modules/staff-portal/types";
 import {
   clockInStaffAttendance,
   clockOutStaffAttendance,
@@ -52,6 +55,8 @@ function greet(name: string) {
 // ─── component ────────────────────────────────────────────────────────────────
 export default function StaffDashboardPage() {
   const session = useHMSSession();
+  const { notifications, unreadCount } = useNotificationStore(session?.department ?? "");
+  const notifs = notifications.filter((n) => !n.isRead);
   const avatarUrl = session?.avatar_url?.trim() ?? null;
   const initials = session?.full_name
     ?.split(" ")
@@ -71,28 +76,18 @@ export default function StaffDashboardPage() {
 
   // Shift and leave data from Supabase
   const [shifts, setShifts] = useState<StaffShift[]>([]);
-  const [leaveBalance, setLeaveBalance] = useState({ annual: { daysUsed: 0, daysTotal: 21 }, sick: { daysUsed: 0, daysTotal: 10 } });
-
-  // Notifications from shared store
-  const [notifs] = useState<Array<{ id: string; title: string; message: string; time: string; read: boolean }>>([]);
+  const [dashboard, setDashboard] = useState<StaffDashboardSummary | null>(null);
 
   useEffect(() => {
     if (!session?.staff_id) return;
     fetchStaffShifts(session.staff_id).then(setShifts).catch(() => {});
-    Promise.all([fetchLeaveRequests(), fetchLeaveYearPolicies()])
-      .then(([reqs, policies]) => {
-        const mine = reqs.filter((r) => r.staffId === session.staff_id);
-        const currentYear = new Date().getFullYear();
-        const policy = policies.find((item) => item.year === currentYear);
-        const annualTotal = (policy?.annualDays ?? 21) + (policy?.carryForwardDays ?? 0);
-        const annualUsed = mine
-          .filter((r) => r.leaveType === "Annual" && r.status === "Approved" && new Date(`${r.startDate}T00:00:00`).getFullYear() === currentYear)
-          .reduce((s, r) => s + r.days, 0);
-        const sickUsed = mine.filter((r) => r.leaveType === "Sick" && r.status === "Approved").reduce((s, r) => s + r.days, 0);
-        setLeaveBalance({ annual: { daysUsed: annualUsed, daysTotal: annualTotal }, sick: { daysUsed: sickUsed, daysTotal: 10 } });
-      })
-      .catch(() => {});
+    fetchStaffDashboard().then(setDashboard).catch(() => {});
   }, [session?.staff_id]);
+
+  const leaveBalance = dashboard?.leaveBalance ?? {
+    annual: { used: 0, total: 21, remaining: 21 },
+    sick: { used: 0, total: 10, remaining: 10 },
+  };
 
   const todayRecord = attendanceRecords.find((record) => record.attendanceDate === todayAttendanceDate()) ?? null;
   const clockedIn = Boolean(todayRecord?.clockInAt && !todayRecord?.clockOutAt);
@@ -215,7 +210,12 @@ export default function StaffDashboardPage() {
   const isOnShift  = nextShift?.shiftDate === todayStr;
 
   // Leave balance
-  const annualLeft = leaveBalance.annual.daysTotal - leaveBalance.annual.daysUsed;
+  const annualLeft = leaveBalance.annual.remaining;
+
+  const leaveCards = [
+    { type: "Annual", daysUsed: leaveBalance.annual.used, daysTotal: leaveBalance.annual.total },
+    { type: "Sick", daysUsed: leaveBalance.sick.used, daysTotal: leaveBalance.sick.total },
+  ];
 
   if (!session) {
     return (
@@ -382,7 +382,7 @@ export default function StaffDashboardPage() {
           <p className="text-[10px] font-semibold text-slate-400">Leave Days Left</p>
         </div>
         <div className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-center">
-          <p className={`text-xl font-black ${notifs.length > 0 ? "text-red-600" : "text-slate-400"}`}>{notifs.length}</p>
+          <p className={`text-xl font-black ${unreadCount > 0 ? "text-red-600" : "text-slate-400"}`}>{unreadCount}</p>
           <p className="text-[10px] font-semibold text-slate-400">New Notifications</p>
         </div>
       </div>
@@ -400,7 +400,7 @@ export default function StaffDashboardPage() {
                 <span className="mt-0.5 text-base">🔔</span>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-semibold text-slate-900 truncate">{n.title}</p>
-                  <p className="text-xs text-slate-500 truncate">{n.message}</p>
+                  <p className="text-xs text-slate-500 truncate">{n.body}</p>
                 </div>
               </div>
             ))}
@@ -432,10 +432,7 @@ export default function StaffDashboardPage() {
           <p className="text-xs font-bold uppercase tracking-wider text-slate-400">Leave Balance 2026</p>
           <Link href="/staff/leave" className="text-xs font-semibold text-indigo-600 hover:underline">Apply →</Link>
         </div>
-        {[
-          { type: "Annual", daysUsed: leaveBalance.annual.daysUsed, daysTotal: leaveBalance.annual.daysTotal },
-          { type: "Sick", daysUsed: leaveBalance.sick.daysUsed, daysTotal: leaveBalance.sick.daysTotal },
-        ].map((l) => (
+        {leaveCards.map((l) => (
           <div key={l.type} className="mb-2 last:mb-0">
             <div className="mb-1 flex justify-between text-xs">
               <span className="font-semibold text-slate-700">{l.type} Leave</span>

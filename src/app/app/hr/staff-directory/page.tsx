@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Modal, ModalFooter } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -18,8 +18,14 @@ import {
   type RoleKeyValue,
 } from "@/lib/data/hr-store";
 import { formatStaffDisplayId } from "@/lib/staff-id";
+import {
+  createHrStaffDocument,
+  fetchHrStaffDocuments,
+  fetchStaffDocumentDownloadUrl,
+} from "@/lib/hr/client";
 import { insertStaffMember } from "@/lib/supabase/db";
 import { DEFAULT_DOCTOR_SPECIALTIES } from "@/lib/utils/doctor-routing";
+import type { StaffDocument } from "@/modules/staff-portal/types";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -61,6 +67,14 @@ const STATUS_STYLES: Record<string, string> = {
   Probation: "bg-violet-50 text-violet-700",
 };
 
+const DOCUMENT_CATEGORIES = ["Contract", "Certificate", "Letter", "Policy", "Training", "Other"];
+
+const DOCUMENT_STATUS_STYLES: Record<StaffDocument["status"], string> = {
+  Valid: "text-emerald-600",
+  "Expiring Soon": "font-semibold text-amber-600",
+  Expired: "font-semibold text-red-600",
+};
+
 function MobileMeta({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-start justify-between gap-3 border-b border-slate-100 py-2 last:border-b-0 last:pb-0">
@@ -96,6 +110,17 @@ export default function StaffDirectoryPage() {
   const [editSpecialty, setEditSpecialty] = useState("");
   const [editPhone, setEditPhone] = useState("");
   const [editHomeAddress, setEditHomeAddress] = useState("");
+  const [staffDocuments, setStaffDocuments] = useState<StaffDocument[]>([]);
+  const [documentsLoading, setDocumentsLoading] = useState(false);
+  const [documentsSaving, setDocumentsSaving] = useState(false);
+  const [downloadingDocumentId, setDownloadingDocumentId] = useState<string | null>(null);
+  const [docTitle, setDocTitle] = useState("");
+  const [docCategory, setDocCategory] = useState("Contract");
+  const [docIssuedOn, setDocIssuedOn] = useState("");
+  const [docExpiryDate, setDocExpiryDate] = useState("");
+  const [docNotes, setDocNotes] = useState("");
+  const [docFile, setDocFile] = useState<File | null>(null);
+  const [docFileInputKey, setDocFileInputKey] = useState(0);
 
   // ── Add modal ──────────────────────────────────────────────────────────────
   const [showAdd,    setShowAdd]    = useState(false);
@@ -120,6 +145,33 @@ export default function StaffDirectoryPage() {
     return matchSearch && matchDept && matchStatus;
   });
 
+  useEffect(() => {
+    if (!viewStaff) {
+      setStaffDocuments([]);
+      return;
+    }
+
+    let cancelled = false;
+    setDocumentsLoading(true);
+    fetchHrStaffDocuments(viewStaff.id)
+      .then((documents) => {
+        if (!cancelled) setStaffDocuments(documents);
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setStaffDocuments([]);
+          showToast(error instanceof Error ? error.message : "Could not load staff documents.", "error");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setDocumentsLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [viewStaff]);
+
   function getInitials(name: string) {
     return name
       .split(" ")
@@ -141,6 +193,17 @@ export default function StaffDirectoryPage() {
     setEditSpecialty(s.specialty ?? "");
     setEditPhone(s.phone ?? "");
     setEditHomeAddress(s.homeAddress ?? "");
+    resetDocumentForm();
+  }
+
+  function resetDocumentForm() {
+    setDocTitle("");
+    setDocCategory("Contract");
+    setDocIssuedOn("");
+    setDocExpiryDate("");
+    setDocNotes("");
+    setDocFile(null);
+    setDocFileInputKey((key) => key + 1);
   }
 
   async function handleSaveEdit() {
@@ -208,6 +271,46 @@ export default function StaffDirectoryPage() {
     setViewStaff(null);
   }
 
+  async function handleCreateDocument() {
+    if (!viewStaff) return;
+    if (!docTitle.trim()) {
+      showToast("Document title is required.", "error");
+      return;
+    }
+
+    setDocumentsSaving(true);
+    try {
+      const document = await createHrStaffDocument({
+        staffId: viewStaff.id,
+        title: docTitle.trim(),
+        category: docCategory,
+        issuedOn: docIssuedOn || undefined,
+        expiryDate: docExpiryDate || undefined,
+        notes: docNotes.trim() || undefined,
+        file: docFile ?? undefined,
+      });
+      setStaffDocuments((current) => [document, ...current]);
+      resetDocumentForm();
+      showToast(`${document.title} published to ${viewStaff.name}'s staff portal.`, "success");
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "Could not publish document.", "error");
+    } finally {
+      setDocumentsSaving(false);
+    }
+  }
+
+  async function handleDownloadDocument(documentId: string) {
+    setDownloadingDocumentId(documentId);
+    try {
+      const url = await fetchStaffDocumentDownloadUrl(documentId);
+      window.open(url, "_blank", "noopener,noreferrer");
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "Could not open document.", "error");
+    } finally {
+      setDownloadingDocumentId(null);
+    }
+  }
+
   function showToast(message: string, type: ToastData["type"]) {
     setToast({ message, type });
   }
@@ -234,7 +337,8 @@ export default function StaffDirectoryPage() {
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-xl font-bold text-slate-900">Staff Directory</h1>
+          <h1 className="text-xl font-bold text-slate-900">Staff Management</h1>
+          <p className="mt-0.5 text-sm text-slate-500">Manage all hospital staff members and their information.</p>
           <p className="text-sm text-slate-500">
             All hospital staff across every department —{" "}
             {staff.filter((s) => s.status === "Active").length} active of {staff.length} total.
@@ -471,6 +575,96 @@ export default function StaffDirectoryPage() {
                     <p className="font-semibold text-slate-800">{row.value}</p>
                   </div>
                 ))}
+              </div>
+
+              <div className="rounded-xl border border-slate-200 bg-white p-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <p className="text-sm font-bold text-slate-900">Staff Documents</p>
+                    <p className="text-xs text-slate-500">Publish contracts, certificates, letters, and policies to the staff portal.</p>
+                  </div>
+                  {documentsLoading && <span className="text-xs text-slate-400">Loading...</span>}
+                </div>
+
+                <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  <div className="sm:col-span-2">
+                    <label className="mb-1 block text-xs font-semibold text-slate-600">Document Title *</label>
+                    <input value={docTitle} onChange={(e) => setDocTitle(e.target.value)} placeholder="Employment contract" className={inputCls} />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-semibold text-slate-600">Category</label>
+                    <select value={docCategory} onChange={(e) => setDocCategory(e.target.value)} className={inputCls}>
+                      {DOCUMENT_CATEGORIES.map((category) => <option key={category}>{category}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-semibold text-slate-600">File</label>
+                    <input
+                      key={docFileInputKey}
+                      type="file"
+                      onChange={(e) => setDocFile(e.target.files?.[0] ?? null)}
+                      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600 file:mr-3 file:rounded-md file:border-0 file:bg-slate-100 file:px-2.5 file:py-1.5 file:text-xs file:font-semibold file:text-slate-700"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-semibold text-slate-600">Issued On</label>
+                    <input type="date" value={docIssuedOn} onChange={(e) => setDocIssuedOn(e.target.value)} className={inputCls} />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-semibold text-slate-600">Expiry Date</label>
+                    <input type="date" value={docExpiryDate} onChange={(e) => setDocExpiryDate(e.target.value)} className={inputCls} />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label className="mb-1 block text-xs font-semibold text-slate-600">HR Notes</label>
+                    <textarea
+                      value={docNotes}
+                      onChange={(e) => setDocNotes(e.target.value)}
+                      rows={2}
+                      placeholder="Optional internal context for this document"
+                      className={`${inputCls} resize-none`}
+                    />
+                  </div>
+                </div>
+
+                <div className="mt-3 flex justify-end">
+                  <Button size="sm" onClick={handleCreateDocument} disabled={documentsSaving || !docTitle.trim()}>
+                    {documentsSaving ? "Publishing..." : "Publish Document"}
+                  </Button>
+                </div>
+
+                <div className="mt-4 space-y-2">
+                  {staffDocuments.map((doc) => (
+                    <div key={doc.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-100 bg-slate-50 px-3 py-2">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="truncate text-sm font-semibold text-slate-800">{doc.title}</p>
+                          <span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-bold text-slate-500">{doc.category}</span>
+                          <span className={`text-xs ${DOCUMENT_STATUS_STYLES[doc.status]}`}>{doc.status}</span>
+                        </div>
+                        <p className="mt-0.5 text-xs text-slate-400">
+                          {doc.issuedOn ? `Issued ${doc.issuedOn}` : "Issued date not set"}
+                          {doc.expiryDate ? ` - Expires ${doc.expiryDate}` : ""}
+                          {doc.fileName ? ` - ${doc.fileName}` : ""}
+                        </p>
+                      </div>
+                      {doc.storagePath && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => void handleDownloadDocument(doc.id)}
+                          disabled={downloadingDocumentId === doc.id}
+                        >
+                          {downloadingDocumentId === doc.id ? "Opening..." : "Download"}
+                        </Button>
+                      )}
+                    </div>
+                  ))}
+                  {!documentsLoading && staffDocuments.length === 0 && (
+                    <div className="rounded-lg bg-slate-50 px-3 py-4 text-center text-xs text-slate-400">
+                      No HR documents have been published for this staff member.
+                    </div>
+                  )}
+                </div>
               </div>
 
               {viewStaff.notes && (

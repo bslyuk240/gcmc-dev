@@ -257,7 +257,7 @@ export default function AccountsInvoicesPage() {
                   </button>
                 ) : (
                   <Link
-                    href={`${INTERNAL_PREFIX}/accounts/receive-payment?invoice=${encodeURIComponent(row.invoiceNumber)}`}
+                    href={`${INTERNAL_PREFIX}/accounts/invoices?invoice=${encodeURIComponent(row.invoiceNumber)}`}
                     className="text-xs font-semibold text-accent hover:underline"
                   >
                     Receive Payment
@@ -363,7 +363,7 @@ export default function AccountsInvoicesPage() {
                     <td className="px-5 py-3">
                       {row.status !== "paid" && row.status !== "cancelled" ? (
                         <Link
-                          href={`${INTERNAL_PREFIX}/accounts/receive-payment?invoice=${encodeURIComponent(row.invoiceNumber)}`}
+                          href={`${INTERNAL_PREFIX}/accounts/invoices?invoice=${encodeURIComponent(row.invoiceNumber)}`}
                           className="text-xs font-semibold text-accent hover:underline"
                         >
                           Receive Payment

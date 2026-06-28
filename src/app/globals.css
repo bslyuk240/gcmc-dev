@@ -1,5 +1,7 @@
 @import "tailwindcss";
 @import "../styles/theme.css";
+@import "../styles/admin-portal.css";
+@import "../styles/hr-portal.css";
 
 @theme inline {
   --color-background: var(--background);

@@ -1,11 +1,16 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Toast, type ToastData } from "@/components/ui/toast";
 import { useBillingPresets, invalidateBillingPresetsCache } from "@/lib/hooks/use-billing-presets";
 import type { BillingPreset } from "@/lib/supabase/db";
+import { useTenantBranding, useSetTenantBranding } from "@/modules/tenant/tenant-context";
+import {
+  removeHospitalLogoAction,
+  updateHospitalSettingsAction,
+} from "@/server/actions/admin/update-hospital-settings";
 
 const TABS = [
   { id: "general",       label: "General" },
@@ -19,9 +24,10 @@ const CATEGORY_LABELS: Record<string, string> = {
   frontdesk:    "Manual Front Desk Charges",
   consultation: "Doctor Consultation Fees",
   procedure:    "Nursing Procedure Charges",
+  inpatient:    "Inpatient Bed-Day Rates",
 };
 
-const CATEGORY_ORDER = ["visit", "consultation", "procedure", "frontdesk"];
+const CATEGORY_ORDER = ["visit", "consultation", "procedure", "inpatient", "frontdesk"];
 
 const TIMEZONES = [
   "(GMT+00:00) Coordinated Universal Time",
@@ -43,9 +49,12 @@ function MobileMeta({ label, value }: { label: string; value: string }) {
 }
 
 export default function AdminSettingsPage() {
+  const branding = useTenantBranding();
+  const setBranding = useSetTenantBranding();
   const [activeTab, setActiveTab] = useState("general");
   const [toast, setToast] = useState<ToastData | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [logoUploading, setLogoUploading] = useState(false);
 
   // ── Billing Rates tab ────────────────────────────────────────────────────
   const { presets, loading: presetsLoading, savePreset, removePreset } = useBillingPresets();
@@ -98,12 +107,28 @@ export default function AdminSettingsPage() {
   }
 
   // General tab state
-  const [hospitalName, setHospitalName] = useState("St. Mary's General Hospital");
-  const [contactEmail, setContactEmail] = useState("admin@stmarys-hospital.org");
-  const [timezone, setTimezone] = useState(TIMEZONES[0]);
-  const [switchboard, setSwitchboard] = useState("+1 (555) 0123-4567");
-  const [address, setAddress] = useState("123 Medical Center Way, Healthcare District, North Avenue, 56789");
+  const [hospitalName, setHospitalName] = useState("");
+  const [contactEmail, setContactEmail] = useState("");
+  const [timezone, setTimezone] = useState(TIMEZONES[2]);
+  const [switchboard, setSwitchboard] = useState("");
+  const [address, setAddress] = useState("");
   const [generalSaving, setGeneralSaving] = useState(false);
+
+  useEffect(() => {
+    setHospitalName(branding.name);
+    setContactEmail(branding.email);
+    setTimezone(branding.timezone || TIMEZONES[2]);
+    setSwitchboard(branding.phone);
+    setAddress(branding.address);
+  }, [branding]);
+
+  function resetGeneralForm() {
+    setHospitalName(branding.name);
+    setContactEmail(branding.email);
+    setTimezone(branding.timezone || TIMEZONES[2]);
+    setSwitchboard(branding.phone);
+    setAddress(branding.address);
+  }
 
   // Security tab state
   const [require2FA, setRequire2FA] = useState(true);
@@ -119,18 +144,64 @@ export default function AdminSettingsPage() {
   const [ticketAlert, setTicketAlert] = useState(true);
   const [leaveAlert, setLeaveAlert] = useState(true);
 
-  function handleSaveGeneral(e: React.FormEvent) {
+  async function handleSaveGeneral(e: React.FormEvent) {
     e.preventDefault();
     setGeneralSaving(true);
-    setTimeout(() => { setGeneralSaving(false); setToast({ message: "General settings saved.", type: "success" }); }, 600);
+    const result = await updateHospitalSettingsAction({
+      name: hospitalName,
+      settings: {
+        email: contactEmail,
+        phone: switchboard,
+        address,
+        timezone,
+      },
+    });
+    setGeneralSaving(false);
+    if (result.success) {
+      setBranding(result.branding);
+      setToast({ message: "General settings saved.", type: "success" });
+    } else {
+      setToast({ message: result.error, type: "error" });
+    }
   }
   function handleDiscard() {
-    setHospitalName("St. Mary's General Hospital");
-    setContactEmail("admin@stmarys-hospital.org");
-    setTimezone(TIMEZONES[0]);
-    setSwitchboard("+1 (555) 0123-4567");
-    setAddress("123 Medical Center Way, Healthcare District, North Avenue, 56789");
+    resetGeneralForm();
     setToast({ message: "Changes discarded.", type: "info" });
+  }
+
+  async function handleLogoUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setLogoUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append("logo", file);
+      const res = await fetch("/api/admin/hospital-logo", { method: "POST", body: formData });
+      const data = await res.json();
+      if (!res.ok) {
+        setToast({ message: data.error ?? "Logo upload failed.", type: "error" });
+        return;
+      }
+      if (data.branding) setBranding(data.branding);
+      setToast({ message: "Logo uploaded successfully.", type: "success" });
+    } catch {
+      setToast({ message: "Logo upload failed.", type: "error" });
+    } finally {
+      setLogoUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  }
+
+  async function handleRemoveLogo() {
+    setLogoUploading(true);
+    const result = await removeHospitalLogoAction();
+    setLogoUploading(false);
+    if (result.success) {
+      setBranding(result.branding);
+      setToast({ message: "Logo removed.", type: "info" });
+    } else {
+      setToast({ message: result.error, type: "error" });
+    }
   }
   function handleSaveSecurity() {
     setToast({ message: "Security settings saved.", type: "success" });
@@ -181,11 +252,24 @@ export default function AdminSettingsPage() {
               <label className="block text-sm font-medium text-slate-700">Hospital Logo</label>
               <p className="mt-1 text-sm text-slate-500">Recommended size: 512×512px (PNG or SVG).</p>
               <div className="mt-4 flex flex-wrap items-center gap-4">
-                <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-lg bg-blue-900 text-center text-xs font-bold leading-tight text-blue-200">HG HOSPITAL</div>
+                {branding.logoUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={branding.logoUrl}
+                    alt=""
+                    className="h-20 w-20 shrink-0 rounded-lg object-cover border border-slate-200"
+                  />
+                ) : (
+                  <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-lg bg-blue-900 text-center text-xs font-bold leading-tight text-blue-200">
+                    {branding.shortName}
+                  </div>
+                )}
                 <div className="flex flex-wrap gap-3">
-                  <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={() => setToast({ message: "Logo uploaded successfully.", type: "success" })} />
-                  <Button size="md" className="bg-[var(--accent)] text-white hover:opacity-95" onClick={() => fileInputRef.current?.click()}>Upload New</Button>
-                  <Button variant="outline" size="md" onClick={() => setToast({ message: "Logo removed.", type: "info" })}>Remove</Button>
+                  <input ref={fileInputRef} type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" className="hidden" onChange={handleLogoUpload} />
+                  <Button size="md" className="bg-[var(--accent)] text-white hover:opacity-95" onClick={() => fileInputRef.current?.click()} disabled={logoUploading}>
+                    {logoUploading ? "Uploading…" : "Upload New"}
+                  </Button>
+                  <Button variant="outline" size="md" onClick={handleRemoveLogo} disabled={logoUploading || !branding.logoUrl}>Remove</Button>
                 </div>
               </div>
             </div>
@@ -219,7 +303,11 @@ export default function AdminSettingsPage() {
 
             {/* Footer */}
             <div className="mt-8 flex flex-wrap items-center justify-between gap-4 border-t border-slate-200 pt-6">
-              <p className="text-xs text-slate-500">Last updated on Oct 24, 2023 at 14:30 PM</p>
+              <p className="text-xs text-slate-500">
+                {branding.updatedAt
+                  ? `Last updated ${new Date(branding.updatedAt).toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}`
+                  : "Not yet saved"}
+              </p>
               <div className="flex gap-3">
                 <Button variant="outline" size="md" type="button" onClick={handleDiscard}>Discard Changes</Button>
                 <Button size="md" type="submit" className="bg-[var(--accent)] text-white hover:opacity-95" disabled={generalSaving}>{generalSaving ? "Saving…" : "Save Changes"}</Button>
@@ -265,7 +353,7 @@ export default function AdminSettingsPage() {
       {activeTab === "billing-rates" && (
         <div className="space-y-8">
           <div className="rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-xs text-sky-800">
-            <strong>How this works:</strong> These rates are used system-wide — by Front Desk check-ins, Doctors&apos; consultation fees, Nursing procedure charges, and manual Front Desk billing. Changes take effect immediately across all departments.
+            <strong>How this works:</strong> These rates are used system-wide — Front Desk check-ins, doctor consultations, nursing procedures (Ward/Emergency), inpatient bed-day charges, and manual Front Desk billing. Changes take effect immediately.
           </div>
 
           {presetsLoading ? (

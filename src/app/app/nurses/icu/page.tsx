@@ -17,6 +17,7 @@ import {
 import { useNursesStore } from "@/lib/hooks/use-nurses-store";
 import { insertPatientObservation } from "@/lib/supabase/db";
 import { useHMSSession } from "@/modules/rbac/hooks";
+import { RecordConsumableModal } from "@/components/nurses/record-consumable-modal";
 
 const PRIORITY_DOT: Record<string, string> = {
   Critical: "bg-red-500 animate-pulse",
@@ -77,6 +78,7 @@ export default function NursesICUPage() {
 
   const [vitalsTarget, setVitalsTarget] = useState<WardPatient | null>(null);
   const [viewVitals, setViewVitals] = useState<WardPatient | null>(null);
+  const [consumableTarget, setConsumableTarget] = useState<WardPatient | null>(null);
   const [toast, setToast] = useState<ToastData | null>(null);
 
   const [bp, setBp] = useState("");
@@ -346,6 +348,9 @@ export default function NursesICUPage() {
                 <Button size="sm" variant="outline" onClick={() => setViewVitals(patient)}>
                   Vitals History ({patientVitals.length})
                 </Button>
+                <Button size="sm" variant="outline" onClick={() => setConsumableTarget(patient)}>
+                  Materials
+                </Button>
                 <Link
                   href={`${INTERNAL_PREFIX}/nurses/patients/${encodeURIComponent(patient.patientId)}`}
                   className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
@@ -476,6 +481,16 @@ export default function NursesICUPage() {
           </ModalFooter>
         </Modal>
       ) : null}
+
+      <RecordConsumableModal
+        open={!!consumableTarget}
+        patientName={consumableTarget?.patientName ?? ""}
+        patientId={consumableTarget?.patientId ?? ""}
+        bed={consumableTarget?.bed}
+        onClose={() => setConsumableTarget(null)}
+        onSuccess={(message) => setToast({ message, type: "success" })}
+        onError={(message) => setToast({ message, type: "error" })}
+      />
 
       <Toast toast={toast} onDismiss={() => setToast(null)} />
     </div>

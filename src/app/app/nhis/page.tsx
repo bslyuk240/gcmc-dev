@@ -1,9 +1,12 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
+import Link from "next/link";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card } from "@/components/ui/card";
 import { useNhisStore } from "@/lib/hooks/use-nhis-store";
+import { fetchHmoPreauthorizations } from "@/lib/nhis/client";
+import { INTERNAL_PREFIX } from "@/lib/constants/navigation";
 import { syncNhisFromSupabase } from "@/lib/data/nhis-store";
 import type { HmoClaim, HmoRegistration } from "@/lib/data/nhis-store";
 
@@ -44,9 +47,13 @@ function MobileMeta({
 
 export default function NhisDashboardPage() {
   const { schemes, enrollments, claims, hmoRegistrations, hydrated } = useNhisStore();
+  const [pendingPreauths, setPendingPreauths] = useState(0);
 
   useEffect(() => {
     syncNhisFromSupabase();
+    void fetchHmoPreauthorizations({ status: "pending" })
+      .then((rows) => setPendingPreauths(rows.length))
+      .catch(() => setPendingPreauths(0));
   }, []);
 
   // Metrics
@@ -96,7 +103,7 @@ export default function NhisDashboardPage() {
       />
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 xl:grid-cols-5">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 xl:grid-cols-6">
         {[
           {
             label: "Enrolled Patients",
@@ -109,6 +116,12 @@ export default function NhisDashboardPage() {
             value: pendingHmoRegistrations.length,
             sub: "Front Desk HMO-flagged registrations",
             color: "text-violet-700",
+          },
+          {
+            label: "Pending Pre-auth",
+            value: pendingPreauths,
+            sub: "Admission & procedure requests",
+            color: pendingPreauths > 0 ? "text-amber-600" : "text-slate-600",
           },
           {
             label: "Active Claims",
@@ -136,6 +149,17 @@ export default function NhisDashboardPage() {
           </Card>
         ))}
       </div>
+
+      {pendingPreauths > 0 ? (
+        <Card className="border-amber-200 bg-amber-50 p-4">
+          <p className="text-sm text-amber-900">
+            <strong>{pendingPreauths}</strong> pre-authorization request(s) awaiting review.{" "}
+            <Link href={`${INTERNAL_PREFIX}/nhis/preauth`} className="font-semibold underline">
+              Open pre-auth queue
+            </Link>
+          </p>
+        </Card>
+      ) : null}
 
       {pendingHmoRegistrations.length > 0 && (
             <Card className="overflow-hidden p-0">

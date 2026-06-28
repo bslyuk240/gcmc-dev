@@ -4,15 +4,13 @@ import { useCallback, useEffect, useState } from "react";
 import { useHRStore } from "@/lib/hooks/use-hr-store";
 import { pushNotification, type DeptKey } from "@/lib/data/notification-store";
 import {
-  fetchShiftsForDept,
-  createDeptShift,
-  deleteNcShift,
   fetchShiftPresets,
   addShiftPreset,
   deleteShiftPreset,
   type NcShift,
   type ShiftPreset,
 } from "@/lib/supabase/db";
+import type { RotaAssignment } from "@/modules/workforce/rota/types";
 import type { RotaSwapRequest } from "@/modules/workforce/rota/types";
 import { cn } from "@/lib/utils/cn";
 
@@ -82,6 +80,91 @@ function getRequestLabel(status: RotaSwapRequest["status"]): string {
   return status === "pending" ? "Pending review" : status.charAt(0).toUpperCase() + status.slice(1);
 }
 
+function assignmentToShift(assignment: RotaAssignment): NcShift {
+  return {
+    id: assignment.id,
+    staffId: assignment.staff_id,
+    department: assignment.department,
+    unit: assignment.department,
+    shiftDate: assignment.shift_date,
+    shiftType: (assignment.shift_type === "evening" ? "afternoon" : assignment.shift_type) as NcShift["shiftType"],
+    shiftStart: assignment.shift_start ?? "07:00",
+    shiftEnd: assignment.shift_end ?? "15:00",
+    status: assignment.status,
+    createdAt: assignment.created_at,
+  };
+}
+
+async function fetchDeptAssignments(
+  department: string,
+  from: string,
+  to: string,
+): Promise<{ shifts: NcShift[]; error?: string }> {
+  const response = await fetch(
+    `/api/rota/assignments?department=${encodeURIComponent(department)}&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
+  );
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) {
+    return {
+      shifts: [],
+      error: payload?.error ? String(payload.error) : "Failed to load rota.",
+    };
+  }
+  const assignments = Array.isArray(payload?.assignments)
+    ? (payload.assignments as RotaAssignment[])
+    : [];
+  return { shifts: assignments.map(assignmentToShift) };
+}
+
+async function createDeptAssignment(input: {
+  department: string;
+  staffId: string;
+  shiftDate: string;
+  shiftType: NcShift["shiftType"];
+  shiftStart: string;
+  shiftEnd: string;
+}): Promise<{ shift: NcShift | null; error?: string }> {
+  const response = await fetch("/api/rota/assignments", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      department: input.department,
+      staffId: input.staffId,
+      shiftDate: input.shiftDate,
+      shiftType: input.shiftType,
+      shiftStart: input.shiftStart,
+      shiftEnd: input.shiftEnd,
+    }),
+  });
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) {
+    return {
+      shift: null,
+      error: payload?.error ? String(payload.error) : "Could not save shift.",
+    };
+  }
+  const assignment = payload?.assignment as RotaAssignment | null;
+  return { shift: assignment ? assignmentToShift(assignment) : null };
+}
+
+async function deleteDeptAssignment(
+  department: string,
+  assignmentId: string,
+): Promise<{ ok: boolean; error?: string }> {
+  const response = await fetch(
+    `/api/rota/assignments?id=${encodeURIComponent(assignmentId)}&department=${encodeURIComponent(department)}`,
+    { method: "DELETE" },
+  );
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) {
+    return {
+      ok: false,
+      error: payload?.error ? String(payload.error) : "Could not remove shift.",
+    };
+  }
+  return { ok: true };
+}
+
 type ShiftCell = { staffId: string; date: string };
 
 export function DeptRotaBuilder({
@@ -102,6 +185,7 @@ export function DeptRotaBuilder({
   const [reviewingId, setReviewingId] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<NcShift | null>(null);
   const [requestError, setRequestError] = useState<string | null>(null);
+  const [rotaError, setRotaError] = useState<string | null>(null);
 
   // Presets
   const [presets, setPresets]         = useState<ShiftPreset[]>([]);
@@ -135,9 +219,11 @@ export function DeptRotaBuilder({
 
   const loadShifts = useCallback(async () => {
     setLoading(true);
+    setRotaError(null);
     try {
-      const data = await fetchShiftsForDept(department, weekDates[0], weekDates[6]);
-      setShifts(data);
+      const result = await fetchDeptAssignments(department, weekDates[0], weekDates[6]);
+      setShifts(result.shifts);
+      if (result.error) setRotaError(result.error);
     } finally {
       setLoading(false);
     }
@@ -195,27 +281,42 @@ export function DeptRotaBuilder({
       const existing = getShift(staffId, date);
       if (!existing) return;
       setSaving(true);
-      await deleteNcShift(existing.id);
-      setShifts((prev) => prev.filter((s) => s.id !== existing.id));
+      setRotaError(null);
+      const result = await deleteDeptAssignment(department, existing.id);
+      if (!result.ok) {
+        setRotaError(result.error ?? "Could not remove shift.");
+      } else {
+        setShifts((prev) => prev.filter((s) => s.id !== existing.id));
+      }
       setSaving(false);
       return;
     }
     if (activeBrush) {
       setSaving(true);
+      setRotaError(null);
       try {
         const existing = getShift(staffId, date);
         if (existing) {
-          await deleteNcShift(existing.id);
+          const removed = await deleteDeptAssignment(department, existing.id);
+          if (!removed.ok) {
+            setRotaError(removed.error ?? "Could not replace shift.");
+            return;
+          }
           setShifts((prev) => prev.filter((s) => s.id !== existing.id));
         }
-        const created = await createDeptShift({
-          staffId, department,
+        const created = await createDeptAssignment({
+          staffId,
+          department,
           shiftDate: date,
           shiftType: activeBrush.shiftType,
-          customStart: activeBrush.startTime,
-          customEnd: activeBrush.endTime,
+          shiftStart: activeBrush.startTime,
+          shiftEnd: activeBrush.endTime,
         });
-        if (created) setShifts((prev) => [...prev, created]);
+        if (created.error) {
+          setRotaError(created.error);
+          return;
+        }
+        if (created.shift) setShifts((prev) => [...prev, created.shift!]);
       } finally {
         setSaving(false);
       }
@@ -236,34 +337,48 @@ export function DeptRotaBuilder({
   async function handleAssign() {
     if (!cell) return;
     setSaving(true);
+    setRotaError(null);
     try {
       const existing = getShift(cell.staffId, cell.date);
       if (existing) {
-        await deleteNcShift(existing.id);
+        const removed = await deleteDeptAssignment(department, existing.id);
+        if (!removed.ok) {
+          setRotaError(removed.error ?? "Could not replace shift.");
+          return;
+        }
         setShifts((prev) => prev.filter((s) => s.id !== existing.id));
       }
-      const created = await createDeptShift({
+      const created = await createDeptAssignment({
         staffId: cell.staffId,
         department,
         shiftDate: cell.date,
         shiftType: pickedType,
-        customStart,
-        customEnd,
+        shiftStart: customStart,
+        shiftEnd: customEnd,
       });
-      if (created) setShifts((prev) => [...prev, created]);
+      if (created.error) {
+        setRotaError(created.error);
+        return;
+      }
+      if (created.shift) setShifts((prev) => [...prev, created.shift!]);
+      setCell(null);
     } finally {
       setSaving(false);
-      setCell(null);
     }
   }
 
   async function handleDelete() {
     if (!confirmDelete) return;
     setSaving(true);
-    await deleteNcShift(confirmDelete.id);
-    setShifts((prev) => prev.filter((s) => s.id !== confirmDelete.id));
+    setRotaError(null);
+    const result = await deleteDeptAssignment(department, confirmDelete.id);
+    if (!result.ok) {
+      setRotaError(result.error ?? "Could not remove shift.");
+    } else {
+      setShifts((prev) => prev.filter((s) => s.id !== confirmDelete.id));
+      setConfirmDelete(null);
+    }
     setSaving(false);
-    setConfirmDelete(null);
   }
 
   async function handleAddPreset() {
@@ -348,6 +463,11 @@ export function DeptRotaBuilder({
 
   return (
     <div className="space-y-4">
+      {rotaError ? (
+        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {rotaError}
+        </div>
+      ) : null}
       {/* Week navigator */}
       <div className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm md:flex-row md:items-center md:justify-between">
         <button type="button" onClick={() => setWeekStart((d) => addDays(d, -7))}

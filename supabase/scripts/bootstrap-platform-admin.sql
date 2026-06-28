@@ -1,0 +1,12 @@
+-- Bootstrap the first platform admin (run once after creating the auth user in Supabase).
+--
+-- 1. Supabase Dashboard → Authentication → Users → Add user (email + password)
+-- 2. Copy the user's UUID and run:
+--
+-- INSERT INTO public.platform_admins (id, email, full_name)
+-- VALUES (
+--   'YOUR-AUTH-USER-UUID',
+--   'platform-admin@example.com',
+--   'Platform Administrator'
+-- )
+-- ON CONFLICT DO NOTHING;

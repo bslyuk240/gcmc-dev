@@ -38,9 +38,10 @@ export type DeptAlert = {
 
 export type ITTicket = {
   id: string;
+  ticketRef: string;
   title: string;
   department: string;
-  priority: "Normal" | "High" | "Urgent" | "Critical";
+  priority: "Normal" | "High" | "Urgent" | "Critical" | "Low" | "Medium";
   status: "Open" | "In Progress" | "Resolved" | "Closed";
   assignedTo: string;
   openedAt: string;
@@ -160,60 +161,97 @@ export function subscribeAdminStore(fn: () => void) {
 
 let _synced = false;
 export async function syncAdminFromSupabase() {
-  if (typeof window === "undefined" || _synced) return;
+  if (typeof window === "undefined") return;
   try {
     const {
       fetchAdminApprovals,
       fetchDeptAlerts,
-      fetchITTickets,
-      fetchStoreItems,
       fetchStorePOs,
       fetchStaffMembers,
-      fetchLeaveRequests,
     } = await import("@/lib/supabase/db");
-    const [approvals, alerts, itTickets, storeItems, storePOs, staff, leaveRequests] = await Promise.all([
+    const itemsRes = await fetch("/api/store/items");
+    const itemsJson = itemsRes.ok ? await itemsRes.json() : { items: [] };
+    const storeItems = (itemsJson.items ?? []).map((item: {
+      id: string;
+      name: string;
+      category: string;
+      currentStock: number;
+      reorderLevel: number;
+      unit: string;
+      status: string;
+    }) => ({
+      id: item.id,
+      name: item.name,
+      category: item.category,
+      currentStock: item.currentStock,
+      reorderLevel: item.reorderLevel,
+      unit: item.unit,
+      status: item.status === "OK" ? "OK" : item.status === "Out of Stock" ? "Out of Stock" : item.status === "Critical" ? "Critical" : "Low Stock",
+    }));
+    const [approvals, alerts, storePOs, staff, ticketsResult] = await Promise.all([
       fetchAdminApprovals(),
       fetchDeptAlerts(),
-      fetchITTickets(),
-      fetchStoreItems(),
       fetchStorePOs(),
       fetchStaffMembers(),
-      fetchLeaveRequests(),
+      fetch("/api/it/tickets").then((res) => (res.ok ? res.json() : null)),
     ]);
+    const itTickets = ticketsResult?.tickets
+      ? ticketsResult.tickets.map((t: {
+          id: string;
+          ticketRef: string;
+          title: string;
+          department: string;
+          priority: ITTicket["priority"];
+          status: ITTicket["status"];
+          assignedTo: string;
+          openedAt: string;
+          resolvedAt: string | null;
+        }) => ({
+          id: t.id,
+          ticketRef: t.ticketRef,
+          title: t.title,
+          department: t.department,
+          priority: t.priority,
+          status: t.status,
+          assignedTo: t.assignedTo,
+          openedAt: t.openedAt,
+          resolvedAt: t.resolvedAt ?? undefined,
+        }))
+      : getState().itTickets;
+    const current = getState();
     _state = {
-      approvals,
-      alerts,
+      approvals: mergeById(approvals, current.approvals),
+      alerts: mergeById(alerts, current.alerts),
       itTickets,
-      storeItems,
-      storePOs,
-      hrStaff: staff.map((member) => ({
-        id: member.id,
-        name: member.name,
-        department: member.department,
-        role: member.role,
-        status:
-          member.status === "Terminated"
-            ? "Inactive"
-            : member.status === "Probation"
-              ? "Active"
-              : member.status,
-        joinDate: member.joinDate,
-      })),
-      hrLeaveRequests: leaveRequests.map((request) => ({
-        id: request.id,
-        staffName: request.staffName,
-        department: request.department,
-        leaveType: request.leaveType === "Study" ? "Personal" : request.leaveType,
-        startDate: request.startDate,
-        endDate: request.endDate,
-        days: request.days,
-        status: request.status === "Cancelled" ? "Rejected" : request.status,
-        submittedAt: request.submittedAt,
-      })),
+      storeItems: mergeById(storeItems, current.storeItems),
+      storePOs: mergeById(storePOs, current.storePOs),
+      hrStaff: staff.length
+        ? staff.map((member) => ({
+            id: member.id,
+            name: member.name,
+            department: member.department,
+            role: member.role,
+            status:
+              member.status === "Terminated"
+                ? "Inactive"
+                : member.status === "Probation"
+                  ? "Active"
+                  : member.status,
+            joinDate: member.joinDate,
+          }))
+        : current.hrStaff,
+      hrLeaveRequests: current.hrLeaveRequests,
     };
+    saveState(_state);
     listeners.forEach((l) => l());
     _synced = true;
-  } catch { /* keep empty Supabase-backed state */ }
+  } catch { /* keep local state */ }
+}
+
+function mergeById<T extends { id: string }>(remote: T[], local: T[]) {
+  if (!remote.length) return local;
+  const remoteIds = new Set(remote.map((item) => item.id));
+  return [...remote, ...local.filter((item) => !remoteIds.has(item.id))];
 }
 
 // ─── Approvals ────────────────────────────────────────────────────────────────
@@ -242,8 +280,45 @@ export function resolveAlert(id: string) {
 // ─── IT Tickets ───────────────────────────────────────────────────────────────
 
 export function getITTickets(): ITTicket[] { return [...getState().itTickets]; }
-export function updateITTicket(id: string, updates: Partial<ITTicket>) {
-  mutate((s) => { s.itTickets = s.itTickets.map((t) => t.id === id ? { ...t, ...updates } : t); });
+export async function updateITTicket(id: string, updates: Partial<ITTicket>) {
+  const res = await fetch("/api/it/tickets", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      ticketId: id,
+      status: updates.status,
+      priority: updates.priority,
+      assignedToName: updates.assignedTo,
+    }),
+  });
+  const data = await res.json().catch(() => null);
+  if (!res.ok) {
+    throw new Error(data?.error ?? "Could not update ticket.");
+  }
+  const updated = data.ticket as {
+    id: string;
+    ticketRef: string;
+    title: string;
+    department: string;
+    priority: ITTicket["priority"];
+    status: ITTicket["status"];
+    assignedTo: string;
+    openedAt: string;
+    resolvedAt: string | null;
+  };
+  mutate((s) => {
+    s.itTickets = s.itTickets.map((t) => t.id === id ? {
+      id: updated.id,
+      ticketRef: updated.ticketRef,
+      title: updated.title,
+      department: updated.department,
+      priority: updated.priority,
+      status: updated.status,
+      assignedTo: updated.assignedTo,
+      openedAt: updated.openedAt,
+      resolvedAt: updated.resolvedAt ?? undefined,
+    } : t);
+  });
 }
 
 // ─── Store / Procurement ─────────────────────────────────────────────────────

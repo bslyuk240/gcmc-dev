@@ -8,6 +8,8 @@ import { ACCOUNTS_PAYMENT_UPDATED_EVENT } from "@/lib/constants/accounts-events"
 import { useAccountsStore } from "@/lib/hooks/use-accounts-store";
 import { usePharmacyStore } from "@/lib/hooks/use-pharmacy-store";
 import { fetchInvoices, fetchPayments, type InvoiceRecord, type PaymentRecord } from "@/lib/supabase/db";
+import { escapeHtml } from "@/lib/utils/print-receipt";
+import { useTenantBranding } from "@/modules/tenant/tenant-context";
 
 function money(value: number) {
   return `NGN ${value.toLocaleString("en-GB", { minimumFractionDigits: 2 })}`;
@@ -37,6 +39,7 @@ function MobileMeta({ label, value }: { label: string; value: string }) {
 }
 
 export default function AdminReportsPage() {
+  const branding = useTenantBranding();
   const { frontDeskCharges, consultationFees, supplierPayments, payrollBatches, kioskSales, labCharges, nursingCharges, metrics } =
     useAccountsStore();
   const { bills: pharmacyBills, metrics: pharmacyMetrics } = usePharmacyStore();
@@ -127,29 +130,33 @@ export default function AdminReportsPage() {
     const sourceRows = sources
       .map((s) => `
         <tr>
-          <td>${s.label}</td>
+          <td>${escapeHtml(s.label)}</td>
           <td>${s.count} receipt${s.count !== 1 ? "s" : ""}</td>
-          <td style="text-align:right;font-weight:700;color:#065f46">${money(s.total)}</td>
+          <td style="text-align:right;font-weight:700;color:#065f46">${escapeHtml(money(s.total))}</td>
         </tr>`)
       .join("");
 
     const activityRows = recentActivity
       .map((item) => `
         <tr>
-          <td><span class="badge">${item.source}</span></td>
-          <td>${item.name}</td>
-          <td style="color:#64748b">${item.detail ?? "—"}</td>
-          <td style="text-align:right;font-weight:600">${money(item.amount)}</td>
-          <td style="color:#64748b">${formatDateTime(item.time)}</td>
-          <td><span class="status ${item.status === "Paid" || item.status === "Confirmed" ? "status-paid" : item.status === "Pending" || item.status === "Billed" ? "status-pending" : "status-other"}">${item.status}</span></td>
+          <td><span class="badge">${escapeHtml(item.source)}</span></td>
+          <td>${escapeHtml(item.name)}</td>
+          <td style="color:#64748b">${escapeHtml(item.detail ?? "—")}</td>
+          <td style="text-align:right;font-weight:600">${escapeHtml(money(item.amount))}</td>
+          <td style="color:#64748b">${escapeHtml(formatDateTime(item.time))}</td>
+          <td><span class="status ${item.status === "Paid" || item.status === "Confirmed" ? "status-paid" : item.status === "Pending" || item.status === "Billed" ? "status-pending" : "status-other"}">${escapeHtml(item.status)}</span></td>
         </tr>`)
       .join("");
+
+    const orgLabel = escapeHtml(`${branding.shortName} — ${branding.name}`);
+    const reportTitle = escapeHtml(`${branding.shortName} Financial Report — ${today}`);
+    const footerBrand = escapeHtml(`${branding.shortName} HMS`);
 
     const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8"/>
-<title>GCMC Financial Report — ${today}</title>
+<title>${reportTitle}</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
   *{box-sizing:border-box;margin:0;padding:0}
@@ -221,7 +228,7 @@ export default function AdminReportsPage() {
 <!-- Header -->
 <div class="header">
   <div class="header-left">
-    <div class="org-badge"><span class="dot"></span><span>GCMC — Group Christian Medical Centre</span></div>
+    <div class="org-badge"><span class="dot"></span><span>${orgLabel}</span></div>
     <h1>Financial Summary Report</h1>
     <p>Hospital-wide revenue, collections, and operational financial status</p>
   </div>
@@ -306,7 +313,7 @@ export default function AdminReportsPage() {
 <!-- Footer -->
 <div class="footer">
   <div class="footer-left">
-    <span class="footer-brand">GCMC HMS</span> — Hospital Management System<br/>
+    <span class="footer-brand">${footerBrand}</span> — Hospital Management System<br/>
     Confidential · For internal administrative use only
   </div>
   <div class="footer-right">
@@ -337,8 +344,8 @@ export default function AdminReportsPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="System Reports"
-        description="Live financial, pharmacy, and operational summaries for hospital administration."
+        title="Reports & Analytics"
+        description="Financial, operational, and departmental reports with live data."
         action={
           <Button onClick={downloadPDF}>
             ↓ Download PDF Report

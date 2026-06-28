@@ -41,6 +41,7 @@ export default function LabTestRequestsPage() {
   const [viewTest, setViewTest] = useState<LabTest | null>(null);
   const [cancelTarget, setCancelTarget] = useState<LabTest | null>(null);
   const [toast, setToast] = useState<ToastData | null>(null);
+  const [cancelling, setCancelling] = useState(false);
   // Local status overrides — ensures instant UI update independent of store pub/sub
   const [localStatuses, setLocalStatuses] = useState<Record<string, string>>({});
 
@@ -51,12 +52,27 @@ export default function LabTestRequestsPage() {
     .filter((t) => filter === "All" || t.status === filter)
     .filter((t) => priorityFilter === "All" || t.priority === priorityFilter);
 
-  function handleCancel() {
-    if (!cancelTarget) return;
-    setLocalStatuses((prev) => ({ ...prev, [cancelTarget.id]: "Cancelled" }));
-    updateLabTest(cancelTarget.id, { status: "Cancelled" });
-    setToast({ message: `Test "${cancelTarget.testName}" for ${cancelTarget.patientName} cancelled.`, type: "info" });
-    setCancelTarget(null);
+  async function handleCancel() {
+    if (!cancelTarget || cancelling) return;
+    const target = cancelTarget;
+    setCancelling(true);
+    setLocalStatuses((prev) => ({ ...prev, [target.id]: "Cancelled" }));
+
+    try {
+      await updateLabTest(target.id, { status: "Cancelled" });
+      setToast({ message: `Test "${target.testName}" for ${target.patientName} cancelled.`, type: "info" });
+      setCancelTarget(null);
+    } catch (error) {
+      setLocalStatuses((prev) => {
+        const next = { ...prev };
+        delete next[target.id];
+        return next;
+      });
+      const message = error instanceof Error ? error.message : "Cancel failed";
+      setToast({ message: `Cancel failed: ${message}`, type: "error" });
+    } finally {
+      setCancelling(false);
+    }
   }
 
   const statuses: FilterStatus[] = ["All", "Pending", "Sample Collected", "In Progress", "Completed", "Cancelled"];
@@ -224,7 +240,9 @@ export default function LabTestRequestsPage() {
         )}
         <ModalFooter>
           <Button variant="ghost" size="md" onClick={() => setCancelTarget(null)}>Keep Test</Button>
-          <Button size="md" className="bg-red-600 text-white hover:opacity-95" onClick={handleCancel}>Cancel Test</Button>
+          <Button size="md" className="bg-red-600 text-white hover:opacity-95" disabled={cancelling} onClick={handleCancel}>
+            {cancelling ? "Cancelling…" : "Cancel Test"}
+          </Button>
         </ModalFooter>
       </Modal>
 

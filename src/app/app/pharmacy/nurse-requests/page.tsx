@@ -7,7 +7,12 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Toast, type ToastData } from "@/components/ui/toast";
 import { usePharmacyStore } from "@/lib/hooks/use-pharmacy-store";
-import { updateNurseRequestStatus } from "@/lib/data/pharmacy-store";
+import { updateNurseRequestStatus, addPharmacyBill } from "@/lib/data/pharmacy-store";
+import {
+  adjustPharmacyInventoryStock,
+  fetchPharmacyInventory,
+  insertPharmacyStockMovement,
+} from "@/lib/supabase/db";
 
 const STATUS_COLOR: Record<string, string> = {
   Requested: "bg-sky-100 text-sky-700",
@@ -41,6 +46,10 @@ function fmtDateTime(value?: string) {
   });
 }
 
+function normalizeName(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
 export default function PharmacyNurseRequestsPage() {
   const { nurseRequests } = usePharmacyStore();
   const session = useHMSSession();
@@ -59,13 +68,83 @@ export default function PharmacyNurseRequestsPage() {
     setToast({ message: `Preparing ${drug} for ${patient}...`, type: "info" });
   }
 
-  function handleReady(id: string, drug: string, patient: string) {
+  async function handleReady(
+    id: string,
+    drug: string,
+    patientName: string,
+    patientId: string,
+    qtyLabel: string,
+  ) {
+    const inventory = await fetchPharmacyInventory().catch(() => []);
+    const inventoryByName = new Map((inventory ?? []).map((item) => [normalizeName(item.product), item]));
+    const qty = Math.max(1, parseInt(qtyLabel, 10) || 1);
+    const matchedItem = inventoryByName.get(normalizeName(drug))
+      ?? [...(inventory ?? [])].find((item) =>
+        normalizeName(item.product).includes(normalizeName(drug)) ||
+        normalizeName(drug).includes(normalizeName(item.product))
+      );
+
+    if (matchedItem) {
+      await adjustPharmacyInventoryStock(matchedItem.id, -qty).catch(() => {});
+      await insertPharmacyStockMovement({
+        inventoryId: matchedItem.id,
+        movementType: "dispense",
+        quantity: qty,
+        sourceDestination: `Nurse request ${id}`,
+        refNo: id,
+        createdBy: staffName,
+        createdAt: new Date().toISOString(),
+      }).catch(() => {});
+    }
+
+    const unitPrice = matchedItem?.unitPrice ?? 0;
+    const totalCost = qty * unitPrice;
+    let billFailed = false;
+
+    if (totalCost > 0) {
+      try {
+        await addPharmacyBill({
+          id: `PBILL-NR-${Date.now()}`,
+          prescriptionId: id,
+          patientName,
+          patientId,
+          drugs: `${drug} × ${qty}`,
+          totalCost,
+          dispensedAt: new Date().toISOString(),
+          billStatus: "Pending",
+          source: "nurse-request",
+        });
+      } catch {
+        billFailed = true;
+      }
+    }
+
     updateNurseRequestStatus(id, "Ready", {
       preparedAt: new Date().toISOString(),
       preparedBy: staffName,
     });
     setFilter("Ready");
-    setToast({ message: `${drug} for ${patient} is ready for collection.`, type: "success" });
+
+    if (billFailed) {
+      setToast({
+        message: `${drug} for ${patientName} is ready, but the Accounts bill could not be saved.`,
+        type: "error",
+      });
+      return;
+    }
+
+    if (!matchedItem) {
+      setToast({
+        message: `${drug} for ${patientName} is ready. Inventory item not matched — stock and billing skipped.`,
+        type: "info",
+      });
+      return;
+    }
+
+    setToast({
+      message: `${drug} for ${patientName} is ready.${totalCost > 0 ? ` Bill ₦${totalCost.toFixed(2)} sent to Accounts.` : ""}`,
+      type: "success",
+    });
   }
 
   function handleCancel(id: string, drug: string) {
@@ -78,7 +157,7 @@ export default function PharmacyNurseRequestsPage() {
     <div className="space-y-6">
       <PageHeader
         title="Nurse Medication Requests"
-        description="Medication requests from nursing units. Prepare and mark ready for ward collection."
+        description="Medication requests from nursing units. Mark ready to deduct stock, bill Accounts, and release for ward collection."
       />
 
       <div className="grid grid-cols-3 gap-4">
@@ -152,7 +231,7 @@ export default function PharmacyNurseRequestsPage() {
                   </>
                 ) : null}
                 {request.status === "Preparing" ? (
-                  <Button size="sm" onClick={() => handleReady(request.id, request.drug, request.patientName)}>
+                  <Button size="sm" onClick={() => void handleReady(request.id, request.drug, request.patientName, request.patientId, request.qty)}>
                     Mark Ready
                   </Button>
                 ) : null}
@@ -238,7 +317,7 @@ export default function PharmacyNurseRequestsPage() {
                         </>
                       ) : null}
                       {request.status === "Preparing" ? (
-                        <Button size="sm" onClick={() => handleReady(request.id, request.drug, request.patientName)}>
+                        <Button size="sm" onClick={() => void handleReady(request.id, request.drug, request.patientName, request.patientId, request.qty)}>
                           Mark Ready
                         </Button>
                       ) : null}
@@ -269,6 +348,10 @@ export default function PharmacyNurseRequestsPage() {
           <p className="text-xs text-slate-400">{filtered.length} request{filtered.length !== 1 ? "s" : ""} shown</p>
         </div>
       </Card>
+
+      <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-500">
+        <p><strong className="text-slate-700">Flow:</strong> Nurse request → Prepare → Mark Ready (stock deducted + bill to Accounts) → Nursing collects on Medication Administration.</p>
+      </div>
 
       <Toast toast={toast} onDismiss={() => setToast(null)} />
     </div>

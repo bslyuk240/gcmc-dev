@@ -1,0 +1,46 @@
+---
+description: Platform admin console layout — full-width desktop pages
+globs: src/app/(platform)/**/*,src/components/platform/**/*
+alwaysApply: false
+---
+
+# Platform console layout (desktop)
+
+The platform admin UI lives under `src/app/(platform)/` with a fixed 220px sidebar. **On desktop (`md+`), page content must use the full remaining viewport width** — do not center content in a narrow column.
+
+## Layout shell
+
+- `(platform)/layout.tsx` wraps children in `w-full px-4 py-8 sm:px-6 lg:px-8` — **no `max-w-*` or `mx-auto`** on the shell.
+- Sidebar offset is handled by `md:ml-[220px]` on `<main>`.
+
+## Page patterns
+
+```tsx
+// ✅ List / table pages — stretch edge to edge inside main padding
+<div className="w-full space-y-6">
+  <header>...</header>
+  <div className="overflow-hidden rounded-xl border border-white/10 bg-[#1e2023]">
+    <table className="w-full text-sm">...</table>
+  </div>
+</div>
+
+// ✅ Dashboard — cards and panels span full width
+<div className="w-full space-y-8">
+  <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">...</div>
+</div>
+
+// ❌ Avoid on platform pages
+<div className="mx-auto max-w-6xl">...</div>
+<div className="mx-auto max-w-2xl">...</div>
+```
+
+## Forms
+
+- Prefer full-width form cards with responsive grids (`sm:grid-cols-2`, `lg:grid-cols-3`) instead of capping the whole page with `max-w-2xl`.
+- Only use a local `max-w-*` on a specific inner widget (e.g. a modal) when narrow width is required for UX — never on the page root.
+
+## Visual tokens
+
+- Background: `#111316` (page), `#1e2023` (cards/panels)
+- Borders: `border-white/10`
+- Accent: violet (`text-violet-300`, `bg-violet-600`)

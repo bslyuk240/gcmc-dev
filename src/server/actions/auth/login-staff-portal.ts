@@ -1,22 +1,17 @@
 "use server";
 
-/**
- * Staff Portal login action.
- *
- * Same credentials as the management portal but writes to the SEPARATE
- * hms-staff-session cookie (not hms-session-v2). This ensures that
- * logging into one portal does not grant access to the other.
- */
-
 import { redirect } from "next/navigation";
 import {
   clearManagementSessionCookies,
-  isDepartmentKey,
   writeStaffPortalSessionCookie,
-  type HMSSession,
-  type RoleKey,
 } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
+import { resolveLoginHospital } from "@/lib/tenant/login-tenant";
+import {
+  buildHMSSession,
+  fetchRolePermissions,
+  staffProfileEligibleForLogin,
+} from "@/lib/auth/build-session";
 
 const STAFF_PORTAL_HOME = "/staff/dashboard";
 
@@ -33,65 +28,43 @@ export async function loginStaffPortalAction(formData: FormData) {
     redirect("/staff/login?error=invalid");
   }
 
-  const supabase = await createClient();
-
-  if (supabase) {
-    const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
-
-    if (authError || !authData.user) {
-      redirect("/staff/login?error=credentials");
-    }
-
-    const userId = authData.user.id;
-
-    const { data: profile, error: profileError } = await supabase
-      .from("staff_profiles")
-      .select("full_name, email, department, role, is_active")
-      .eq("id", userId)
-      .single();
-
-    if (profileError || !profile) {
-      await supabase.auth.signOut();
-      redirect("/staff/login?error=profile");
-    }
-
-    if (!profile.is_active) {
-      await supabase.auth.signOut();
-      redirect("/staff/login?error=inactive");
-    }
-
-    if (!isDepartmentKey(profile.department)) {
-      await supabase.auth.signOut();
-      redirect("/staff/login?error=invalid");
-    }
-
-    const { data: permRows } = await supabase
-      .from("role_permissions")
-      .select("permission")
-      .eq("role", profile.role);
-
-    const permissions = (permRows ?? []).map((r: { permission: string }) => r.permission);
-
-    const session: HMSSession = {
-      staff_id: userId,
-      auth_user_id: userId,
-      full_name: profile.full_name,
-      email: profile.email,
-      department: profile.department,
-      role: profile.role as RoleKey,
-      permissions,
-      issued_at: new Date().toISOString(),
-    };
-
-    await clearManagementSessionCookies();
-    await writeStaffPortalSessionCookie(session);
-
-    redirect(isAllowedStaffNext(nextUrl) ? nextUrl : STAFF_PORTAL_HOME);
+  const hospital = await resolveLoginHospital();
+  if (!hospital) {
+    redirect("/staff/login?error=tenant");
   }
 
-  // Supabase is not configured — reject login
-  redirect("/staff/login?error=configuration");
+  const supabase = await createClient();
+  if (!supabase) {
+    redirect("/staff/login?error=configuration");
+  }
+
+  const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+    email,
+    password,
+  });
+
+  if (authError || !authData.user) {
+    redirect("/staff/login?error=credentials");
+  }
+
+  const userId = authData.user.id;
+
+  const { data: profile, error: profileError } = await supabase
+    .from("staff_profiles")
+    .select("id, full_name, email, department, role, hospital_id, is_active")
+    .eq("id", userId)
+    .single();
+
+  if (profileError || !staffProfileEligibleForLogin(profile, hospital)) {
+    await supabase.auth.signOut();
+    redirect("/staff/login?error=credentials");
+  }
+
+  const permissions = await fetchRolePermissions(supabase, profile.role);
+  const session = buildHMSSession(profile, hospital, permissions, userId);
+
+  await clearManagementSessionCookies();
+  await writeStaffPortalSessionCookie(session);
+
+  redirect(isAllowedStaffNext(nextUrl) ? nextUrl : STAFF_PORTAL_HOME);
 }

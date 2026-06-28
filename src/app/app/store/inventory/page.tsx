@@ -7,10 +7,11 @@ import { PageHeader } from "@/components/layout/page-header";
 import { Modal, ModalFooter } from "@/components/ui/modal";
 import { Toast, type ToastData } from "@/components/ui/toast";
 import {
-  fetchStoreInventory,
-  upsertStoreInventoryItem,
-  type StoreInventoryItem,
-} from "@/lib/supabase/db";
+  fetchStoreItems,
+  upsertStoreItem,
+  STORE_UPDATED_EVENT,
+} from "@/lib/store/client";
+import type { StoreItem } from "@/modules/store/types";
 
 const DOSAGE_FORMS = [
   "—", "Tablet", "Capsule", "Syrup", "Suspension", "Solution",
@@ -21,6 +22,7 @@ const DOSAGE_FORMS = [
 ];
 
 const STATUS_STYLES: Record<string, string> = {
+  OK: "bg-emerald-50 text-emerald-700",
   "In Stock": "bg-emerald-50 text-emerald-700",
   "Low Stock": "bg-amber-50 text-amber-700",
   Critical: "bg-red-50 text-red-700",
@@ -37,7 +39,7 @@ function deriveStatus(qty: number, reorder: number): string {
   return "In Stock";
 }
 
-function nextInventoryId(items: StoreInventoryItem[]): string {
+function nextInventoryId(items: StoreItem[]): string {
   const nums = items
     .map((item) => parseInt(item.id.replace(/\D/g, ""), 10))
     .filter((n) => !isNaN(n));
@@ -56,7 +58,7 @@ function MobileMeta({ label, value }: { label: string; value: string }) {
 
 // ─── CSV helpers ──────────────────────────────────────────────────────────────
 
-function toCSV(items: StoreInventoryItem[]): string {
+function toCSV(items: StoreItem[]): string {
   const header = ["ID", "Name", "Category", "Form", "Unit", "Qty", "Reorder Level", "Unit Cost (₦)", "Supplier"].join(",");
   const rows = items.map((i) =>
     [
@@ -65,8 +67,8 @@ function toCSV(items: StoreInventoryItem[]): string {
       i.category,
       i.form ?? "",
       i.unit,
-      i.qty,
-      i.reorder,
+      i.currentStock,
+      i.reorderLevel,
       i.unitCost,
       `"${(i.supplier ?? "").replace(/"/g, '""')}"`,
     ].join(",")
@@ -74,7 +76,7 @@ function toCSV(items: StoreInventoryItem[]): string {
   return [header, ...rows].join("\n");
 }
 
-function parseCSV(text: string): StoreInventoryItem[] {
+function parseCSV(text: string): StoreItem[] {
   const lines = text.split(/\r?\n/).filter((l) => l.trim());
   if (lines.length < 2) return [];
 
@@ -82,7 +84,7 @@ function parseCSV(text: string): StoreInventoryItem[] {
   const firstLower = lines[0].toLowerCase();
   const dataLines = firstLower.startsWith("id") || firstLower.startsWith("name") ? lines.slice(1) : lines;
 
-  const results: StoreInventoryItem[] = [];
+  const results: StoreItem[] = [];
   for (const line of dataLines) {
     // Simple CSV parse (handles quoted fields)
     const cols = line.match(/("(?:[^"]|"")*"|[^,]*)/g)?.map((c) =>
@@ -96,15 +98,18 @@ function parseCSV(text: string): StoreInventoryItem[] {
     const reorderN = parseInt(reorder) || 10;
     results.push({
       id: id?.trim() || `STR-CSV-${results.length + 1}`,
+      hospitalId: "",
       name: name.trim(),
       category: category?.trim() || "Other",
       form: form?.trim() || undefined,
       unit: unit?.trim() || "Units",
-      qty: qtyN,
-      reorder: reorderN,
+      currentStock: qtyN,
+      reorderLevel: reorderN,
       unitCost: parseFloat(unitCost) || 0,
       supplier: supplier?.trim() || "",
-      status: deriveStatus(qtyN, reorderN),
+      status: deriveStatus(qtyN, reorderN) as StoreItem["status"],
+      createdAt: "",
+      updatedAt: "",
     });
   }
   return results;
@@ -121,15 +126,15 @@ function downloadFile(content: string, filename: string, mime: string) {
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function StoreInventoryPage() {
-  const [items, setItems] = useState<StoreInventoryItem[]>([]);
+  const [items, setItems] = useState<StoreItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("All");
   const [showAdd, setShowAdd] = useState(false);
-  const [editItem, setEditItem] = useState<StoreInventoryItem | null>(null);
+  const [editItem, setEditItem] = useState<StoreItem | null>(null);
   const [importing, setImporting] = useState(false);
   const [showImportPreview, setShowImportPreview] = useState(false);
-  const [importRows, setImportRows] = useState<StoreInventoryItem[]>([]);
+  const [importRows, setImportRows] = useState<StoreItem[]>([]);
   const [toast, setToast] = useState<ToastData | null>(null);
   const csvInputRef = useRef<HTMLInputElement>(null);
 
@@ -145,7 +150,7 @@ export default function StoreInventoryPage() {
   const [eSupplier, setESupplier] = useState(""); const [eForm, setEForm] = useState("—");
 
   useEffect(() => {
-    fetchStoreInventory()
+    fetchStoreItems()
       .then(setItems)
       .catch(() => setToast({ message: "Failed to load inventory.", type: "error" }))
       .finally(() => setLoading(false));
@@ -157,30 +162,30 @@ export default function StoreInventoryPage() {
     (i.name.toLowerCase().includes(search.toLowerCase()) || i.id.toLowerCase().includes(search.toLowerCase())),
   );
 
-  const totalValue = items.reduce((s, i) => s + i.qty * i.unitCost, 0);
-  const lowStock = items.filter((i) => i.status !== "In Stock").length;
+  const totalValue = items.reduce((s, i) => s + i.currentStock * i.unitCost, 0);
+  const lowStock = items.filter((i) => i.status !== "OK").length;
 
   // ── Add ──
   async function handleAdd(e: React.FormEvent) {
     e.preventDefault();
     const qty = parseInt(aQty) || 0; const reorder = parseInt(aReorder) || 10;
-    const newItem: StoreInventoryItem = {
+    const payload = {
       id: nextInventoryId(items),
-      name: aName, category: aCat, form: aForm !== "—" ? aForm : undefined, unit: aUnit, qty, reorder,
+      name: aName, category: aCat, form: aForm !== "—" ? aForm : undefined, unit: aUnit,
+      currentStock: qty, reorderLevel: reorder,
       unitCost: parseFloat(aCost) || 0, supplier: aSupplier,
-      status: deriveStatus(qty, reorder),
     };
-    setItems((prev) => [newItem, ...prev]);
+    setItems((prev) => [{ ...payload, hospitalId: "", status: deriveStatus(qty, reorder) as StoreItem["status"], createdAt: "", updatedAt: "" }, ...prev]);
     setToast({ message: `${aName} added to inventory.`, type: "success" });
     setShowAdd(false);
     setAName(""); setACat("PPE"); setAUnit("Box"); setAQty(""); setAReorder(""); setACost(""); setASupplier(""); setAForm("—");
-    await upsertStoreInventoryItem(newItem).catch(() => {});
+    await upsertStoreItem(payload).catch(() => {});
   }
 
   // ── Edit ──
-  function openEdit(item: StoreInventoryItem) {
-    setEditItem(item); setEName(item.name); setEQty(String(item.qty));
-    setEReorder(String(item.reorder)); setECost(String(item.unitCost)); setESupplier(item.supplier);
+  function openEdit(item: StoreItem) {
+    setEditItem(item); setEName(item.name); setEQty(String(item.currentStock));
+    setEReorder(String(item.reorderLevel)); setECost(String(item.unitCost)); setESupplier(item.supplier ?? "");
     setEForm(item.form ?? "—");
   }
 
@@ -188,14 +193,16 @@ export default function StoreInventoryPage() {
     e.preventDefault();
     if (!editItem) return;
     const qty = parseInt(eQty) || 0; const reorder = parseInt(eReorder) || 0;
-    const updated: StoreInventoryItem = {
-      ...editItem, name: eName, form: eForm !== "—" ? eForm : undefined, qty, reorder,
-      unitCost: parseFloat(eCost) || 0, supplier: eSupplier, status: deriveStatus(qty, reorder),
+    const payload = {
+      id: editItem.id,
+      name: eName, form: eForm !== "—" ? eForm : undefined, unit: editItem.unit, category: editItem.category,
+      currentStock: qty, reorderLevel: reorder,
+      unitCost: parseFloat(eCost) || 0, supplier: eSupplier,
     };
-    setItems((prev) => prev.map((i) => i.id === editItem.id ? updated : i));
+    setItems((prev) => prev.map((i) => i.id === editItem.id ? { ...i, ...payload, status: deriveStatus(qty, reorder) as StoreItem["status"] } : i));
     setToast({ message: `${eName} updated.`, type: "success" });
     setEditItem(null);
-    await upsertStoreInventoryItem(updated).catch(() => {});
+    await upsertStoreItem(payload).catch(() => {});
   }
 
   // ── CSV Export ──
@@ -238,9 +245,18 @@ export default function StoreInventoryPage() {
     setImporting(true);
     setShowImportPreview(false);
     try {
-      await Promise.all(importRows.map((row) => upsertStoreInventoryItem(row)));
-      // Refresh from DB
-      const fresh = await fetchStoreInventory();
+      await Promise.all(importRows.map((row) => upsertStoreItem({
+        id: row.id,
+        name: row.name,
+        category: row.category,
+        form: row.form,
+        unit: row.unit,
+        currentStock: row.currentStock,
+        reorderLevel: row.reorderLevel,
+        unitCost: row.unitCost,
+        supplier: row.supplier,
+      })));
+      const fresh = await fetchStoreItems();
       setItems(fresh);
       setToast({ message: `${importRows.length} items imported successfully.`, type: "success" });
     } catch {
@@ -305,7 +321,7 @@ export default function StoreInventoryPage() {
         </div>
         <div className="space-y-3 p-3 md:hidden">
           {!loading && filtered.map((item) => (
-            <Card key={item.id} className={`p-4 ${item.status !== "In Stock" ? "bg-amber-50/30" : "bg-white"}`}>
+            <Card key={item.id} className={`p-4 ${item.status !== "OK" ? "bg-amber-50/30" : "bg-white"}`}>
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <p className="text-xs font-mono font-bold text-slate-500">{item.id}</p>
@@ -315,8 +331,8 @@ export default function StoreInventoryPage() {
                 <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${STATUS_STYLES[item.status] ?? "bg-slate-100 text-slate-500"}`}>{item.status}</span>
               </div>
               <div className="mt-3 grid grid-cols-1 gap-2">
-                <MobileMeta label="Qty" value={String(item.qty)} />
-                <MobileMeta label="Reorder" value={String(item.reorder)} />
+                <MobileMeta label="Qty" value={String(item.currentStock)} />
+                <MobileMeta label="Reorder" value={String(item.reorderLevel)} />
                 <MobileMeta label="Unit Cost" value={`NGN ${item.unitCost.toFixed(2)}`} />
                 <MobileMeta label="Supplier" value={item.supplier || "-"} />
               </div>
@@ -366,8 +382,8 @@ export default function StoreInventoryPage() {
                       : <span className="text-slate-300">—</span>}
                   </td>
                   <td className="px-5 py-3 text-slate-500">{item.unit}</td>
-                  <td className="px-5 py-3 font-bold text-slate-900">{item.qty}</td>
-                  <td className="px-5 py-3 text-slate-500">{item.reorder}</td>
+                  <td className="px-5 py-3 font-bold text-slate-900">{item.currentStock}</td>
+                  <td className="px-5 py-3 text-slate-500">{item.reorderLevel}</td>
                   <td className="px-5 py-3 text-slate-600">₦{item.unitCost.toFixed(2)}</td>
                   <td className="px-5 py-3 text-slate-500">{item.supplier}</td>
                   <td className="px-5 py-3">
@@ -512,8 +528,8 @@ export default function StoreInventoryPage() {
                     <td className="px-3 py-2 font-medium text-slate-900">{r.name}</td>
                     <td className="px-3 py-2 text-slate-500">{r.category}</td>
                     <td className="px-3 py-2 text-slate-500">{r.unit}</td>
-                    <td className="px-3 py-2 font-bold">{r.qty}</td>
-                    <td className="px-3 py-2 text-slate-500">{r.reorder}</td>
+                    <td className="px-3 py-2 font-bold">{r.currentStock}</td>
+                    <td className="px-3 py-2 text-slate-500">{r.reorderLevel}</td>
                     <td className="px-3 py-2">₦{r.unitCost.toFixed(2)}</td>
                     <td className="px-3 py-2 text-slate-500">{r.supplier}</td>
                     <td className="px-3 py-2">

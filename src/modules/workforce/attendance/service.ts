@@ -1,4 +1,4 @@
-import { createAdminClient } from "@/lib/supabase/admin";
+import { createTenantAdminClient } from "@/lib/supabase/admin-tenant";
 import type {
   AttendanceClockInInput,
   AttendanceClockOutInput,
@@ -31,10 +31,16 @@ export async function fetchAttendanceRecords(filters?: {
   from?: string;
   to?: string;
 }): Promise<AttendanceRecord[]> {
-  const sb = createAdminClient();
-  if (!sb) return [];
+  const scoped = await createTenantAdminClient();
+  if (!scoped) return [];
 
-  let query = sb.from("staff_attendance_records").select("*").order("attendance_date", { ascending: false }).order("clock_in_at", { ascending: false });
+  const { admin, hospitalId } = scoped;
+  let query = admin
+    .from("staff_attendance_records")
+    .select("*")
+    .eq("hospital_id", hospitalId)
+    .order("attendance_date", { ascending: false })
+    .order("clock_in_at", { ascending: false });
 
   if (filters?.staffId) query = query.eq("staff_id", filters.staffId);
   if (filters?.department) query = query.eq("department", filters.department);
@@ -51,12 +57,14 @@ export async function fetchAttendanceRecords(filters?: {
 }
 
 export async function fetchAttendanceRecord(staffId: string, attendanceDate: string): Promise<AttendanceRecord | null> {
-  const sb = createAdminClient();
-  if (!sb) return null;
+  const scoped = await createTenantAdminClient();
+  if (!scoped) return null;
 
-  const { data, error } = await sb
+  const { admin, hospitalId } = scoped;
+  const { data, error } = await admin
     .from("staff_attendance_records")
     .select("*")
+    .eq("hospital_id", hospitalId)
     .eq("staff_id", staffId)
     .eq("attendance_date", attendanceDate)
     .maybeSingle();
@@ -70,18 +78,20 @@ export async function fetchAttendanceRecord(staffId: string, attendanceDate: str
 }
 
 export async function clockInAttendance(input: AttendanceClockInInput): Promise<AttendanceRecord | null> {
-  const sb = createAdminClient();
-  if (!sb) return null;
+  const scoped = await createTenantAdminClient();
+  if (!scoped) return null;
 
+  const { admin, hospitalId } = scoped;
   const existing = await fetchAttendanceRecord(input.staffId, input.attendanceDate);
   if (existing) {
     if (existing.clockOutAt) return existing;
     return existing;
   }
 
-  const { data, error } = await sb
+  const { data, error } = await admin
     .from("staff_attendance_records")
     .insert({
+      hospital_id: hospitalId,
       staff_id: input.staffId,
       staff_name: input.staffName,
       department: input.department,
@@ -105,9 +115,10 @@ export async function clockInAttendance(input: AttendanceClockInInput): Promise<
 }
 
 export async function clockOutAttendance(input: AttendanceClockOutInput): Promise<AttendanceRecord | null> {
-  const sb = createAdminClient();
-  if (!sb) return null;
+  const scoped = await createTenantAdminClient();
+  if (!scoped) return null;
 
+  const { admin, hospitalId } = scoped;
   const existing = await fetchAttendanceRecord(input.staffId, input.attendanceDate);
   if (!existing) return null;
   if (existing.clockOutAt) return existing;
@@ -119,15 +130,15 @@ export async function clockOutAttendance(input: AttendanceClockOutInput): Promis
     ? existing.hours
     : Math.max(0, Math.round(((end.getTime() - start.getTime()) / 3_600_000) * 10) / 10);
 
-  const { data, error } = await sb
+  const { data, error } = await admin
     .from("staff_attendance_records")
     .update({
       clock_out_at: input.clockOutAt,
       hours,
       updated_at: new Date().toISOString(),
     })
-    .eq("staff_id", input.staffId)
-    .eq("attendance_date", input.attendanceDate)
+    .eq("hospital_id", hospitalId)
+    .eq("id", existing.id)
     .select("*")
     .single();
 

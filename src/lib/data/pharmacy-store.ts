@@ -330,7 +330,7 @@ export async function addPharmacyBill(bill: PharmacyBill): Promise<void> {
     severity: "info",
     title: "Pharmacy bill ready",
     body: `${bill.patientName} - ${bill.drugs} (${bill.totalCost.toLocaleString()}) was sent to Accounts.`,
-    href: "/app/accounts/pharmacy-billing",
+    href: "/app/accounts/cash-desk?department=pharmacy",
     targetDepartments: ["accounts"],
   });
   if (typeof window !== "undefined") {
@@ -366,8 +366,23 @@ export function updateBillStatus(
 export function getPharmacyMetrics() {
   const s = getState();
   const todayIso = new Date().toISOString().slice(0, 10);
+  const todayDisplay = new Date().toLocaleDateString("en-GB", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+
+  function isDispensedToday(value?: string) {
+    if (!value) return false;
+    const parsed = new Date(value);
+    if (!Number.isNaN(parsed.getTime())) {
+      return parsed.toISOString().slice(0, 10) === todayIso;
+    }
+    return value.includes(todayDisplay);
+  }
+
   const dispensedToday = s.prescriptions.filter(
-    (p) => p.status === "Dispensed" && (p.dispensedAt ?? "").startsWith(todayIso),
+    (p) => p.status === "Dispensed" && isDispensedToday(p.dispensedAt),
   );
   const pendingRx = s.prescriptions.filter((p) => p.status === "Pending" || p.status === "Processing");
   const urgentRx = s.prescriptions.filter((p) => p.status !== "Dispensed" && p.urgency === "Urgent");
