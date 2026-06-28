@@ -4,20 +4,27 @@ import {
   getStaffPortalSession,
   syncStaffAvatarAcrossSessions,
 } from "@/lib/auth/session";
+import {
+  validateMimeType,
+  validateContentLength,
+  validateBufferSize,
+  ALLOWED_IMAGE_MIME_TYPES,
+  MAX_AVATAR_BYTES,
+} from "@/lib/security/file-validation";
 
 const STAFF_AVATAR_BUCKET = "staff-avatars";
-const MAX_AVATAR_SIZE_BYTES = 5 * 1024 * 1024;
 
-function guessAvatarExtension(file: File) {
-  if (file.type === "image/png") return "png";
-  if (file.type === "image/webp") return "webp";
-  if (file.type === "image/gif") return "gif";
+/** Map verified server-side MIME type to a safe file extension. */
+function extensionFromMime(mime: string): string {
+  if (mime === "image/png")  return "png";
+  if (mime === "image/webp") return "webp";
+  if (mime === "image/gif")  return "gif";
   return "jpg";
 }
 
 function isMissingBucketError(message: string) {
   const lower = message.toLowerCase();
-  return lower.includes("bucket not found") || lower.includes("bucket") && lower.includes("not found");
+  return lower.includes("bucket not found") || (lower.includes("bucket") && lower.includes("not found"));
 }
 
 function isMissingAvatarColumnError(message: string) {
@@ -30,6 +37,12 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
+  // ── Early Content-Length guard ────────────────────────────────────────────
+  const lengthCheck = validateContentLength(request, MAX_AVATAR_BYTES);
+  if (!lengthCheck.ok) {
+    return NextResponse.json({ error: lengthCheck.error }, { status: lengthCheck.status });
+  }
+
   const formData = await request.formData();
   const fileValue = formData.get("avatar");
 
@@ -37,12 +50,20 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "missing_file" }, { status: 400 });
   }
 
-  if (!fileValue.type.startsWith("image/")) {
-    return NextResponse.json({ error: "invalid_type" }, { status: 400 });
+  // ── Read bytes once ───────────────────────────────────────────────────────
+  const arrayBuf = await fileValue.arrayBuffer();
+  const bytes    = Buffer.from(arrayBuf);
+
+  // ── Actual buffer size check ──────────────────────────────────────────────
+  const sizeCheck = validateBufferSize(arrayBuf, MAX_AVATAR_BYTES);
+  if (!sizeCheck.ok) {
+    return NextResponse.json({ error: sizeCheck.error }, { status: sizeCheck.status });
   }
 
-  if (fileValue.size > MAX_AVATAR_SIZE_BYTES) {
-    return NextResponse.json({ error: "file_too_large" }, { status: 400 });
+  // ── Magic-byte MIME detection — replaces file.type.startsWith("image/") ──
+  const mimeCheck = await validateMimeType(bytes, ALLOWED_IMAGE_MIME_TYPES);
+  if (!mimeCheck.ok) {
+    return NextResponse.json({ error: "Invalid file type." }, { status: 400 });
   }
 
   const scoped = await createTenantAdminClient();
@@ -51,13 +72,13 @@ export async function POST(request: Request) {
   }
 
   const { admin, hospitalId } = scoped;
-  const ext = guessAvatarExtension(fileValue);
+  // Extension is derived from the server-verified MIME type, not the filename.
+  const ext  = extensionFromMime(mimeCheck.mimeType);
   const path = `${hospitalId}/staff-avatars/${session.staff_id}/avatar.${ext}`;
-  const bytes = Buffer.from(await fileValue.arrayBuffer());
 
   const bucket = admin.storage.from(STAFF_AVATAR_BUCKET);
   let { error: uploadError } = await bucket.upload(path, bytes, {
-    contentType: fileValue.type,
+    contentType: mimeCheck.mimeType,   // Use verified type, not client-supplied
     upsert: true,
   });
 
@@ -67,7 +88,7 @@ export async function POST(request: Request) {
     };
     await storage.createBucket?.(STAFF_AVATAR_BUCKET, { public: true });
     ({ error: uploadError } = await bucket.upload(path, bytes, {
-      contentType: fileValue.type,
+      contentType: mimeCheck.mimeType,
       upsert: true,
     }));
   }

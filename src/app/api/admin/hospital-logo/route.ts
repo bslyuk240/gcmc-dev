@@ -3,14 +3,18 @@ import { getServerSession } from "@/lib/auth/session";
 import { createTenantAdminClient } from "@/lib/supabase/admin-tenant";
 import { appConfig } from "@/lib/config/app";
 import { updateHospitalSettingsAction } from "@/server/actions/admin/update-hospital-settings";
+import {
+  validateMimeType,
+  validateContentLength,
+  validateBufferSize,
+  ALLOWED_LOGO_MIME_TYPES,
+  MAX_LOGO_BYTES,
+} from "@/lib/security/file-validation";
 
-const MAX_LOGO_SIZE_BYTES = 2 * 1024 * 1024;
-const ALLOWED_TYPES = new Set(["image/png", "image/jpeg", "image/webp", "image/svg+xml"]);
-
-function guessLogoExtension(file: File) {
-  if (file.type === "image/png") return "png";
-  if (file.type === "image/webp") return "webp";
-  if (file.type === "image/svg+xml") return "svg";
+function extensionFromMime(mime: string): string {
+  if (mime === "image/png")      return "png";
+  if (mime === "image/webp")     return "webp";
+  if (mime === "image/svg+xml")  return "svg";
   return "jpg";
 }
 
@@ -25,6 +29,12 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
+  // ── Early Content-Length guard ────────────────────────────────────────────
+  const lengthCheck = validateContentLength(request, MAX_LOGO_BYTES);
+  if (!lengthCheck.ok) {
+    return NextResponse.json({ error: lengthCheck.error }, { status: lengthCheck.status });
+  }
+
   const formData = await request.formData();
   const fileValue = formData.get("logo");
 
@@ -32,12 +42,20 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "missing_file" }, { status: 400 });
   }
 
-  if (!ALLOWED_TYPES.has(fileValue.type)) {
-    return NextResponse.json({ error: "invalid_type" }, { status: 400 });
+  // ── Read bytes once ───────────────────────────────────────────────────────
+  const arrayBuf = await fileValue.arrayBuffer();
+  const bytes    = Buffer.from(arrayBuf);
+
+  // ── Actual buffer size check ──────────────────────────────────────────────
+  const sizeCheck = validateBufferSize(arrayBuf, MAX_LOGO_BYTES);
+  if (!sizeCheck.ok) {
+    return NextResponse.json({ error: sizeCheck.error }, { status: sizeCheck.status });
   }
 
-  if (fileValue.size > MAX_LOGO_SIZE_BYTES) {
-    return NextResponse.json({ error: "file_too_large" }, { status: 400 });
+  // ── Magic-byte MIME detection (SVG allowed via text-based check) ──────────
+  const mimeCheck = await validateMimeType(bytes, ALLOWED_LOGO_MIME_TYPES, /* allowSvg */ true);
+  if (!mimeCheck.ok) {
+    return NextResponse.json({ error: "Invalid file type." }, { status: 400 });
   }
 
   const scoped = await createTenantAdminClient();
@@ -47,13 +65,13 @@ export async function POST(request: Request) {
 
   const { admin, hospitalId } = scoped;
   const bucketName = appConfig.publicBucketName;
-  const ext = guessLogoExtension(fileValue);
+  // Extension and contentType are derived from the verified MIME type.
+  const ext  = extensionFromMime(mimeCheck.mimeType);
   const path = `${hospitalId}/branding/logo.${ext}`;
-  const bytes = Buffer.from(await fileValue.arrayBuffer());
 
   const bucket = admin.storage.from(bucketName);
   let { error: uploadError } = await bucket.upload(path, bytes, {
-    contentType: fileValue.type,
+    contentType: mimeCheck.mimeType,
     upsert: true,
   });
 
@@ -63,7 +81,7 @@ export async function POST(request: Request) {
     };
     await storage.createBucket?.(bucketName, { public: true });
     ({ error: uploadError } = await bucket.upload(path, bytes, {
-      contentType: fileValue.type,
+      contentType: mimeCheck.mimeType,
       upsert: true,
     }));
   }
@@ -75,10 +93,7 @@ export async function POST(request: Request) {
   const { data: publicData } = admin.storage.from(bucketName).getPublicUrl(path);
   const logoUrl = `${publicData.publicUrl}?v=${Date.now()}`;
 
-  const result = await updateHospitalSettingsAction({
-    settings: { logo_url: logoUrl },
-  });
-
+  const result = await updateHospitalSettingsAction({ settings: { logo_url: logoUrl } });
   if (!result.success) {
     return NextResponse.json({ error: result.error }, { status: 500 });
   }
