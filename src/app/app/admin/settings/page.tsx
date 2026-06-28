@@ -172,6 +172,21 @@ export default function AdminSettingsPage() {
   async function handleLogoUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    // ── Client-side guards (server enforces the same limits) ──────────────
+    const MAX_LOGO_BYTES = 2 * 1024 * 1024; // 2 MB
+    if (file.size > MAX_LOGO_BYTES) {
+      setToast({ message: "Logo must be 2 MB or smaller.", type: "error" });
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      return;
+    }
+    const ALLOWED_LOGO_TYPES = new Set(["image/png", "image/jpeg", "image/webp", "image/svg+xml"]);
+    if (!ALLOWED_LOGO_TYPES.has(file.type)) {
+      setToast({ message: "Only PNG, JPG, WebP, and SVG logos are allowed.", type: "error" });
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      return;
+    }
+
     setLogoUploading(true);
     try {
       const formData = new FormData();

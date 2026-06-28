@@ -164,9 +164,14 @@ export function ChatWindow({
 
     if (!file.type.startsWith("image/")) {
       setError("Please choose an image file.");
-      if (fileInputRef.current) {
-        fileInputRef.current.value = "";
-      }
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      return;
+    }
+
+    const MAX_CHAT_IMAGE_BYTES = 5 * 1024 * 1024; // 5 MB
+    if (file.size > MAX_CHAT_IMAGE_BYTES) {
+      setError("Image must be 5 MB or smaller.");
+      if (fileInputRef.current) fileInputRef.current.value = "";
       return;
     }
 
